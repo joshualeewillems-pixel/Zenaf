@@ -11,12 +11,21 @@
  * opens its own screen: the scroll unrolls large (the founder's
  * ground) with NO text on the sheet, its children stand beneath
  * it as scrolls of their own, and the conversation keys to the
- * open scroll at every level. With no drawing feed, the unrolled
- * scroll is honestly blank; with stubbed pencil-shaped drawings
- * (ordered stamp/stroke marks), the marks render in order and
- * tapping the drawing keys the conversation to it. CouncilChat
- * is stubbed and records its props — the chat seam itself is
- * covered by its own suite.
+ * open scroll at every level.
+ *
+ * The founder's 2026-11-25 live-use corrections are pinned here:
+ * the conversation NEVER swaps (rolling, selecting a drawing, a
+ * refresh — the id stays the open scroll's; a tapped drawing
+ * becomes the conversation's SUBJECT in the same talk); a scroll's
+ * sheet carries only its own conversation's drawings (the stubbed
+ * feed is deliberately mixed — the surface's own keying is what
+ * keeps foreign drawings off the sheet); ink is permanent (a
+ * presented drawing's marks stand finished across rolls, with no
+ * clock restart); and the sheet is ONE continuous sheet (every
+ * drawing mounted at once, rolling moves the sheet's focus —
+ * an offset — never swaps pages; there are no pager dots).
+ * CouncilChat is stubbed and records its props — the chat seam
+ * itself is covered by its own suite.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import * as React from 'react'
@@ -60,6 +69,9 @@ vi.mock('./scrollApi', async (importOriginal) => {
   const orig = await importOriginal<typeof import('./scrollApi')>()
   return {
     ...orig,
+    // The stub deliberately returns the feed UNFILTERED, whatever
+    // conversation the view asks for: the surface's own keying —
+    // not the stub's courtesy — is what the sheet tests pin.
     fetchScrollDrawings: async () => {
       stubDrawings.calls += 1
       if (stubDrawings.fail) throw new Error('the feed is unavailable')
@@ -110,6 +122,8 @@ function stubFetch() {
   }))
 }
 
+const P1_CONVO = 'jynx-scroll:project:p1'
+
 const DRAWING: ScrollDrawing = {
   id: 'd1',
   title: 'Icarus, again',
@@ -119,18 +133,37 @@ const DRAWING: ScrollDrawing = {
     { type: 'stamp', stamp: 'slash', cx: 220, cy: 480, w: 200, angle: 52, tier: 0.95 },
     { type: 'stroke', d: 'M100 600 Q300 560 500 620', width: 3, tier: 0.32 },
   ],
+  conversationId: P1_CONVO,
+}
+
+const SECOND: ScrollDrawing = {
+  id: 'd2',
+  title: null,
+  space: { w: 600, h: 800 },
+  marks: [{ type: 'stamp', stamp: 'wave', cx: 300, cy: 400, w: 380, tier: 0.6 }],
+  conversationId: P1_CONVO,
+}
+
+const THIRD: ScrollDrawing = {
+  id: 'd3',
+  title: null,
+  space: { w: 600, h: 800 },
+  marks: [{ type: 'stamp', stamp: 'leaf', cx: 300, cy: 400, w: 300, tier: 0.6 }],
+  conversationId: P1_CONVO,
 }
 
 describe('JynxScrollView', () => {
   let container: HTMLDivElement
   let root: Root
+  let fetchMock: ReturnType<typeof stubFetch>
 
   beforeEach(() => {
     stubDrawings.current = []
     stubDrawings.calls = 0
     stubDrawings.fail = false
     chatStub.latest = null
-    vi.stubGlobal('fetch', stubFetch())
+    fetchMock = stubFetch()
+    vi.stubGlobal('fetch', fetchMock)
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -140,6 +173,7 @@ describe('JynxScrollView', () => {
     act(() => root.unmount())
     container.remove()
     vi.unstubAllGlobals()
+    vi.useRealTimers()
   })
 
   async function flush() {
@@ -160,8 +194,20 @@ describe('JynxScrollView', () => {
     return container.querySelector('[data-testid="jynx-chat"]')
   }
 
+  function chatContext() {
+    return JSON.parse(chat()?.getAttribute('data-context') ?? '{}') as Record<string, unknown>
+  }
+
   function scrollEl(kind: string, id: string) {
     return container.querySelector(`[data-scroll="${kind}:${id}"]`)
+  }
+
+  function sheetEl() {
+    return container.querySelector('[data-sheet]')
+  }
+
+  function sheetFocus() {
+    return sheetEl()?.getAttribute('data-sheet-focus')
   }
 
   async function clickEl(el: Element) {
@@ -185,6 +231,11 @@ describe('JynxScrollView', () => {
     const btn = container.querySelector(`[data-child-scroll="${kind}:${id}"]`)
     expect(btn, `child ${kind}:${id}`).not.toBeNull()
     await clickEl(btn!)
+  }
+
+  async function openProject() {
+    await choose('initiative', 'i1')
+    await openChild('project', 'p1')
   }
 
   async function goBack() {
@@ -233,9 +284,7 @@ describe('JynxScrollView', () => {
     expect(container.querySelector('[data-open-scroll]')).toBeNull()
     expect(chat()?.getAttribute('data-archetype')).toBe('maverick')
     expect(chat()?.getAttribute('data-conversation-id')).toBe('jynx-scroll:shelf')
-    expect(JSON.parse(chat()?.getAttribute('data-context') ?? '{}')).toEqual({
-      sheet_type: 'jynx_scroll',
-    })
+    expect(chatContext()).toEqual({ sheet_type: 'jynx_scroll' })
   })
 
   it('distinguishes scrolls from recorded fields only — the Blocked binding wears violet', async () => {
@@ -268,7 +317,7 @@ describe('JynxScrollView', () => {
     const img = open!.querySelector('image')
     expect(img?.getAttribute('href')).toContain('scroll-ground')
     expect(chat()?.getAttribute('data-conversation-id')).toBe('jynx-scroll:project:p1')
-    expect(JSON.parse(chat()?.getAttribute('data-context') ?? '{}')).toEqual({
+    expect(chatContext()).toEqual({
       sheet_type: 'jynx_scroll',
       entity_type: 'project',
       entity_id: 'p1',
@@ -287,19 +336,18 @@ describe('JynxScrollView', () => {
   })
 
   it('the drawing scroll carries no text — no title on the sheet, no text elements at all', async () => {
+    stubDrawings.current = [DRAWING, SECOND]
     await render()
-    await choose('initiative', 'i1')
-    await openChild('project', 'p1')
+    await openProject()
     const open = container.querySelector('[data-open-scroll="project:p1"]')
     expect(open).not.toBeNull()
     expect(open!.querySelectorAll('text')).toHaveLength(0)
     expect(open!.textContent ?? '').not.toContain('Meet the Bear')
   })
 
-  it('empty-pencil honesty: an opened scroll with no drawing feed is blank — no marks, no invented art', async () => {
+  it('empty-pencil honesty: an opened scroll with no drawings of its own is blank — no marks, no rollers, no invented art', async () => {
     await render()
-    await choose('initiative', 'i1')
-    await openChild('project', 'p1')
+    await openProject()
     await openChild('task', 't1')
     const open = container.querySelector('[data-open-scroll="task:t1"]')
     expect(open).not.toBeNull()
@@ -307,14 +355,17 @@ describe('JynxScrollView', () => {
     expect(open!.querySelectorAll('[data-mark]')).toHaveLength(0)
     // The only image on the sheet is the ground itself.
     expect(open!.querySelectorAll('image')).toHaveLength(1)
+    // Nothing to roll through: no rollers, no roll controls.
+    expect(roller('roller-back')).toBeNull()
+    expect(roller('roller-forward')).toBeNull()
+    expect(container.querySelector('[data-testid="sheet-controls"]')).toBeNull()
     expect(chat()?.getAttribute('data-conversation-id')).toBe('jynx-scroll:task:t1')
   })
 
-  it('renders a drawing’s marks in order on the sheet, and tapping it keys the conversation to the drawing', async () => {
+  it('renders a drawing’s marks in order on the sheet', async () => {
     stubDrawings.current = [DRAWING]
     await render()
-    await choose('initiative', 'i1')
-    await openChild('project', 'p1')
+    await openProject()
     const open = container.querySelector('[data-open-scroll="project:p1"]')
     const drawingEl = open!.querySelector('[data-drawing-id="d1"]')
     expect(drawingEl).not.toBeNull()
@@ -325,58 +376,244 @@ describe('JynxScrollView', () => {
     expect(marks[1].getAttribute('data-stamp')).toBe('slash')
     // The stamp is the kit's own PNG, not a redrawn shape.
     expect(marks[0].querySelector('image')?.getAttribute('href')).toContain('ring')
+  })
 
-    const hit = [...open!.querySelectorAll('rect')].find((r) => r.getAttribute('fill-opacity') === '0')
+  it('tap explains: tapping a drawing makes it the subject of the SAME conversation; tapping again returns the subject to the scroll', async () => {
+    stubDrawings.current = [DRAWING]
+    await render()
+    await openProject()
+    expect(chat()?.getAttribute('data-conversation-id')).toBe(P1_CONVO)
+
+    const hit = container.querySelector('[data-drawing-hit="d1"]')
     expect(hit).toBeTruthy()
     await clickEl(hit!)
-    expect(chat()?.getAttribute('data-conversation-id')).toBe('jynx-scroll:drawing:d1')
-    expect(JSON.parse(chat()?.getAttribute('data-context') ?? '{}')).toEqual({
+    // The conversation id does not move — only its subject does.
+    expect(chat()?.getAttribute('data-conversation-id')).toBe(P1_CONVO)
+    expect(chatContext()).toEqual({
+      sheet_type: 'jynx_scroll',
+      entity_type: 'drawing',
+      entity_id: 'd1',
+    })
+    // The dashed border is the subjecthood sign, on the drawing's band.
+    expect(hit!.getAttribute('stroke')).toBe('#a55cce')
+
+    await clickEl(hit!)
+    expect(chat()?.getAttribute('data-conversation-id')).toBe(P1_CONVO)
+    expect(chatContext()).toEqual({
+      sheet_type: 'jynx_scroll',
+      entity_type: 'project',
+      entity_id: 'p1',
+    })
+    expect(hit!.getAttribute('stroke')).toBe('none')
+  })
+
+  it('a staged drawing is tentative: taps write nothing — no request of any kind — and the staged subject replaces or discards silently', async () => {
+    stubDrawings.current = [DRAWING, SECOND]
+    await render()
+    await openProject()
+    // Every network surface this view can touch: the VE reads on
+    // the global fetch, and the drawing feed. A tap must move
+    // NEITHER — the staged subject is client-side state alone,
+    // and it can enter the conversation's record only inside a
+    // message the visitor actually sends (whose per-message
+    // context snapshot is the commit point — pinned server-side
+    // in tests/test_subject_context_carriage.py).
+    const traffic = () => ({ fetch: fetchMock.mock.calls.length, feed: stubDrawings.calls })
+    const before = traffic()
+
+    await clickEl(container.querySelector('[data-drawing-hit="d1"]')!)
+    expect(chatContext()).toEqual({
+      sheet_type: 'jynx_scroll',
+      entity_type: 'drawing',
+      entity_id: 'd1',
+    })
+    expect(traffic()).toEqual(before)
+
+    // Clicking another drawing replaces the staged subject silently.
+    await clickEl(container.querySelector('[data-drawing-hit="d2"]')!)
+    expect(chatContext()).toEqual({
+      sheet_type: 'jynx_scroll',
+      entity_type: 'drawing',
+      entity_id: 'd2',
+    })
+    expect(traffic()).toEqual(before)
+
+    // Clicking the scroll's own ground discards it silently.
+    const open = container.querySelector('[data-open-scroll="project:p1"]')!
+    const ground = [...open.querySelectorAll('rect')].find(
+      (r) => r.getAttribute('fill-opacity') === '0' && !r.hasAttribute('data-drawing-hit'),
+    )
+    expect(ground).toBeTruthy()
+    await clickEl(ground!)
+    expect(chatContext()).toEqual({
+      sheet_type: 'jynx_scroll',
+      entity_type: 'project',
+      entity_id: 'p1',
+    })
+    expect(traffic()).toEqual(before)
+    expect(chat()?.getAttribute('data-conversation-id')).toBe(P1_CONVO)
+  })
+
+  it('the conversation never swaps — not for a selection, not for a roll, not for a refresh', async () => {
+    stubDrawings.current = [DRAWING, SECOND]
+    await render()
+    await openProject()
+    const id = () => chat()?.getAttribute('data-conversation-id')
+    expect(id()).toBe(P1_CONVO)
+
+    await clickEl(container.querySelector('[data-drawing-hit="d1"]')!)
+    expect(id()).toBe(P1_CONVO)
+    await clickEl(container.querySelector('[data-testid="sheet-back"]')!)
+    expect(id()).toBe(P1_CONVO)
+    await clickEl(container.querySelector('[data-testid="sheet-forward"]')!)
+    expect(id()).toBe(P1_CONVO)
+    await turnLanded()
+    expect(id()).toBe(P1_CONVO)
+    // And the subject the rolls left standing is still the drawing.
+    expect(chatContext()).toEqual({
       sheet_type: 'jynx_scroll',
       entity_type: 'drawing',
       entity_id: 'd1',
     })
   })
 
-  it('multiple drawings stand as sections — the screen’s chrome rolls between them', async () => {
-    const second: ScrollDrawing = {
-      id: 'd2',
-      title: null,
+  it('a scroll shows its own drawings only — a mixed feed never puts a foreign drawing on the sheet', async () => {
+    const foreignTask: ScrollDrawing = {
+      id: 'dT',
+      title: 'Drawn over the bear step',
       space: { w: 600, h: 800 },
-      marks: [{ type: 'stamp', stamp: 'wave', cx: 300, cy: 400, w: 380, tier: 0.6 }],
+      marks: [{ type: 'stamp', stamp: 'fork', cx: 300, cy: 400, w: 300, tier: 0.6 }],
+      conversationId: 'jynx-scroll:task:t1',
     }
-    stubDrawings.current = [DRAWING, second]
+    const foreignLegacy: ScrollDrawing = {
+      id: 'dL',
+      title: 'From a per-drawing conversation of the old wiring',
+      space: { w: 600, h: 800 },
+      marks: [{ type: 'stamp', stamp: 'arc', cx: 300, cy: 400, w: 300, tier: 0.6 }],
+      conversationId: 'jynx-scroll:drawing:d1',
+    }
+    const noProvenance: ScrollDrawing = { ...DRAWING, id: 'dN', conversationId: null }
+    stubDrawings.current = [DRAWING, foreignTask, foreignLegacy, noProvenance]
     await render()
-    await choose('initiative', 'i1')
-    await openChild('project', 'p1')
+    await openProject()
+    // Only this conversation's drawing stands on this sheet.
     expect(container.querySelector('[data-drawing-id="d1"]')).not.toBeNull()
-    expect(container.querySelector('[data-drawing-id="d2"]')).toBeNull()
-    const controls = container.querySelector('[data-testid="section-controls"]')
-    expect(controls).not.toBeNull()
-    const forward = controls!.querySelector('[data-testid="section-forward"]')
-    expect(forward).not.toBeNull()
-    await clickEl(forward!)
-    expect(container.querySelector('[data-drawing-id="d2"]')).not.toBeNull()
+    expect(container.querySelector('[data-drawing-id="dT"]')).toBeNull()
+    expect(container.querySelector('[data-drawing-id="dL"]')).toBeNull()
+    expect(container.querySelector('[data-drawing-id="dN"]')).toBeNull()
+    // The task's drawing stands on the TASK's scroll — keyed, not lost.
+    await openChild('task', 't1')
+    expect(container.querySelector('[data-drawing-id="dT"]')).not.toBeNull()
     expect(container.querySelector('[data-drawing-id="d1"]')).toBeNull()
-    // The controls live in the chrome — the sheet itself stays text-free.
+  })
+
+  it('one continuous sheet: every drawing stands mounted at once, and rolling moves the focus — nothing swaps, nothing unmounts', async () => {
+    stubDrawings.current = [DRAWING, SECOND]
+    await render()
+    await openProject()
+    const d1 = container.querySelector('[data-drawing-id="d1"]')
+    const d2 = container.querySelector('[data-drawing-id="d2"]')
+    expect(d1).not.toBeNull()
+    expect(d2).not.toBeNull()
+    // Resting with the newest drawing; no pager, no dots.
+    expect(sheetFocus()).toBe('1')
+    expect(container.querySelector('[data-testid="section-controls"]')).toBeNull()
+    const controls = container.querySelector('[data-testid="sheet-controls"]')
+    expect(controls).not.toBeNull()
+    expect(controls!.querySelectorAll('button')).toHaveLength(2)
+
+    const offsetAtRest = sheetEl()!.getAttribute('data-sheet-offset')
+    await clickEl(container.querySelector('[data-testid="sheet-back"]')!)
+    expect(sheetFocus()).toBe('0')
+    expect(sheetEl()!.getAttribute('data-sheet-offset')).not.toBe(offsetAtRest)
+    // The very same nodes — the sheet moved, the drawings stand.
+    expect(container.querySelector('[data-drawing-id="d1"]')).toBe(d1)
+    expect(container.querySelector('[data-drawing-id="d2"]')).toBe(d2)
+
+    // Forward past the newest drawing reaches the blank working band.
+    await clickEl(container.querySelector('[data-testid="sheet-forward"]')!)
+    await clickEl(container.querySelector('[data-testid="sheet-forward"]')!)
+    expect(sheetFocus()).toBe('2')
+    expect(container.querySelector('[data-drawing-id="d1"]')).toBe(d1)
+    expect(container.querySelector('[data-drawing-id="d2"]')).toBe(d2)
+    expect(
+      (container.querySelector('[data-testid="sheet-forward"]') as HTMLButtonElement).disabled,
+    ).toBe(true)
+    // The sheet itself stays text-free throughout.
     const open = container.querySelector('[data-open-scroll="project:p1"]')
     expect(open!.querySelectorAll('text')).toHaveLength(0)
   })
 
-  it('choosing a scroll re-reads the feed — a drawing that arrived after mount renders', async () => {
+  it('the open scroll’s rollers move along the sheet — top toward the older, bottom toward the newer, inert at the ends', async () => {
+    stubDrawings.current = [DRAWING, SECOND]
+    await render()
+    await openProject()
+    const back = roller('roller-back')
+    const fwd = roller('roller-forward')
+    expect(back, 'top roller control').not.toBeNull()
+    expect(fwd, 'bottom roller control').not.toBeNull()
+    expect(back!.getAttribute('aria-label')).toBe('Roll toward the older drawings')
+    expect(fwd!.getAttribute('aria-label')).toBe('Roll toward the newer drawings')
+    // Resting on the newest drawing: both ways can still move —
+    // back into the history, forward onto the blank working space.
+    expect(back!.getAttribute('aria-disabled')).toBe('false')
+    expect(fwd!.getAttribute('aria-disabled')).toBe('false')
+
+    // The bottom roller rolls forward onto the blank band, and
+    // the chrome control — the same sheet movement — agrees.
+    await clickEl(fwd!)
+    expect(sheetFocus()).toBe('2')
+    expect(roller('roller-forward')!.getAttribute('aria-disabled')).toBe('true')
+    expect(
+      (container.querySelector('[data-testid="sheet-forward"]') as HTMLButtonElement).disabled,
+    ).toBe(true)
+
+    // The top roller rolls back through the history to its end.
+    await clickEl(roller('roller-back')!)
+    await clickEl(roller('roller-back')!)
+    expect(sheetFocus()).toBe('0')
+    expect(roller('roller-back')!.getAttribute('aria-disabled')).toBe('true')
+    expect(
+      (container.querySelector('[data-testid="sheet-back"]') as HTMLButtonElement).disabled,
+    ).toBe(true)
+    // An inert roller does not move the sheet.
+    await clickEl(roller('roller-back')!)
+    expect(sheetFocus()).toBe('0')
+
+    // The rollers put no text on the sheet.
+    const open = container.querySelector('[data-open-scroll="project:p1"]')
+    expect(open!.querySelectorAll('text')).toHaveLength(0)
+  })
+
+  it('a single drawing still rolls — forward onto its blank working space and back', async () => {
+    stubDrawings.current = [DRAWING]
+    await render()
+    await openProject()
+    expect(container.querySelector('[data-drawing-id="d1"]')).not.toBeNull()
+    expect(roller('roller-back')).not.toBeNull()
+    expect(roller('roller-forward')).not.toBeNull()
+    expect(sheetFocus()).toBe('0')
+    await clickEl(roller('roller-forward')!)
+    expect(sheetFocus()).toBe('1')
+    expect(container.querySelector('[data-drawing-id="d1"]')).not.toBeNull()
+    await clickEl(roller('roller-back')!)
+    expect(sheetFocus()).toBe('0')
+  })
+
+  it('opening a scroll re-reads its feed — a drawing that arrived after mount renders on its own scroll', async () => {
     await render()
     const callsAfterMount = stubDrawings.calls
-    expect(callsAfterMount).toBeGreaterThan(0)
-    // Jynx draws (in a conversation, elsewhere) after this pane mounted.
+    // Jynx draws (in this scroll's conversation) after this pane mounted.
     stubDrawings.current = [DRAWING]
     await choose('initiative', 'i1')
     expect(stubDrawings.calls).toBeGreaterThan(callsAfterMount)
+    await openChild('project', 'p1')
     expect(container.querySelector('[data-drawing-id="d1"]')).not.toBeNull()
   })
 
   it('a turn landing beside an open scroll re-reads the feed — the founder’s blank scroll fills in place', async () => {
     await render()
-    await choose('initiative', 'i1')
-    await openChild('project', 'p1')
+    await openProject()
     // The pane was open while Jynx drew: honestly blank until the
     // turn that made the drawing lands and the feed re-reads.
     expect(container.querySelector('[data-drawing-id]')).toBeNull()
@@ -384,11 +621,14 @@ describe('JynxScrollView', () => {
     await turnLanded()
     expect(container.querySelector('[data-open-scroll="project:p1"]')).not.toBeNull()
     expect(container.querySelector('[data-drawing-id="d1"]')).not.toBeNull()
+    // The new drawing takes the working place — resting focus
+    // follows the sheet's growth to the newest drawing.
+    expect(sheetFocus()).toBe('0')
   })
 
   it('the window waking re-reads the feed', async () => {
     await render()
-    await choose('initiative', 'i1')
+    await openProject()
     stubDrawings.current = [DRAWING]
     await act(async () => {
       window.dispatchEvent(new Event('focus'))
@@ -401,7 +641,7 @@ describe('JynxScrollView', () => {
   it('a failed re-read keeps the drawings already on the surface — never a false blank, never the error screen', async () => {
     stubDrawings.current = [DRAWING]
     await render()
-    await choose('initiative', 'i1')
+    await openProject()
     expect(container.querySelector('[data-drawing-id="d1"]')).not.toBeNull()
     stubDrawings.fail = true
     await turnLanded()
@@ -409,100 +649,85 @@ describe('JynxScrollView', () => {
     expect(container.textContent).not.toContain('Could not load your scrolls.')
   })
 
-  it('a re-read with the same list — or a grown one — never moves the visitor’s section', async () => {
-    const second: ScrollDrawing = {
-      id: 'd2',
-      title: null,
-      space: { w: 600, h: 800 },
-      marks: [{ type: 'stamp', stamp: 'wave', cx: 300, cy: 400, w: 380, tier: 0.6 }],
-    }
-    const third: ScrollDrawing = {
-      id: 'd3',
-      title: null,
-      space: { w: 600, h: 800 },
-      marks: [{ type: 'stamp', stamp: 'leaf', cx: 300, cy: 400, w: 300, tier: 0.6 }],
-    }
-    stubDrawings.current = [DRAWING, second]
+  it('a re-read with the same list — or a grown one — never moves the visitor’s place along the sheet', async () => {
+    stubDrawings.current = [DRAWING, SECOND]
     await render()
-    await choose('initiative', 'i1')
-    await openChild('project', 'p1')
-    // Roll to the second (newest) drawing.
-    const forward = container.querySelector('[data-testid="section-forward"]') as HTMLButtonElement
-    await clickEl(forward)
-    expect(container.querySelector('[data-drawing-id="d2"]')).not.toBeNull()
-    expect(forward.disabled).toBe(true)
+    await openProject()
+    // The visitor rolls back to the first drawing and stays there.
+    await clickEl(container.querySelector('[data-testid="sheet-back"]')!)
+    expect(sheetFocus()).toBe('0')
 
-    // Same list back from a re-read: the visitor stays on d2.
+    // Same list back from a re-read: the visitor stays on d1.
     await turnLanded()
-    expect(container.querySelector('[data-drawing-id="d2"]')).not.toBeNull()
-    expect(
-      (container.querySelector('[data-testid="section-forward"]') as HTMLButtonElement).disabled,
-    ).toBe(true)
+    expect(sheetFocus()).toBe('0')
 
-    // A grown list: still on d2, and the new drawing waits one
-    // roll forward — reachable, not thrust into view.
-    stubDrawings.current = [DRAWING, second, third]
+    // A grown list: still on d1 — the new drawing joins the sheet's
+    // end, reachable by rolling, not thrust into the working place.
+    stubDrawings.current = [DRAWING, SECOND, THIRD]
     await turnLanded()
-    expect(container.querySelector('[data-drawing-id="d2"]')).not.toBeNull()
-    const forwardNow = container.querySelector('[data-testid="section-forward"]') as HTMLButtonElement
-    expect(forwardNow.disabled).toBe(false)
-    await clickEl(forwardNow)
+    expect(sheetFocus()).toBe('0')
     expect(container.querySelector('[data-drawing-id="d3"]')).not.toBeNull()
+    await clickEl(container.querySelector('[data-testid="sheet-forward"]')!)
+    await clickEl(container.querySelector('[data-testid="sheet-forward"]')!)
+    expect(sheetFocus()).toBe('2')
   })
 
-  it('the open scroll’s rollers page its drawings — top toward the older, bottom toward the newer, inert at the ends', async () => {
-    const second: ScrollDrawing = {
-      id: 'd2',
-      title: null,
-      space: { w: 600, h: 800 },
-      marks: [{ type: 'stamp', stamp: 'wave', cx: 300, cy: 400, w: 380, tier: 0.6 }],
+  it('ink is permanent: a drawing draws itself once, and its finished ink stands across rolls with no repaint', async () => {
+    vi.useFakeTimers()
+    try {
+      const flushFake = async (ms = 0) => {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(ms)
+        })
+      }
+      const clickFake = async (el: Element) => {
+        await act(async () => {
+          el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        })
+        await flushFake(0)
+      }
+      stubDrawings.current = [DRAWING]
+      await act(async () => {
+        root.render(React.createElement(JynxScrollView))
+      })
+      await flushFake(0)
+      await flushFake(0)
+      const g1 = scrollEl('initiative', 'i1')
+      const hit1 = [...g1!.querySelectorAll('rect')].find(
+        (r) => r.getAttribute('fill-opacity') === '0',
+      )
+      await clickFake(hit1!)
+      await clickFake(container.querySelector('[data-child-scroll="project:p1"]')!)
+
+      const drawingEl = container.querySelector('[data-drawing-id="d1"]')
+      expect(drawingEl).not.toBeNull()
+      const marks = () => [...drawingEl!.querySelectorAll('[data-mark]')]
+      // On arrival the drawing is still drawing itself: the first
+      // stamp has not reached its tier.
+      expect(marks()[0].getAttribute('opacity')).toBe('0')
+
+      // Its one draw-out runs (unroll, then the marks in order)…
+      await flushFake(6000)
+      // …and the ink stands finished: stamps at their tiers, the
+      // stroke fully drawn.
+      expect(marks()[0].getAttribute('opacity')).toBe('0.6')
+      expect(marks()[1].getAttribute('opacity')).toBe('0.95')
+      expect(marks()[2].getAttribute('stroke-dashoffset')).toBe('0')
+
+      // Roll away to the blank working space and back — with NO
+      // time passing, the ink is already standing: no draw-out
+      // restarts, and the drawing's node never changed hands.
+      await clickFake(container.querySelector('[data-testid="sheet-forward"]')!)
+      expect(sheetFocus()).toBe('1')
+      expect(container.querySelector('[data-drawing-id="d1"]')).toBe(drawingEl)
+      expect(marks()[0].getAttribute('opacity')).toBe('0.6')
+      await clickFake(container.querySelector('[data-testid="sheet-back"]')!)
+      expect(sheetFocus()).toBe('0')
+      expect(container.querySelector('[data-drawing-id="d1"]')).toBe(drawingEl)
+      expect(marks()[0].getAttribute('opacity')).toBe('0.6')
+      expect(marks()[2].getAttribute('stroke-dashoffset')).toBe('0')
+    } finally {
+      vi.useRealTimers()
     }
-    stubDrawings.current = [DRAWING, second]
-    await render()
-    await choose('initiative', 'i1')
-    await openChild('project', 'p1')
-    expect(container.querySelector('[data-drawing-id="d1"]')).not.toBeNull()
-
-    const back = roller('roller-back')
-    const fwd = roller('roller-forward')
-    expect(back, 'top roller control').not.toBeNull()
-    expect(fwd, 'bottom roller control').not.toBeNull()
-    expect(back!.getAttribute('aria-label')).toBe('Previous drawing')
-    expect(fwd!.getAttribute('aria-label')).toBe('Next drawing')
-    // At the oldest drawing the top roller is inert; the bottom rolls.
-    expect(back!.getAttribute('aria-disabled')).toBe('true')
-    expect(fwd!.getAttribute('aria-disabled')).toBe('false')
-    await clickEl(back!)
-    expect(container.querySelector('[data-drawing-id="d1"]')).not.toBeNull()
-
-    // The bottom roller rolls forward to the newer drawing, and
-    // the chrome pager — the same section state — agrees.
-    await clickEl(fwd!)
-    expect(container.querySelector('[data-drawing-id="d2"]')).not.toBeNull()
-    expect(
-      (container.querySelector('[data-testid="section-forward"]') as HTMLButtonElement).disabled,
-    ).toBe(true)
-    expect(
-      (container.querySelector('[data-testid="section-back"]') as HTMLButtonElement).disabled,
-    ).toBe(false)
-    expect(roller('roller-forward')!.getAttribute('aria-disabled')).toBe('true')
-    expect(roller('roller-back')!.getAttribute('aria-disabled')).toBe('false')
-
-    // The top roller rolls back into the history.
-    await clickEl(roller('roller-back')!)
-    expect(container.querySelector('[data-drawing-id="d1"]')).not.toBeNull()
-
-    // The rollers put no text on the sheet.
-    const open = container.querySelector('[data-open-scroll="project:p1"]')
-    expect(open!.querySelectorAll('text')).toHaveLength(0)
-  })
-
-  it('a single drawing has no rollers — nothing to page', async () => {
-    stubDrawings.current = [DRAWING]
-    await render()
-    await choose('initiative', 'i1')
-    expect(container.querySelector('[data-drawing-id="d1"]')).not.toBeNull()
-    expect(roller('roller-back')).toBeNull()
-    expect(roller('roller-forward')).toBeNull()
   })
 })

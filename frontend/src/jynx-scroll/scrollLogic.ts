@@ -446,6 +446,24 @@ export interface ScrollDrawing {
   space: { w: number; h: number }
   /** Marks in arrival order — the order the drawing is made in. */
   marks: ScrollMark[]
+  /** Carriage provenance: the conversation the drawing was born
+   *  in, as the endpoint serves it. A scroll's sheet carries only
+   *  its own conversation's drawings (founder, 2026-11-25), and
+   *  this is the key they are sorted by. Null when the payload
+   *  carries none — such a drawing belongs to no scroll's sheet. */
+  conversationId: string | null
+}
+
+/** The drawings that belong on one scroll's sheet: those born in
+ *  that scroll's conversation, in the order they were made. A
+ *  drawing from any other conversation — another scroll's, the
+ *  shelf's, a per-drawing conversation of the old wiring — never
+ *  stands on this sheet. */
+export function drawingsForConversation(
+  drawings: ScrollDrawing[],
+  conversationId: string,
+): ScrollDrawing[] {
+  return drawings.filter((d) => d.conversationId === conversationId)
 }
 
 /** Time one mark takes to arrive, and the pause between marks. */
@@ -469,4 +487,87 @@ export function markProgressAt(elapsedMs: number, drawing: ScrollDrawing, index:
   const start = index * (MARK_DRAW_MS + MARK_GAP_MS)
   const local = (elapsedMs - start) / MARK_DRAW_MS
   return Math.min(1, Math.max(0, local))
+}
+
+/* ------------------------------------------------------------------ */
+/* The sheet — one continuous scroll, not pages                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The open scroll is ONE continuous sheet (founder, 2026-11-25:
+ * "that's why it's a scroll so it can get rolled up to the top
+ * and give you fresh space to work with"). Its drawings stand
+ * along it in the order they were made; rolling moves the sheet's
+ * FOCUS — the band standing in the working area — never swaps one
+ * sheet for another. Bands older than the focus are rolled up:
+ * they stand compact at the top, tight and small, their zone
+ * capped no matter how long the history grows (a thicker roll
+ * compresses more). The focus band and everything newer stand at
+ * full height below it, and after the newest drawing a blank band
+ * stands as the working space the next drawing will arrive in.
+ * The focus may rest on that blank band (index == drawings.length)
+ * — the fresh sheet itself, all history rolled above it.
+ */
+
+/** Height of a band standing in (or below) the working area. */
+export const SHEET_BAND_H = 248
+/** Height one rolled-up band asks for before the zone cap bites. */
+export const SHEET_COMPACT_BAND_H = 36
+/** The rolled history's whole zone never exceeds this height. */
+export const SHEET_COMPACT_ZONE_MAX = 64
+
+export interface SheetBand {
+  /** The band's drawing, or null for the blank working band that
+   *  stands after the newest drawing. */
+  drawing: ScrollDrawing | null
+  /** The band's index along the sheet (the blank band's index is
+   *  drawings.length). */
+  index: number
+  /** Distance from the sheet's top to the band's top, in sheet
+   *  units — where the band stands when the layout is painted. */
+  y: number
+  /** The band's standing height: compact when rolled up above
+   *  the focus, full otherwise. */
+  height: number
+  /** True when the band is rolled up above the focus. */
+  compact: boolean
+}
+
+export interface SheetLayout {
+  bands: SheetBand[]
+  /** Total sheet height, blank band included. */
+  totalHeight: number
+  /** The focus, clamped to the sheet: an index into the drawings,
+   *  or drawings.length for the blank working band. */
+  focus: number
+  /** Sheet distance the roll has reached: the focus band's top.
+   *  Rolling changes exactly this (and the layout it implies) —
+   *  the sheet's content itself never changes hands. */
+  focusOffset: number
+}
+
+export function sheetLayout(drawings: ScrollDrawing[], focus: number): SheetLayout {
+  const n = drawings.length
+  const f = Math.min(Math.max(0, Math.floor(focus) || 0), n)
+  // The rolled zone: each older band asks for SHEET_COMPACT_BAND_H,
+  // but the zone as a whole is capped — the roll thickens, the
+  // slivers thin.
+  const compactH = f > 0 ? Math.min(SHEET_COMPACT_BAND_H, SHEET_COMPACT_ZONE_MAX / f) : 0
+  const bands: SheetBand[] = []
+  let y = 0
+  for (let i = 0; i < n; i++) {
+    const compact = i < f
+    const height = compact ? compactH : SHEET_BAND_H
+    bands.push({ drawing: drawings[i], index: i, y, height, compact })
+    y += height
+  }
+  bands.push({
+    drawing: null,
+    index: n,
+    y,
+    height: SHEET_BAND_H,
+    compact: false,
+  })
+  const totalHeight = y + SHEET_BAND_H
+  return { bands, totalHeight, focus: f, focusOffset: bands[f].y }
 }

@@ -42,6 +42,16 @@ assembler (local_ai/fellowship/evidence.py) pattern:
   interface surfaces and the entity must resolve. Every other
   conversation assembles byte-identically to before — the section
   is absent, not empty.
+* One non-VE subject is admitted, for Jynx's Scroll only
+  (founder, 2026-11-25: "when I click on the picture, it's
+  supposed to explain the metaphor"): a tapped drawing
+  (``entity_type == "drawing"``, ``sheet_type == "jynx_scroll"``)
+  resolves through the chalk store — owner-scoped exactly as the
+  VE getters are — and its block carries the drawing's own record:
+  its title, its space, a bounded account of its marks in the
+  order they were made, and the provenance subject it was drawn
+  while looking at, where one is recorded and resolves. On any
+  other sheet a "drawing" reference yields no block.
 * The assembler never raises: any failure degrades to no block,
   never a broken turn.
 """
@@ -79,9 +89,29 @@ _INTERFACE_SHEET_TYPES = frozenset(
 )
 
 #: Entity types that resolve against the vision_execution store.
-#: Anything else the seam can carry (a Scroll "drawing", a person,
-#: an asset) is not a VE record and yields no block.
+#: Anything else the seam can carry (a person, an asset) is not a
+#: VE record and yields no block.
 _SUBJECT_TYPES = frozenset({"task", "project", "initiative", "idea"})
+
+#: The one non-VE subject: a chalk drawing, admitted only on
+#: Jynx's Scroll sheet (see the module docstring). It resolves
+#: through the chalk store, never the VE store.
+_DRAWING_TYPE = "drawing"
+_DRAWING_SHEET = "jynx_scroll"
+
+#: At most this many of a drawing's marks render in its account;
+#: the rest are counted in an omitted line, never dropped silently
+#: (the children rule, carried to marks). The chalk grammar itself
+#: caps a drawing at 32 marks, so this binds only a corrupt store.
+MARKS_CAP = 32
+
+#: A stroke's path is truncated at this length in the account —
+#: the path is evidence of the gesture, not the explanation; the
+#: words about it are Jynx's to make in the reply.
+_STROKE_PATH_CAP = 160
+
+#: The chalk study's three ink tiers, named for the account.
+_TIER_NAMES = ((0.95, "dark"), (0.6, "mid"), (0.32, "light"))
 
 _TRUNCATION_NOTE = "[record truncated — the full record is longer than this section carries]"
 
@@ -288,11 +318,18 @@ def _compose(
     # The record's own material always outranks generated material —
     # when the cap bites, the truncation below takes these first.
     _ai_notes_lines(lines, row)
+    return _finish_block(lines)
+
+
+def _finish_block(lines: list[str]) -> str:
+    """Join a block's lines, apply the shared cap, and fence it.
+
+    The cap cuts at a line boundary where one survives inside it,
+    leaving room for the truncation note; the note is part of the
+    body, the fences stay outside the cap.
+    """
     body = "\n".join(lines)
     if len(body) > BLOCK_CHAR_CAP:
-        # Cut at a line boundary where one survives inside the cap,
-        # leaving room for the truncation note; the note is part of
-        # the body, the fences stay outside the cap.
         budget = BLOCK_CHAR_CAP - len(_TRUNCATION_NOTE) - 1
         cut = body.rfind("\n", 0, budget)
         body = body[: cut if cut > 0 else budget].rstrip()
@@ -302,6 +339,118 @@ def _compose(
             body = body[: -len(_AI_NOTES_HEADING)].rstrip()
         body = f"{body}\n{_TRUNCATION_NOTE}"
     return f"{BEGIN_FENCE}\n{body}\n{END_FENCE}"
+
+
+def _resolve_drawing(user_id: str, drawing_id: str) -> dict[str, Any] | None:
+    """The caller's own chalk drawing, or None — the store's own
+    owner boundary: a foreign or nonexistent id yields nothing,
+    indistinguishably. Constructed per call, as the drawings route
+    constructs its store."""
+    from local_ai.conversation.chalk_store import ChalkStore
+
+    return ChalkStore().get_drawing(user_id, drawing_id)
+
+
+def _tier_phrase(tier: Any) -> str:
+    """A mark's ink tier as the record states it, named when it is
+    one of the study's three."""
+    try:
+        value = float(tier)
+    except (TypeError, ValueError):
+        return ""
+    for known, name in _TIER_NAMES:
+        if abs(value - known) < 0.001:
+            return f"tier {value:g} ({name})"
+    return f"tier {value:g}"
+
+
+def _mark_line(mark: Any) -> str:
+    """One mark of a drawing, accounted faithfully and briefly:
+    what it is, where it sits in the drawing's own space, and its
+    ink. Record values pass through the same collapse + fence
+    neutralization as every other record-text value."""
+    if not isinstance(mark, dict):
+        return "- a mark the record does not describe"
+    tier = _tier_phrase(mark.get("tier"))
+    if mark.get("type") == "stamp":
+        parts = [
+            f"stamp {_clean(mark.get('stamp')) or '(unnamed)'}",
+            f"at ({_clean(mark.get('cx'))}, {_clean(mark.get('cy'))})",
+            f"width {_clean(mark.get('w'))}",
+        ]
+        angle = mark.get("angle")
+        if angle:
+            parts.append(f"rotated {_clean(angle)} degrees")
+        if mark.get("flip"):
+            parts.append("mirrored")
+        if tier:
+            parts.append(tier)
+        return "- " + ", ".join(parts)
+    if mark.get("type") == "stroke":
+        path = _clean(mark.get("d"))
+        if len(path) > _STROKE_PATH_CAP:
+            path = path[:_STROKE_PATH_CAP] + "…"
+        parts = [
+            "freehand stroke",
+            f"width {_clean(mark.get('width'))}",
+        ]
+        if tier:
+            parts.append(tier)
+        if path:
+            parts.append(f"path: {path}")
+        return "- " + ", ".join(parts)
+    return "- a mark the record does not describe"
+
+
+def _compose_drawing(user_id: str, row: dict[str, Any]) -> str:
+    """The fenced block for a tapped drawing: its own record —
+    title, space, its marks in the order they were made, and the
+    subject it was drawn while looking at, where one is recorded
+    and resolves as the caller's own."""
+    lines: list[str] = [
+        "The user has selected this drawing in the interface "
+        "and is talking with you about it. Its record:"
+    ]
+    _field(lines, "Title", row.get("title"))
+    lines.append("Kind: drawing")
+    space = row.get("space") or {}
+    _field(
+        lines,
+        "Space",
+        f"{space.get('w')} by {space.get('h')} "
+        "(the drawing's own coordinate space; positions below are in it)",
+    )
+    marks = row.get("marks") or []
+    if marks:
+        lines.append(f"Marks ({len(marks)}, in the order they were made):")
+        for mark in marks[:MARKS_CAP]:
+            lines.append(_mark_line(mark))
+        omitted = len(marks) - MARKS_CAP
+        if omitted > 0:
+            lines.append(f"+{omitted} more marks not shown")
+    # Provenance: the subject the drawing was made while looking
+    # at, named only when it resolves as the caller's own — a
+    # foreign or vanished subject is omitted, never guessed.
+    subject_type = str(row.get("subject_type") or "").strip().lower()
+    subject_id = str(row.get("subject_id") or "").strip()
+    if subject_id and subject_type in _SUBJECT_TYPES:
+        subject = _resolve_subject(user_id, subject_type, subject_id)
+        if subject:
+            _field(
+                lines,
+                "Made while looking at",
+                f"{_safe_line(subject.get('title')) or '(untitled)'} ({subject_type})",
+            )
+    elif subject_id and subject_type == _DRAWING_TYPE:
+        subject = _resolve_drawing(user_id, subject_id)
+        if subject:
+            _field(
+                lines,
+                "Made while looking at",
+                f"another drawing, {_safe_line(subject.get('title')) or '(untitled)'}",
+            )
+    _field(lines, "Drawn at", row.get("created_at"))
+    return _finish_block(lines)
 
 
 def build_subject_context(
@@ -326,7 +475,18 @@ def build_subject_context(
         entity_id = str(context.get("entity_id") or "").strip()
         if sheet_type not in _INTERFACE_SHEET_TYPES:
             return None
-        if entity_type not in _SUBJECT_TYPES or not entity_id:
+        if not entity_id:
+            return None
+        if entity_type == _DRAWING_TYPE:
+            # A drawing is a subject only on Jynx's own sheet —
+            # anywhere else the reference yields no block.
+            if sheet_type != _DRAWING_SHEET:
+                return None
+            drawing = _resolve_drawing(user_id, entity_id)
+            if not drawing:
+                return None
+            return _compose_drawing(user_id, drawing)
+        if entity_type not in _SUBJECT_TYPES:
             return None
         row = _resolve_subject(user_id, entity_type, entity_id)
         if not row:

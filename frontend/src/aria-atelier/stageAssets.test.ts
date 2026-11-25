@@ -21,6 +21,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { STAGE_IMAGES } from './stageImages'
+import { STAGE_TWINS, twinForStage } from './stageTwins'
 import { STAGE_COUNT, VOICES, type Voice } from './atelierLogic'
 import manifestJson from './stage-manifest.json'
 
@@ -40,12 +41,28 @@ interface VoiceRecord {
   stageBytes: number[]
   fillBytes: number
 }
+interface TwinRecord {
+  voice: string
+  stage: number
+  file: string
+  size: [number, number]
+  bytes: number
+  sourceBytes: number
+  method: string
+}
 interface Manifest {
   stagesPerVoice: number
   intermediateSize: [number, number]
   finalSize: [number, number]
   voices: Record<string, VoiceRecord>
-  totals: { stageBytes: number; fillBytes: number; previousInkBytes: number; previousFillBytes: number }
+  totals: {
+    stageBytes: number
+    fillBytes: number
+    previousInkBytes: number
+    previousFillBytes: number
+    twinBytes: number
+  }
+  twins: TwinRecord[]
 }
 const manifest = manifestJson as unknown as Manifest
 
@@ -138,6 +155,52 @@ describe('stage ladders — the generation record', () => {
         expectPng(buf, w, h)
         expect(buf.length, `${v} stage ${j} bytes`).toBe(rec.stageBytes[j - 1])
       }
+    }
+  })
+})
+
+describe('the refraction twin — one prototype, gated (dynamism spec §2.3)', () => {
+  it('the manifest carries exactly the one authorized twin, inside the payload gate', () => {
+    // The founder's review authorized ONE representative twin,
+    // not the batch: the record must show exactly one, and the
+    // total twin payload must sit inside the spec's +1.2MB gate.
+    expect(manifest.twins).toHaveLength(1)
+    const [twin] = manifest.twins
+    expect(twin.voice).toBe('lucian')
+    expect(twin.stage).toBe(6)
+    expect(twin.file).toBe('stage-lucian-6-refr.png')
+    expect(manifest.totals.twinBytes).toBe(twin.bytes)
+    expect(manifest.totals.twinBytes).toBeLessThanOrEqual(1.2 * 1024 * 1024)
+    // The twin is an addition, never a modification: its source
+    // stage's recorded bytes are the manifest's own stage record.
+    expect(twin.sourceBytes).toBe(manifest.voices.lucian.stageBytes[5])
+  })
+
+  it('the twin file is an intact half-resolution PNG of the recorded bytes', () => {
+    const [twin] = manifest.twins
+    const buf = readFileBytes(
+      new URL(`./assets/stages/${twin.file}`, import.meta.url),
+      'latin1',
+    )
+    expectPng(buf, twin.size[0], twin.size[1])
+    expect(twin.size).toEqual([
+      manifest.intermediateSize[0] / 2,
+      manifest.intermediateSize[1] / 2,
+    ])
+    expect(buf.length).toBe(twin.bytes)
+  })
+
+  it('the wiring carries the same one twin, standing from its stage onward', () => {
+    expect(STAGE_TWINS).toHaveLength(1)
+    const [twin] = STAGE_TWINS
+    expect(twin.voice).toBe('lucian')
+    expect(twin.stage).toBe(6)
+    expect(twin.src).toContain('stage-lucian-6-refr')
+    expect(twinForStage('lucian', 5)).toBeUndefined()
+    expect(twinForStage('lucian', 6)).toBe(twin)
+    expect(twinForStage('lucian', 12)).toBe(twin)
+    for (const v of VOICES) {
+      if (v !== 'lucian') expect(twinForStage(v, STAGE_COUNT)).toBeUndefined()
     }
   })
 })

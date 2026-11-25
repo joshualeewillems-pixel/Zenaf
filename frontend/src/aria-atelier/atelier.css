@@ -416,6 +416,14 @@
 .atelier-voice-layer img.ink {
   opacity: 1;
 }
+/* The refraction twin (dynamism spec §2.3): a blurred,
+   half-resolution copy of one stage, standing directly beneath
+   its ink at reduced alpha — an enhancement layer, never a
+   dependency. Its phase offset is written inline by the cast
+   view's animation loop. */
+.atelier-voice-layer img.ink-twin {
+  opacity: 0.35;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .atelier-cast-circle.forming .atelier-layer-stack {

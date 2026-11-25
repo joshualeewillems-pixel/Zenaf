@@ -62,6 +62,19 @@
  * subject, and the conversation. No paper anywhere: the stages
  * and fills are transparent, and the water shows through.
  *
+ * Dynamism (founder-reviewed spec, 2026-11-25): the formations'
+ * presence changes the water, and the water reveals their
+ * relationships. The field answers EVENTS — a cast landing, a
+ * seat responding, a formation arriving pulse the water through
+ * that seat's own wave basis (ResonanceField.pulse); a fill
+ * wash-in completing answers at half strength, as the rendering
+ * milestone it is. The layers also ride their voices' phases
+ * (buoyancy — EXPERIMENTAL, kept or removed by the founder's
+ * on-device comparison against the ?still=1 stationary cast), and
+ * one gated refraction twin stands beneath Lucian's ink
+ * (./stageTwins). Nothing here moves on a timer, a hover, or a
+ * scroll; under reduced motion none of it moves at all.
+ *
  * Governing design: zenaf-aria-atelier-language-definitions-2026-11-23.md
  * and the founder's Well specification, 2026-11-24.
  */
@@ -83,6 +96,7 @@ import {
   VOICES,
   VOICE_BY_ARCHETYPE,
   bringToFront,
+  buoyancyTransform,
   castInitiative,
   castLooseStone,
   castProject,
@@ -100,6 +114,8 @@ import {
   looseCairns,
   ringInitiatives,
   stageForDepth,
+  stillComparisonIn,
+  twinOffset,
   REPLAY_BASE_MS,
   REPLAY_COMPLETE_MS,
   REPLAY_HOLD_MS,
@@ -113,6 +129,7 @@ import {
   type Voice,
 } from './atelierLogic'
 import { STAGE_IMAGES } from './stageImages'
+import { twinForStage } from './stageTwins'
 import { ResonanceField } from './waterEngine'
 import './atelier.css'
 
@@ -284,6 +301,12 @@ export default function AriaAtelierView() {
   } | null>(null)
   const layoutsRef = useRef(new Map<string, PortedTowerLayout>())
   const fillImgRefs = useRef(new Map<Voice, HTMLImageElement>())
+  const layerRefs = useRef(new Map<Voice, HTMLDivElement>())
+  const twinImgRefs = useRef(new Map<Voice, HTMLImageElement>())
+  /** The last transform string written per layer (and per twin,
+   *  keyed `${voice}:twin`) — dynamism style writes happen only
+   *  when the value actually changes. */
+  const transformWritten = useRef(new Map<string, string>())
   const fillState = useRef<Record<Voice, number>>(
     Object.fromEntries(VOICES.map((v) => [v, 1])) as Record<Voice, number>,
   )
@@ -297,8 +320,24 @@ export default function AriaAtelierView() {
       startedAt: number
       phaseAt: number
     } | null
-  }>({ raf: 0, last: 0, replay: null })
+    /** Voices whose replay has finished and whose fill is now
+     *  washing in: when the fill reaches its graded target, the
+     *  wash-in is complete and the water answers at half strength
+     *  (the rendering-milestone response, dynamism spec §2.2). */
+    wash: Set<Voice>
+  }>({ raf: 0, last: 0, replay: null, wash: new Set() })
   const respondedFor = useRef<string | null>(null)
+  /* The still comparison (dynamism spec §2.1's perceptual gate):
+   * ?still=1, read ONCE at mount — acceptance tooling for the
+   * founder's on-device buoyancy verdict, never a control, never
+   * persisted. While set, every dynamism rendering is still:
+   * buoyancy transforms stay identity and the twin sits at zero
+   * offset. The water's own motion predates this pass and is not
+   * stilled. */
+  const [stillComparison] = useState(
+    () => typeof window !== 'undefined' && stillComparisonIn(window.location.search),
+  )
+  const buoyancyOn = !REDUCED_MOTION && !stillComparison
 
   const load = useCallback(async () => {
     setLoadError(null)
@@ -319,6 +358,8 @@ export default function AriaAtelierView() {
     if (!data) return
     if (!fieldRef.current) fieldRef.current = new ResonanceField()
     const field = fieldRef.current
+    /* Under reduced motion the field answers nothing (spec §4). */
+    field.reducedMotion = REDUCED_MOTION
     if (!field.available) return
     if (REDUCED_MOTION) {
       field.seek(20) /* the Movement II still */
@@ -362,6 +403,11 @@ export default function AriaAtelierView() {
   useEffect(() => {
     lastVoiceRef.current = lastVoice
   }, [lastVoice])
+
+  const orderRef = useRef(order)
+  useEffect(() => {
+    orderRef.current = order
+  }, [order])
 
   /* On a cast, load the subject conversation's recorded talk, then
      Aria responds: her layer comes forward and re-draws to her
@@ -408,6 +454,14 @@ export default function AriaAtelierView() {
       startedAt: performance.now(),
       phaseAt: performance.now(),
     }
+    stackAnim.current.wash.delete(voice)
+    /* Dynamism, record events (spec §2.2): a seat responding and
+     * its formation arriving are this one seam — the response IS
+     * the arrival — so the water answers once, at full strength,
+     * through the responding seat's own wave basis; the ripple
+     * beat fires on the arrival too. */
+    fieldRef.current?.pulse(voice, 1)
+    setRippleKey((k) => k + 1)
   }, [])
 
   useEffect(() => {
@@ -439,7 +493,38 @@ export default function AriaAtelierView() {
       const dt = Math.min(0.1, (now - anim.last) / 1000)
       anim.last = now
       const replay = anim.replay
+      const field = fieldRef.current
       for (const v of VOICES) {
+        /* Dynamism rendering rides this loop — no loop of its
+         * own (spec §3). Buoyancy: the voice's layer rides its
+         * own phase in the field, drift scaled by recency rank.
+         * The refraction twin (where one stands) additionally
+         * carries its phase offset. While the still comparison
+         * is in force — or under reduced motion — nothing is
+         * written at all: transforms stay identity and the twin
+         * sits at zero offset. */
+        if (buoyancyOn) {
+          const phase = field?.phaseOf(v) ?? 0
+          const rankFromFront = VOICES.length - 1 - orderRef.current.indexOf(v)
+          const layer = layerRefs.current.get(v)
+          if (layer) {
+            const t = buoyancyTransform(phase, rankFromFront)
+            const str = `translate(${t.dx}px, ${t.dy}px) scale(${t.scale.toFixed(4)})`
+            if (transformWritten.current.get(v) !== str) {
+              transformWritten.current.set(v, str)
+              layer.style.transform = str
+            }
+          }
+          const twin = twinImgRefs.current.get(v)
+          if (twin) {
+            const o = twinOffset(phase)
+            const str = `translate(${o.dx}px, ${o.dy}px)`
+            if (transformWritten.current.get(`${v}:twin`) !== str) {
+              transformWritten.current.set(`${v}:twin`, str)
+              twin.style.transform = str
+            }
+          }
+        }
         const img = fillImgRefs.current.get(v)
         if (!img) continue
         const target =
@@ -450,6 +535,15 @@ export default function AriaAtelierView() {
         if (next !== fillState.current[v]) {
           fillState.current[v] = next
           img.style.opacity = next.toFixed(3)
+        }
+        /* The wash-in completing is a RENDERING MILESTONE, not a
+         * record event (spec §2.2's event contract): the water
+         * answers it at half strength, once, and it is named as a
+         * milestone response here so no reader mistakes it for a
+         * fourth kind of meaning. */
+        if (anim.wash.has(v) && next === target) {
+          anim.wash.delete(v)
+          field?.pulse(v, 0.5)
         }
       }
       if (replay) {
@@ -476,6 +570,10 @@ export default function AriaAtelierView() {
           if (p >= 1) {
             stage = STAGE_COUNT
             anim.replay = null
+            /* The formation stands complete; its fill now washes
+             * in, and the wash's completion is tracked for the
+             * milestone response above. */
+            anim.wash.add(replay.voice)
           }
         }
         if (stage !== null) {
@@ -487,7 +585,7 @@ export default function AriaAtelierView() {
     }
     anim.raf = requestAnimationFrame(step)
     return () => cancelAnimationFrame(anim.raf)
-  }, [cast])
+  }, [cast, buoyancyOn])
 
   /* ------------------------------ casting --------------------------- */
 
@@ -503,6 +601,11 @@ export default function AriaAtelierView() {
         setOpenProjectId(null)
         setOpenInitiativeId(null)
         setPicked(null)
+        /* Dynamism, record event (spec §2.2): the cast lands.
+         * The water answers through Aria's own wave basis — the
+         * cast lands in her well, and her response follows as its
+         * own event. Full strength. */
+        fieldRef.current?.pulse('aria', 1)
       },
       REDUCED_MOTION ? 60 : 680,
     )
@@ -520,6 +623,7 @@ export default function AriaAtelierView() {
     setOrder(STACK_DEFAULT)
     setLastVoice(null)
     stackAnim.current.replay = null
+    stackAnim.current.wash.clear()
     setInkStages(
       Object.fromEntries(VOICES.map((v) => [v, STAGE_COUNT])) as Record<Voice, number>,
     )
@@ -856,6 +960,8 @@ export default function AriaAtelierView() {
             castWaterRef={castWaterRef}
             order={order}
             fillImgRefs={fillImgRefs}
+            layerRefs={layerRefs}
+            twinImgRefs={twinImgRefs}
             inkStages={inkStages}
             onReturn={returnToGarden}
           />
@@ -1211,6 +1317,8 @@ function CastView({
   castWaterRef,
   order,
   fillImgRefs,
+  layerRefs,
+  twinImgRefs,
   inkStages,
   onReturn,
 }: {
@@ -1220,6 +1328,12 @@ function CastView({
   castWaterRef: React.Ref<HTMLCanvasElement>
   order: Voice[]
   fillImgRefs: { current: Map<Voice, HTMLImageElement> }
+  /** Each voice's layer element — the animation loop writes the
+   *  buoyancy transform here (dynamism spec §2.1). */
+  layerRefs: { current: Map<Voice, HTMLDivElement> }
+  /** Each voice's refraction twin element, where one stands —
+   *  the loop writes its phase offset here (spec §2.3). */
+  twinImgRefs: { current: Map<Voice, HTMLImageElement> }
   /** Each voice's currently drawn stage (0 = nothing drawn yet). */
   inkStages: Record<Voice, number>
   onReturn: () => void
@@ -1243,30 +1357,56 @@ function CastView({
                 className="atelier-layer-stack"
                 style={{ height: `${FORMATION_SCALE * 100}%` }}
               >
-                {VOICES.map((v) => (
-                  <div
-                    key={v}
-                    className="atelier-voice-layer"
-                    data-layer={v}
-                    style={{ zIndex: order.indexOf(v) + 1 }}
-                  >
-                    <img
-                      className="fill"
-                      src={FILL_IMAGES[v]}
-                      alt=""
+                {VOICES.map((v) => {
+                  const twin = inkStages[v] > 0 ? twinForStage(v, inkStages[v]) : undefined
+                  return (
+                    <div
+                      key={v}
+                      className="atelier-voice-layer"
+                      data-layer={v}
+                      style={{ zIndex: order.indexOf(v) + 1 }}
                       ref={(el) => {
-                        if (el) fillImgRefs.current.set(v, el)
+                        if (el) layerRefs.current.set(v, el)
                       }}
-                    />
-                    {inkStages[v] > 0 ? (
+                    >
                       <img
-                        className="ink"
-                        src={STAGE_IMAGES[v][inkStages[v] - 1]}
+                        className="fill"
+                        src={FILL_IMAGES[v]}
                         alt=""
+                        ref={(el) => {
+                          if (el) fillImgRefs.current.set(v, el)
+                        }}
                       />
-                    ) : null}
-                  </div>
-                ))}
+                      {twin ? (
+                        <img
+                          className="ink-twin"
+                          src={twin.src}
+                          alt=""
+                          aria-hidden="true"
+                          ref={(el) => {
+                            if (el) twinImgRefs.current.set(v, el)
+                          }}
+                          onError={(e) => {
+                            /* The twin is an enhancement layer,
+                               never a dependency (spec §2.3): a
+                               twin that fails to load hides itself
+                               silently and the ink renders alone.
+                               A broken-image glyph must never
+                               appear. */
+                            e.currentTarget.style.display = 'none'
+                          }}
+                        />
+                      ) : null}
+                      {inkStages[v] > 0 ? (
+                        <img
+                          className="ink"
+                          src={STAGE_IMAGES[v][inkStages[v] - 1]}
+                          alt=""
+                        />
+                      ) : null}
+                    </div>
+                  )
+                })}
               </div>
             </div>
             <span className="atelier-cast-shade" aria-hidden="true" />

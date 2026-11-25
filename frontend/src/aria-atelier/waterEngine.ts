@@ -17,6 +17,17 @@
  * The engine is fail-soft: where a 2d canvas is unavailable (jsdom),
  * `available` is false and every method is a no-op, so the surface
  * renders its structure without the water rather than crashing.
+ *
+ * Dynamism (founder-reviewed spec, 2026-11-25 — the Atelier
+ * dynamism pass): the field gains exactly one event input and one
+ * read. `pulse(voice)` perturbs the water through that seat's OWN
+ * wave basis — a decaying envelope multiplied into the seat's score
+ * amplitude, never overwriting the score — so an arriving formation
+ * visibly disturbs the standing interference pattern and the pattern
+ * re-forms including it as the envelope settles. `phaseOf(voice)`
+ * exposes the seat's integrated phase, read-only, for the cast
+ * view's buoyancy and refraction-offset rendering. Nothing else
+ * about the study's engine changes.
  */
 
 type SeatDef = {
@@ -120,6 +131,27 @@ function lerp(a: number, b: number, f: number): number {
   return a + (b - a) * f
 }
 
+/* The pulse envelope (dynamism spec §2.2): peak +30% of the seat's
+ * own amplitude, exponential decay with a 0.5s time constant —
+ * e^(−2.5/0.5) ≈ 0.67% residue at 2.5s, inside the spec's <1% gate.
+ * (Rev 1 of the spec carried τ ≈ 1.2s, which leaves ≈12.5% at 2.5s
+ * and contradicted its own gate; the founder's review caught it.
+ * The corrected constant is the one the gate was written for.) */
+export const PULSE_TAU_SECONDS = 0.5
+export const PULSE_PEAK = 0.3
+
+/** The pulse envelope's value `elapsedSeconds` after it starts:
+ *  1 at the event, decaying exponentially toward 0. Pure — the
+ *  gate arithmetic lives here so tests assert it directly. */
+export function pulseEnvelope(elapsedSeconds: number): number {
+  if (elapsedSeconds <= 0) return 1
+  return Math.exp(-elapsedSeconds / PULSE_TAU_SECONDS)
+}
+
+const SEAT_INDEX: Record<string, number> = Object.fromEntries(
+  SEAT_BASE.map((s, i) => [s.id, i]),
+)
+
 const MW = 1000
 const MH = 1320
 const GW = 352
@@ -135,6 +167,12 @@ type Score = { A: Float64Array; K: Float64Array; omegaJ: number; kJ: number; mov
 
 export class ResonanceField {
   available = false
+  /** Set by the view from its reduced-motion read: while true,
+   *  `pulse` is a no-op (dynamism spec §4 — under reduced motion
+   *  the water answers nothing). */
+  reducedMotion = false
+  private pulseEnv = new Float64Array(N)
+  private pulsePeak = new Float64Array(N)
   private canvas: HTMLCanvasElement | null = null
   private ctx: CanvasRenderingContext2D | null = null
   private img: ImageData | null = null
@@ -244,10 +282,68 @@ export class ResonanceField {
       const d = (tLoop - 15) / 0.9
       _A[JYNX] = Math.min(1, _A[JYNX] + 0.15 * Math.exp(-d * d))
     }
+    /* The pulse envelopes ride on top of the score: each active
+     * envelope multiplies its own seat's amplitude in — the score
+     * itself is recomputed from the movement matrices on every
+     * call, so nothing here overwrites or persists into it. */
+    for (let i = 0; i < N; i++) {
+      if (this.pulseEnv[i] > 0) _A[i] *= 1 + this.pulsePeak[i] * this.pulseEnv[i]
+    }
     return score
   }
 
+  /** A seat's integrated phase — read-only. Zero for an unknown
+   *  voice, and zero on an unavailable field (its phases never
+   *  integrated), which is the spec's §4 degradation: the cast
+   *  view's phase-driven rendering settles to identity. */
+  phaseOf(voice: string): number {
+    const i = SEAT_INDEX[voice]
+    return i === undefined ? 0 : this.phi[i]
+  }
+
+  /**
+   * Perturb the water through one seat's own wave basis (dynamism
+   * spec §2.2): the seat's amplitude in the score is strengthened
+   * by up to PULSE_PEAK × `strength` under an envelope that starts
+   * at 1 and decays with PULSE_TAU_SECONDS, integrated in the
+   * field's frame step. One envelope per seat — a re-pulse
+   * restarts it; envelopes never stack. The view fires this ONLY
+   * on the spec's event contract: record events at full strength
+   * (a cast lands; a seat responds; a formation arrives) and the
+   * one rendering milestone — a fill wash-in completing — at half
+   * strength. Under reduced motion this is a no-op.
+   */
+  pulse(voice: string, strength = 1) {
+    if (this.reducedMotion) return
+    const i = SEAT_INDEX[voice]
+    if (i === undefined) return
+    const s = Math.max(0, Math.min(1, strength))
+    this.pulseEnv[i] = 1
+    this.pulsePeak[i] = PULSE_PEAK * s
+  }
+
+  /** The seat's live pulse state (envelope value and peak
+   *  fraction), or null for an unknown voice. Read-only; the
+   *  envelope's decay is asserted against this in tests. */
+  pulseOf(voice: string): { envelope: number; peak: number } | null {
+    const i = SEAT_INDEX[voice]
+    if (i === undefined) return null
+    return { envelope: this.pulseEnv[i], peak: this.pulsePeak[i] }
+  }
+
   private stepPhases(dt: number) {
+    /* The envelopes decay inside the field's existing frame
+     * step — no new loop, no timer. Below 0.1% the envelope is
+     * done and its state is cleared outright. */
+    for (let i = 0; i < N; i++) {
+      if (this.pulseEnv[i] > 0) {
+        this.pulseEnv[i] *= Math.exp(-dt / PULSE_TAU_SECONDS)
+        if (this.pulseEnv[i] < 0.001) {
+          this.pulseEnv[i] = 0
+          this.pulsePeak[i] = 0
+        }
+      }
+    }
     const sc = this.getScore(this.tAbs)
     const K = sc.K
     const dphi = new Float64Array(N)

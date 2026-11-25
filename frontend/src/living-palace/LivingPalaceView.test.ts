@@ -114,8 +114,13 @@ const EMPTY_READ = {
   },
   kintsugi: null,
   guests: { attending: [] },
+  pending: [],
 }
 let attributedPayload: unknown = EMPTY_READ
+
+/** Every POST the view makes, recorded by the fetch stub: the
+ *  verdict door's acts are asserted against the real routes. */
+const posts: { url: string; body: unknown }[] = []
 
 function installFetchStub() {
   const routes: Record<string, unknown> = {
@@ -151,8 +156,12 @@ function installFetchStub() {
   }
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (input: unknown) => {
+    vi.fn(async (input: unknown, init?: { method?: string; body?: string }) => {
       const url = String(input)
+      if (init?.method === 'POST') {
+        posts.push({ url, body: init.body ? JSON.parse(init.body) : undefined })
+        return jsonResponse({})
+      }
       if (url.includes('/attributed-read/')) return jsonResponse(attributedPayload)
       for (const [path, body] of Object.entries(routes)) {
         if (url.endsWith(path)) return jsonResponse(body)
@@ -204,6 +213,7 @@ function lastChat() {
 
 beforeEach(() => {
   chatProps.length = 0
+  posts.length = 0
   attributedPayload = EMPTY_READ
   installFetchStub()
 })
@@ -455,5 +465,186 @@ describe('Living Palace — the attributed read', () => {
     expect(panel!.textContent).toContain('No Sunday deliveries, ever.')
     // The standing honesty remains: no per-subject boundary record exists.
     expect(panel!.textContent).toContain('No boundary is recorded against this room itself')
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* the verdict door — Slice 1                                          */
+/* ------------------------------------------------------------------ */
+
+const READ_WITH_PENDING = {
+  ...EMPTY_READ,
+  steward_gate_open: true,
+  boundaries: {
+    ...EMPTY_READ.boundaries,
+    proposed: [
+      {
+        thread_id: 'th1',
+        thread_title: 'The boundary thread',
+        reading_id: 'ra',
+        author: 'steward',
+        author_name: 'The Steward',
+        status: 'accepted',
+        placement: 'current',
+        currency_labels: [],
+        tensions: ['The old yard reading stands.'],
+        open_questions: [],
+      },
+    ],
+  },
+  kintsugi: {
+    threads: [
+      {
+        thread_id: 'th1',
+        thread_title: 'The boundary thread',
+        readings: [
+          {
+            reading_id: 'ra',
+            author: 'steward',
+            status: 'accepted',
+            placement: 'current',
+            currency_labels: [],
+            tensions: ['The old yard reading stands.'],
+            open_questions: [],
+          },
+        ],
+        reconsiderations: [],
+      },
+    ],
+    restoration_of_understanding: false,
+  },
+  pending: [
+    {
+      item_id: 'reading:rp',
+      item_kind: 'reading',
+      thread_id: 'th1',
+      surface: 'queue_card',
+      status: 'proposed',
+      title: 'The boundary thread',
+      payload: {
+        reading: { tensions: ['A tension awaiting your word'], open_questions: [] },
+        evidence_refs: [{ kind: 'event', ref_id: 'evt-9' }],
+        currency: { placement: 'current', labels: [] },
+      },
+    },
+    {
+      item_id: 'correspondence:c1',
+      item_kind: 'correspondence',
+      thread_id: 'th1',
+      surface: 'queue_card',
+      status: 'proposed',
+      title: 'The boundary thread',
+      payload: {
+        thread_ids: ['th1', 'th2'],
+        structural_tension: 'patience vs avoidance',
+        proposed_relationship: '',
+        limitations: '',
+        evidence_refs: [],
+      },
+    },
+  ],
+}
+
+describe('Living Palace — the verdict door', () => {
+  it('pending items rest at the threshold with their evidence — and nowhere else', async () => {
+    attributedPayload = READ_WITH_PENDING
+    await render()
+    await descendToGamma()
+    // Not on the world, not in any other panel: only at the door.
+    expect(container.textContent).not.toContain('A tension awaiting your word')
+    await click('palace-boundaries-button')
+    const section = container.querySelector('[data-testid="palace-pending-section"]')
+    expect(section).not.toBeNull()
+    expect(section!.textContent).toContain('A tension awaiting your word')
+    expect(section!.textContent).toContain('Grounded in: event:evt-9')
+    expect(section!.textContent).toContain('Currency: current')
+    expect(section!.textContent).toContain('patience vs avoidance')
+    expect(
+      container.querySelector('[data-testid="palace-pending-item-threshold-reading:rp"]'),
+    ).not.toBeNull()
+    // No counts, no badges — resting material is not a backlog.
+    expect(container.querySelector('[data-testid*="badge"]')).toBeNull()
+    expect(container.querySelector('[data-testid*="count"]')).toBeNull()
+    expect(section!.textContent).not.toMatch(/\d+\s+(undecided|pending|awaiting)/i)
+  })
+
+  it('each act posts to its own route of the one mechanism', async () => {
+    attributedPayload = READ_WITH_PENDING
+    await render()
+    await descendToGamma()
+    await click('palace-boundaries-button')
+    // Endorse is a reading annotation: offered on the reading,
+    // never on the correspondence.
+    expect(container.querySelector('[data-testid="palace-review-endorse-reading:rp"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="palace-review-endorse-correspondence:c1"]')).toBeNull()
+    await click('palace-review-accept-reading:rp')
+    await click('palace-review-reject-correspondence:c1')
+    await click('palace-review-unresolve-reading:rp')
+    await click('palace-review-endorse-reading:rp')
+    const urls = posts.map((p) => p.url)
+    expect(urls.some((u) => u.endsWith('/steward/review/reading/rp/accept'))).toBe(true)
+    expect(urls.some((u) => u.endsWith('/steward/review/correspondence/c1/reject'))).toBe(true)
+    expect(urls.some((u) => u.endsWith('/steward/review/reading/rp/unresolve'))).toBe(true)
+    const endorse = posts.find((p) => p.url.endsWith('/steward/review/reading/rp/endorse'))
+    expect(endorse?.body).toEqual({ stance: 'endorsed', note: '' })
+  })
+
+  it('explore carries the item into the strand thread the visitor chooses', async () => {
+    attributedPayload = READ_WITH_PENDING
+    await render()
+    await descendToGamma()
+    await click('palace-boundaries-button')
+    await click('palace-review-explore-correspondence:c1')
+    expect(
+      container.querySelector('[data-testid="palace-explore-strands-correspondence:c1"]'),
+    ).not.toBeNull()
+    await click('palace-explore-strand-correspondence:c1-hands')
+    const explore = posts.find((p) => p.url.includes('/explore'))
+    expect(explore?.url).toContain('/steward/review/correspondence/c1/explore')
+    expect(explore?.body).toEqual({ strand_key: 'hands' })
+  })
+
+  it('the vessel holds the readings’ share, and the ask sends his words verbatim', async () => {
+    attributedPayload = READ_WITH_PENDING
+    await render()
+    await descendToGamma()
+    await click('palace-room-vessel')
+    const vesselPanel = container.querySelector('[data-testid="palace-vessel-panel"]')
+    expect(vesselPanel).not.toBeNull()
+    const door = container.querySelector('[data-testid="palace-vessel-pending"]')
+    expect(door).not.toBeNull()
+    expect(
+      container.querySelector('[data-testid="palace-pending-item-vessel-reading:rp"]'),
+    ).not.toBeNull()
+    // The correspondence rests at the threshold, not at the vessel.
+    expect(door!.textContent).not.toContain('patience vs avoidance')
+    // The ask: his cause, in his own words, sent exactly as written.
+    await click('palace-reconsider-open-ra')
+    const ta = container.querySelector(
+      '[data-testid="palace-reconsider-text-ra"]',
+    ) as HTMLTextAreaElement
+    expect(ta).not.toBeNull()
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      'value',
+    )!.set!
+    await act(async () => {
+      setter.call(ta, 'The facts moved on Tuesday.')
+      ta.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await click('palace-reconsider-send-ra')
+    const ask = posts.find((p) => p.url.includes('/reconsider'))
+    expect(ask?.url).toContain('/steward/review/reading/ra/reconsider')
+    expect(ask?.body).toEqual({ reason: 'The facts moved on Tuesday.' })
+  })
+
+  it('an empty read opens no door: no pending section, the vessel keeps its toast', async () => {
+    await render()
+    await descendToGamma()
+    await click('palace-boundaries-button')
+    expect(container.querySelector('[data-testid="palace-pending-section"]')).toBeNull()
+    await click('palace-room-vessel')
+    expect(container.querySelector('[data-testid="palace-vessel-panel"]')).toBeNull()
+    expect(container.querySelector('[data-testid="palace-toast"]')).not.toBeNull()
   })
 })

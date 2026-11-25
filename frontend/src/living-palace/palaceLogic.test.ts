@@ -30,10 +30,15 @@ import {
   buildFloor,
   buildRoom,
   composeBoundaryPanel,
+  composeSubjectPending,
   composeSubjectThresholds,
   composeVesselHeld,
   councilFlameColors,
   growthOf,
+  pendingActs,
+  pendingEvidenceRefs,
+  pendingSummaryLines,
+  vesselPending,
   type AttributedRead,
   type PalaceData,
 } from './palaceLogic'
@@ -430,6 +435,39 @@ const READ: AttributedRead = {
       { seat: 'champion', seat_name: 'Valen', via: ['conversation'] },
     ],
   },
+  pending: [
+    {
+      item_id: 'reading:r2',
+      item_kind: 'reading',
+      thread_id: 'th1',
+      surface: 'queue_card',
+      status: 'proposed',
+      title: 'The boundary thread',
+      payload: {
+        reading: { tensions: ['A newer tension, awaiting a word'], open_questions: [] },
+        evidence_refs: [{ kind: 'event', ref_id: 'evt-1' }],
+        currency: { placement: 'current', labels: ['emerging'] },
+      },
+    },
+    {
+      item_id: 'reconsideration:rcn1',
+      item_kind: 'reconsideration',
+      thread_id: 'th1',
+      surface: 'queue_card',
+      status: 'proposed',
+      title: 'The boundary thread',
+      payload: { reading_id: 'r1', reason: 'The delivery facts changed.' },
+    },
+    {
+      item_id: 'birth:th9',
+      item_kind: 'birth',
+      thread_id: 'th9',
+      surface: 'queue_card',
+      status: 'nascent',
+      title: 'A proposed thread',
+      payload: { scope: '', origin: 'steward_proposal', strand_weights: {} },
+    },
+  ],
 }
 
 describe('attributed read composition', () => {
@@ -459,7 +497,9 @@ describe('attributed read composition', () => {
     expect(held.tensions).toEqual([
       { author: 'skeptic', text: 'Sundays keep colliding with deliveries' },
     ])
-    expect(held.openReconsiderations).toEqual([{ reason: 'The delivery facts changed.' }])
+    expect(held.openReconsiderations).toEqual([
+      { reading_id: 'r1', reason: 'The delivery facts changed.' },
+    ])
     expect(held.hasMaterial).toBe(true)
   })
 
@@ -469,5 +509,57 @@ describe('attributed read composition', () => {
     const held = composeVesselHeld(closed)
     expect(held.hasMaterial).toBe(false)
     expect(held.restorationOfUnderstanding).toBe(false)
+  })
+
+  it('the vessel names its accepted readings for the reconsideration ask', () => {
+    // READ's kintsugi readings are proposed, not accepted: no ask.
+    expect(composeVesselHeld(READ).acceptedReadings).toEqual([])
+    const withAccepted: AttributedRead = {
+      ...READ,
+      kintsugi: {
+        ...READ.kintsugi!,
+        threads: READ.kintsugi!.threads.map((t) => ({
+          ...t,
+          readings: t.readings.map((r) =>
+            r.reading_id === 'r1' ? { ...r, status: 'accepted' } : r,
+          ),
+        })),
+      },
+    }
+    expect(composeVesselHeld(withAccepted).acceptedReadings).toEqual([
+      {
+        reading_id: 'r1',
+        author: 'skeptic',
+        label: 'Sundays keep colliding with deliveries',
+      },
+    ])
+  })
+})
+
+describe('the verdict door composition (Slice 1)', () => {
+  it('the threshold carries every pending kind; the vessel only readings and candidacies', () => {
+    expect(composeSubjectPending(READ).map((i) => i.item_kind)).toEqual([
+      'reading',
+      'reconsideration',
+      'birth',
+    ])
+    expect(vesselPending(READ).map((i) => i.item_kind)).toEqual(['reading', 'reconsideration'])
+    expect(composeSubjectPending(null)).toEqual([])
+    expect(composeSubjectPending({ ...READ, resolved: false })).toEqual([])
+  })
+
+  it('acts follow the routes: endorse is reading-only, explore rides three kinds', () => {
+    const [reading, candidacy, birth] = composeSubjectPending(READ)
+    expect(pendingActs(reading)).toEqual({ endorse: true, explore: true })
+    expect(pendingActs(candidacy)).toEqual({ endorse: false, explore: false })
+    expect(pendingActs(birth)).toEqual({ endorse: false, explore: false })
+  })
+
+  it('evidence refs are read as recorded — rows, strings, and nothing invented', () => {
+    const [reading, candidacy] = composeSubjectPending(READ)
+    expect(pendingEvidenceRefs(reading)).toEqual(['event:evt-1'])
+    expect(pendingEvidenceRefs(candidacy)).toEqual([])
+    expect(pendingSummaryLines(reading)).toEqual(['A newer tension, awaiting a word'])
+    expect(pendingSummaryLines(candidacy)).toEqual(['The delivery facts changed.'])
   })
 })

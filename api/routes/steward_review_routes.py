@@ -17,6 +17,14 @@ verdicts live here. Endpoints:
   progression reading, fitting, or correspondence into a strand
   thread as a strand source. No verdict, no state change on the
   proposal — exploration is a user act, not an establishment.
+- ``POST /steward/review/reading/{row_id}/reconsider`` — the
+  visitor's reconsideration request (Verdict Slice 1): opens a
+  candidacy over an ACCEPTED reading through
+  ``store.propose_reading_reconsideration``, whose record and
+  verdict routing already existed — this route is its first
+  production writer. The visitor's cause is preserved verbatim
+  as the candidacy's reason; the candidacy is born ``proposed``
+  and is itself verdicted through the routes above.
 
 Authentication mirrors ``steward_routes``: the current user only,
 via ``get_current_user``. Unknown ids and other users' ids are
@@ -194,6 +202,69 @@ def endorse_card_reading(
                 ) from exc
             raise HTTPException(status_code=400, detail=message) from exc
         return {"item_kind": "card_endorsement", "annotation": annotation}
+    finally:
+        store.close()
+
+
+# -- Reconsideration requests (Verdict Slice 1 — the Palace door) ------------
+#
+# The one creation path this surface was missing. The visitor,
+# meeting an accepted reading in a world (first: Maeve's Palace,
+# at the Kintsugi vessel), asks for it to be looked at again and
+# gives his cause in his own words — new evidence, or his
+# disagreement. The cause is preserved VERBATIM as the candidacy's
+# reason: it is his objection, direct evidence, never paraphrased.
+# The candidacy is NOT a verdict and not an un-acceptance: the
+# reading keeps its accepted status and byte-identical content
+# while the candidacy pends, and the candidacy itself is verdicted
+# (affirm / dismiss) through the verdict routes above. An empty
+# cause is refused without writing anything — a request with no
+# reason stated is not a candidacy, it is a shrug.
+
+
+class ReconsiderationBody(BaseModel):
+    reason: str
+
+
+@router.post("/reading/{row_id}/reconsider", status_code=200)
+def request_reading_reconsideration(
+    row_id: str,
+    body: ReconsiderationBody,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Open a reconsideration candidacy over one accepted reading."""
+    if not body.reason.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="a reconsideration request carries its cause, in your own words",
+        )
+    store = get_narrative_store()
+    try:
+        try:
+            record = store.propose_reading_reconsideration(
+                current_user["id"], row_id, body.reason
+            )
+        except ValueError as exc:
+            message = str(exc)
+            if message.startswith("unknown reading"):
+                # Unknown ids and other users' ids are
+                # indistinguishable: identical 404, no id echoed.
+                raise HTTPException(
+                    status_code=404, detail="unknown reading"
+                ) from exc
+            raise HTTPException(status_code=400, detail=message) from exc
+        return {
+            "item_kind": "reconsideration",
+            "reconsideration": {
+                "id": record.id,
+                "reading_id": record.reading_id,
+                "thread_id": record.thread_id,
+                "reason": record.reason,
+                "status": record.status,
+                "created_at": record.created_at,
+                "decided_at": record.decided_at,
+            },
+        }
     finally:
         store.close()
 

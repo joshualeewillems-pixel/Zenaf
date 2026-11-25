@@ -29,6 +29,17 @@ attributing every item to the home it came from:
   affinity — bench_foliage's discipline) and the seats whose
   conversations attend the subject (context_preparation's scan).
 
+* **Pending verdict material** (Verdict Slice 1) — the review
+  layer's pending set (``review.pending_review_items``: steward
+  proposals of all eight kinds, born ``proposed``) filtered to the
+  items whose thread names this subject, serialized exactly as the
+  review routes serve them. This is the Palace door's material: the
+  read only *shows* it (under the same mirrored gates as the other
+  steward material); every ruling act stays in the review routes
+  themselves, which are the visitor's own and need no gate to be
+  his. The read proposes no verdict surface of its own and filters
+  by the one linkage — it does not become a second pending set.
+
 This is NOT a second intelligence: it composes the existing narrative
 architecture and record homes, writes nothing, and invents nothing.
 Owner-scoped throughout; every failure mode reads as empty, never an
@@ -54,6 +65,7 @@ from local_ai.followthrough.store import FollowthroughStore
 from local_ai.narrative import consent as _consent
 from local_ai.narrative.context import CONTEXT_THREAD_STATUSES, pencil_context_enabled
 from local_ai.narrative.currency import derive_currency
+from local_ai.narrative.review import pending_review_items
 from local_ai.narrative.store import NarrativeStore
 from local_ai.permissions.home import permission_home_state
 from local_ai.strand_interviews.keys import DESIGN_STRAND_KEYS
@@ -100,6 +112,7 @@ def _empty_read(entity_type: str, entity_id: str) -> dict[str, Any]:
         },
         "kintsugi": None,
         "guests": {"attending": []},
+        "pending": [],
     }
 
 
@@ -140,6 +153,62 @@ def _standing_threads_naming(
             continue
         if len(out) >= _THREAD_CAP:
             break
+    return out
+
+
+def _pending_items(
+    store: NarrativeStore, user_id: str, subject_ref: str, entity_id: str
+) -> list[dict[str, Any]]:
+    """The subject's pending steward proposals: the review layer's
+    whole-user pending set, filtered by the same thread-names-the-
+    subject linkage the rest of this read uses (a correspondence is
+    attributed when ANY thread it cites names the subject). Unlike
+    the carriage sections, the filter is not restricted to standing
+    threads: a steward-proposed birth lives on a nascent thread, and
+    ruling on what names his subject is the threshold's own act.
+    Serialized in the review routes' own item shape — the door's
+    acts post back to those routes by (kind, row id)."""
+    out: list[dict[str, Any]] = []
+    try:
+        items = pending_review_items(store, user_id)
+    except Exception:  # noqa: BLE001
+        return out
+    thread_cache: dict[str, Any] = {}
+    for item in items:
+        try:
+            thread_ids = [item.thread_id]
+            if item.item_kind == "correspondence":
+                for tid in (item.payload or {}).get("thread_ids") or []:
+                    if tid and tid not in thread_ids:
+                        thread_ids.append(str(tid))
+            named = False
+            for tid in thread_ids:
+                if tid not in thread_cache:
+                    try:
+                        thread_cache[tid] = store.get_thread(user_id, tid)
+                    except Exception:  # noqa: BLE001
+                        thread_cache[tid] = None
+                thread = thread_cache[tid]
+                if thread is not None and _cp._thread_names_subject(
+                    store, user_id, thread, subject_ref, entity_id
+                ):
+                    named = True
+                    break
+            if not named:
+                continue
+            out.append(
+                {
+                    "item_id": item.item_id,
+                    "item_kind": item.item_kind,
+                    "thread_id": item.thread_id,
+                    "surface": item.surface,
+                    "status": item.status,
+                    "title": item.title,
+                    "payload": item.payload,
+                }
+            )
+        except Exception:  # noqa: BLE001 — one bad item never sinks the read
+            continue
     return out
 
 
@@ -402,6 +471,9 @@ def attributed_read_for_subject(
             except Exception:  # noqa: BLE001
                 store = None
         if store is not None:
+            read["pending"] = _pending_items(
+                store, user_id, subject_ref, entity_id
+            )
             threads = _standing_threads_naming(
                 store, user_id, subject_ref, entity_id
             )

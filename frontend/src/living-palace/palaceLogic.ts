@@ -559,10 +559,43 @@ export interface AttendingSeat {
   via: Array<'conversation' | 'reading'>
 }
 
+/** One pending steward proposal naming the subject — a review item
+ *  in the review routes' own served shape (Verdict Slice 1). The
+ *  item is BORN proposed and rests undecided until the visitor
+ *  rules through those routes; this model carries it, it does not
+ *  judge it. Payloads are kind-shaped; the helpers below read them
+ *  defensively and never invent fields. */
+export interface PendingReviewItem {
+  item_id: string
+  item_kind: string
+  thread_id: string
+  surface: string
+  status: string
+  title: string
+  payload: {
+    reading?: { tensions?: string[]; open_questions?: string[]; milestones?: string[] }
+    evidence_refs?: unknown[]
+    currency?: { placement: string; labels: string[] }
+    kind?: string
+    reason?: string | null
+    reading_id?: string
+    lens_id?: string
+    structural_tension?: string
+    proposed_relationship?: string
+    limitations?: string
+    thread_ids?: string[]
+    [key: string]: unknown
+  }
+}
+
 export interface AttributedRead {
   resolved: boolean
   subject: { entity_type: string; entity_id: string; title: string } | null
   steward_gate_open: boolean
+  /** The subject's pending review items (Verdict Slice 1) — the
+   *  Palace door's material. Empty when the steward gate is closed
+   *  or when nothing undecided names this subject. */
+  pending: PendingReviewItem[]
   boundaries: {
     expressed: unknown[]
     proposed: AttributedProposedItem[]
@@ -626,7 +659,13 @@ export function composeSubjectThresholds(read: AttributedRead | null): SubjectTh
 export interface VesselHeldModel {
   openQuestions: { author: string; text: string }[]
   tensions: { author: string; text: string }[]
-  openReconsiderations: { reason: string }[]
+  openReconsiderations: { reading_id: string; reason: string }[]
+  /** The subject's CURRENT readings that stand ACCEPTED — the
+   *  material a reconsideration request can be made from (Verdict
+   *  Slice 1). A request opens a candidacy; it never un-accepts.
+   *  The label is the reading's own first held line, so the door
+   *  names the reading by what it says, not by an id. */
+  acceptedReadings: { reading_id: string; author: string; label: string }[]
   restorationOfUnderstanding: boolean
   hasMaterial: boolean
 }
@@ -636,6 +675,7 @@ export function composeVesselHeld(read: AttributedRead | null): VesselHeldModel 
     openQuestions: [],
     tensions: [],
     openReconsiderations: [],
+    acceptedReadings: [],
     restorationOfUnderstanding: false,
     hasMaterial: false,
   }
@@ -643,14 +683,24 @@ export function composeVesselHeld(read: AttributedRead | null): VesselHeldModel 
   const openQuestions: VesselHeldModel['openQuestions'] = []
   const tensions: VesselHeldModel['tensions'] = []
   const openReconsiderations: VesselHeldModel['openReconsiderations'] = []
+  const acceptedReadings: VesselHeldModel['acceptedReadings'] = []
   for (const thread of read.kintsugi.threads) {
     for (const reading of thread.readings) {
       if (reading.placement !== 'current') continue
       for (const text of reading.open_questions) openQuestions.push({ author: reading.author, text })
       for (const text of reading.tensions) tensions.push({ author: reading.author, text })
+      if (reading.status === 'accepted') {
+        acceptedReadings.push({
+          reading_id: reading.reading_id,
+          author: reading.author,
+          label: reading.tensions[0] ?? reading.open_questions[0] ?? 'A reading of this subject',
+        })
+      }
     }
     for (const rec of thread.reconsiderations) {
-      if (rec.status === 'proposed') openReconsiderations.push({ reason: rec.reason })
+      if (rec.status === 'proposed') {
+        openReconsiderations.push({ reading_id: rec.reading_id, reason: rec.reason })
+      }
     }
   }
   const restorationOfUnderstanding = read.kintsugi.restoration_of_understanding
@@ -658,6 +708,7 @@ export function composeVesselHeld(read: AttributedRead | null): VesselHeldModel 
     openQuestions,
     tensions,
     openReconsiderations,
+    acceptedReadings,
     restorationOfUnderstanding,
     hasMaterial:
       openQuestions.length > 0 ||
@@ -665,4 +716,101 @@ export function composeVesselHeld(read: AttributedRead | null): VesselHeldModel 
       openReconsiderations.length > 0 ||
       restorationOfUnderstanding,
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* the verdict door — pending review items (Verdict Slice 1)           */
+/*                                                                     */
+/* The Palace is a DOOR into the one review mechanism, not a second  */
+/* one: these composers only shape what the attributed read already  */
+/* filtered to this subject. Every ruling act posts to the existing  */
+/* steward review routes (palaceApi); nothing here transitions any   */
+/* state, counts anything, or ranks anything. Undecided material     */
+/* rests — resting is a legitimate state, not a backlog.             */
+/* ------------------------------------------------------------------ */
+
+/** All pending items naming the subject — what rests at its
+ *  threshold. Order is the review layer's own (oldest first). */
+export function composeSubjectPending(read: AttributedRead | null): PendingReviewItem[] {
+  if (!read || !read.resolved) return []
+  return read.pending ?? []
+}
+
+/** The vessel's share of the pending set: the readings and the
+ *  reconsideration candidacies — the material the vessel holds. */
+export function vesselPending(read: AttributedRead | null): PendingReviewItem[] {
+  return composeSubjectPending(read).filter(
+    (item) => item.item_kind === 'reading' || item.item_kind === 'reconsideration',
+  )
+}
+
+/** Which acts the built routes serve for an item, beyond the three
+ *  verdicts every kind takes: endorsement is a reading annotation
+ *  (not a verdict); exploration rides the Explore-with-Aria bridge
+ *  for readings, fittings, and correspondences only. */
+export function pendingActs(item: PendingReviewItem): { endorse: boolean; explore: boolean } {
+  return {
+    endorse: item.item_kind === 'reading',
+    explore:
+      item.item_kind === 'reading' ||
+      item.item_kind === 'fitting' ||
+      item.item_kind === 'correspondence',
+  }
+}
+
+/** The item's evidentiary basis, as recorded refs (DE-1: a ruling
+ *  is taken with the basis in front of him). Refs are served as
+ *  {kind, ref_id} rows or plain strings; anything else is not
+ *  evidence and is not dressed as any. */
+export function pendingEvidenceRefs(item: PendingReviewItem): string[] {
+  const refs = item.payload?.evidence_refs
+  if (!Array.isArray(refs)) return []
+  const out: string[] = []
+  for (const ref of refs) {
+    if (typeof ref === 'string' && ref) {
+      out.push(ref)
+    } else if (ref && typeof ref === 'object') {
+      const row = ref as { kind?: unknown; ref_id?: unknown }
+      if (typeof row.ref_id === 'string' && row.ref_id) {
+        out.push(typeof row.kind === 'string' && row.kind ? `${row.kind}:${row.ref_id}` : row.ref_id)
+      }
+    }
+  }
+  return out
+}
+
+/** The item's substance, in its own recorded words — what the
+ *  visitor is actually being asked to rule on. */
+export function pendingSummaryLines(item: PendingReviewItem): string[] {
+  const p = item.payload ?? {}
+  const lines: string[] = []
+  if (item.item_kind === 'reading') {
+    for (const t of p.reading?.tensions ?? []) lines.push(t)
+    for (const q of p.reading?.open_questions ?? []) lines.push(q)
+  } else if (item.item_kind === 'reconsideration') {
+    if (p.reason) lines.push(p.reason)
+  } else if (item.item_kind === 'correspondence') {
+    if (p.structural_tension) lines.push(p.structural_tension)
+    if (p.proposed_relationship) lines.push(p.proposed_relationship)
+    if (p.limitations) lines.push(p.limitations)
+  } else if (item.item_kind === 'oversight') {
+    if (p.reason) lines.push(p.reason)
+  } else if (item.item_kind === 'change') {
+    if (p.reason) lines.push(p.reason)
+  } else if (item.item_kind === 'fitting') {
+    if (p.lens_id) lines.push(`The ${p.lens_id} lens, offered for this thread.`)
+  }
+  return lines
+}
+
+/** The door's name for each kind, in the house's register. */
+export const PENDING_KIND_LABELS: Record<string, string> = {
+  birth: 'A thread the Steward proposes',
+  reading: 'A reading the Steward offers',
+  change: 'A change proposed on a thread',
+  fitting: 'A way of seeing, offered',
+  revision: 'A schedule revision awaiting your word',
+  oversight: 'An observation from oversight',
+  correspondence: 'A correspondence between threads',
+  reconsideration: 'A request to look again',
 }

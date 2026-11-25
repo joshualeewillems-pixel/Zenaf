@@ -722,6 +722,11 @@ export interface SceneModel {
   elementsByHandle: Map<string, BenchElement>
   discussion: Map<string, string[]>
   branches: SceneBranchInfo[]
+  /** Record twigs (tasks) — same per-record paint facts as a
+   *  branch: jin, §9 width, wire colour. Their wood, fan twigs and
+   *  foliage pads all carry the task's handle, so the painters
+   *  below look branches and twigs up in one map. */
+  twigs: SceneBranchInfo[]
   footing: Footing
   showExploratory: boolean
   selectedId: string | null
@@ -744,7 +749,9 @@ export function paintScene(ctx: CanvasRenderingContext2D, model: SceneModel): vo
   ctx.fillRect(0, 0, SCENE_W, SCENE_H)
   drawEnvironment(ctx, register)
 
-  const infoByHandle = new Map(model.branches.map((b) => [b.id, b]))
+  const infoByHandle = new Map(
+    [...model.branches, ...model.twigs].map((b) => [b.id, b]),
+  )
   const dimmed = (handle: string) =>
     model.selectedId !== null && handle !== model.selectedId && handle !== 'apex'
 
@@ -811,7 +818,8 @@ export function paintScene(ctx: CanvasRenderingContext2D, model: SceneModel): vo
   }
   // footing (over the trunk base, as the scene composes it)
   drawFooting(ctx, model.footing, register)
-  // wire coils (exploratory layer)
+  // wire coils (exploratory layer) — on a branch's primary, and on
+  // a twig's own path: a proposal on a task coils its twig (§2).
   if (model.showExploratory) {
     for (const b of model.branches) {
       if (!b.wireSeatColour) continue
@@ -820,6 +828,15 @@ export function paintScene(ctx: CanvasRenderingContext2D, model: SceneModel): vo
       ctx.save()
       if (dimmed(b.id)) ctx.globalAlpha = 0.38
       drawCoil(ctx, primary, b.wireSeatColour)
+      ctx.restore()
+    }
+    for (const t of model.twigs) {
+      if (!t.wireSeatColour) continue
+      const path = grown.recordTwigs.find((r) => r.handle === t.id)?.pts
+      if (!path) continue
+      ctx.save()
+      if (dimmed(t.id)) ctx.globalAlpha = 0.38
+      drawCoil(ctx, path, t.wireSeatColour)
       ctx.restore()
     }
   }

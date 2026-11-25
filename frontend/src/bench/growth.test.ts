@@ -17,8 +17,10 @@ import fixture from './__fixtures__/growth-fixture.json'
 import { PythonRandom, seedRng } from './rng'
 import {
   growTree,
+  pointAlongPath,
   TRUNK_PATH,
   type BenchElement,
+  type BenchTwigSpec,
   type GeometryRegister,
   type Pt,
 } from './growth'
@@ -188,4 +190,50 @@ describe('growth port vs canonical Python geometry', () => {
       expect(flat(a)).toBe(flat(b))
     })
   }
+})
+
+describe('record twigs — the corrected grammar’s third level', () => {
+  const elements: BenchElement[] = [
+    { handle: 'P1', register: 'ink', side: 1, tGrow: 0.3, elev: 30, lenOld: 140, sprite: 1 },
+    { handle: 'P2', register: 'pencil', side: -1, tGrow: 0.6, elev: 26, lenOld: 110, sprite: 1 },
+  ]
+  const specs: BenchTwigSpec[] = [
+    { handle: 'T1', parentHandle: 'P1', register: 'ink', station: 0.45, fork: 1, lenOld: 52, sprite: 1 },
+    { handle: 'T2', parentHandle: 'P1', register: 'wire', station: 0.75, fork: -1, lenOld: 46, sprite: 1 },
+    { handle: 'T3', parentHandle: null, register: 'pencil', station: 0.5, fork: 1, lenOld: 40, sprite: 1 },
+  ]
+
+  it('without specs there are no record twigs (the canonical deal is untouched)', () => {
+    expect(growTree(elements, []).recordTwigs).toEqual([])
+  })
+
+  it('a twig grows from its station on the parent’s primary, at generation 2', () => {
+    const grown = growTree(elements, [], specs)
+    const t1 = grown.recordTwigs.find((r) => r.handle === 'T1')!
+    const start = pointAlongPath(grown.primaries.get('P1')!, 0.45).point
+    expect(t1.pts[0]).toEqual(start)
+    const wood = grown.wood.filter((w) => w.handle === 'T1')
+    expect(wood.length).toBe(1)
+    expect(wood[0].gen).toBe(2)
+    expect(wood[0].wRoot).toBe(1.15)
+    // anchors and pads accrue under the TASK's handle
+    expect((grown.anchors.get('T1') ?? []).length).toBeGreaterThan(0)
+    expect((grown.padsByHandle.get('T1') ?? []).length).toBeGreaterThan(0)
+    // a trunk twig (parentHandle null) roots on the trunk itself
+    const t3 = grown.recordTwigs.find((r) => r.handle === 'T3')!
+    expect(t3.pts[0]).toEqual(pointAlongPath(TRUNK_PATH, 0.5).point)
+  })
+
+  it('growing with twig specs is deterministic, and branch geometry is unchanged by them', () => {
+    const a = growTree(elements, [], specs)
+    const b = growTree(elements, [], specs)
+    expect(JSON.stringify(a.recordTwigs)).toBe(JSON.stringify(b.recordTwigs))
+    const bare = growTree(elements, [])
+    for (const el of elements) {
+      expect(a.primaries.get(el.handle)).toEqual(bare.primaries.get(el.handle))
+    }
+    const bareWood = bare.wood.filter((w) => w.handle === 'P1' || w.handle === 'P2' || w.handle === 'apex')
+    const withWood = a.wood.filter((w) => w.handle === 'P1' || w.handle === 'P2' || w.handle === 'apex')
+    expect(JSON.stringify(withWood)).toBe(JSON.stringify(bareWood))
+  })
 })

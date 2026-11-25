@@ -15,6 +15,7 @@ import type { Idea, Initiative, Project, Task } from '../vision-execution/types'
 import {
   growTree,
   type BenchElement,
+  type BenchTwigSpec,
   type GeometryRegister,
   type GrownTree,
 } from './growth'
@@ -84,7 +85,7 @@ export interface DiscussionEvidence {
  * `origin_conversation_id` (the recorded conversation the proposal
  * was discussed in, with a verbatim evidence quote kept on the
  * proposal row). That is a discussion of this very item with that
- * seat, in the record — so the branch foliates in that seat's
+ * seat, in the record — so the task's twig foliates in that seat's
  * colour. `seat_ref` is NOT used: it is keystone ownership, not
  * discussion. `responsible_seat` is NOT used: it is user-assigned
  * stewardship, not discussion. Severine's own colour never foliates
@@ -147,8 +148,9 @@ export interface BenchBranch {
   id: string
   name: string
   state: string
-  /** The record this branch is: a task under a project, a project
-   *  under an initiative, or the root itself for a branchless root. */
+  /** The record this branch is: a project under an initiative, or
+   *  the root itself for a branchless root. (Tasks are never
+   *  branches under the corrected grammar — they are twigs.) */
   sourceKind: 'task' | 'project' | 'root'
   task: Task | null
   subtaskCount: number
@@ -158,11 +160,44 @@ export interface BenchBranch {
   weightRule: string
   geometryRegister: GeometryRegister
   geometryRule: string
-  /** §7 foliage evidence, or null — null means bare, honestly. */
+  /** §7 foliage evidence, or null — null means bare, honestly.
+   *  Provenance lives on tasks, so on project branches this is
+   *  always null: foliage renders on twigs, never on branches. */
   discussion: DiscussionEvidence | null
   /** §2 wire: pending recorded proposals attached under this branch. */
   proposals: BenchProposal[]
   element: BenchElement
+}
+
+/**
+ * A twig — the corrected grammar's third level (founder,
+ * 2026-11-24): a TASK, branching off its project's branch (or off
+ * the trunk when its project stands as its own tree). Everything
+ * the language attaches to a task record attaches here: wire from
+ * a pending proposal on the task, jin from its Dropped state, and
+ * §7 foliage from its origin provenance — provenance lives on
+ * tasks, so this is the only level that foliates.
+ */
+export interface BenchTwig {
+  id: string
+  name: string
+  state: string
+  task: Task
+  /** The project branch this twig grows from, or null when it
+   *  grows from the trunk (its project is the tree's root). */
+  parentId: string | null
+  subtaskCount: number
+  /** §5: a dropped record stays visible as pale deadwood. */
+  jin: boolean
+  weight: number
+  weightRule: string
+  geometryRegister: GeometryRegister
+  geometryRule: string
+  /** §7 foliage evidence, or null — null means bare, honestly. */
+  discussion: DiscussionEvidence | null
+  /** §2 wire: pending recorded proposals attached under this task. */
+  proposals: BenchProposal[]
+  spec: BenchTwigSpec
 }
 
 const DONE_LIKE = new Set(['Done', 'In Progress'])
@@ -222,6 +257,60 @@ export function dealElements(
       sprite: 1,
     })
   })
+  return out
+}
+
+/**
+ * Deal twigs into growth specs: twigs on one parent spread along
+ * the parent's length (a lone twig sits just past the middle);
+ * forks alternate sides in record order, as the grammar's children
+ * alternate. A twig's dealt length is subordinate to a branch's by
+ * construction — the branch deal is 46 + weight * 15; the twig deal
+ * is 30 + weight * 5, with nested subtasks adding mass, capped —
+ * and grow() at generation 2 thins it further. Subtasks are NOT
+ * dealt their own geometry: the grammar's generations end at 2 and
+ * its terminal fans are anonymous, so a subtask count lengthens
+ * its task's twig and is named in the twig's inspection, never
+ * drawn as a record it is not.
+ */
+export function dealTwigSpecs(
+  twigs: Array<{
+    id: string
+    parentId: string | null
+    geometryRegister: GeometryRegister
+    weight: number
+    subtaskCount: number
+  }>,
+): Map<string, BenchTwigSpec> {
+  const groups = new Map<string | null, typeof twigs>()
+  for (const t of twigs) {
+    const g = groups.get(t.parentId) ?? []
+    g.push(t)
+    groups.set(t.parentId, g)
+  }
+  const out = new Map<string, BenchTwigSpec>()
+  for (const [parentId, group] of groups) {
+    const m = group.length
+    group.forEach((t, j) => {
+      const station =
+        parentId === null
+          ? m === 1
+            ? 0.5
+            : 0.18 + 0.64 * (j / (m - 1))
+          : m === 1
+            ? 0.55
+            : 0.3 + 0.55 * (j / (m - 1))
+      out.set(t.id, {
+        handle: t.id,
+        parentHandle: parentId,
+        register: t.geometryRegister,
+        station,
+        fork: j % 2 === 0 ? 1 : -1,
+        lenOld: 30 + t.weight * 5 + Math.min(18, t.subtaskCount * 4),
+        sprite: 1,
+      })
+    })
+  }
   return out
 }
 
@@ -320,9 +409,14 @@ export interface BenchTreeModel {
   register: BenchRegister
   registerRule: string
   branches: BenchBranch[]
+  /** The tree's twigs — its tasks (corrected grammar, 2026-11-24). */
+  twigs: BenchTwig[]
   crosses: Array<[string, string]>
   grown: GrownTree
-  /** handle -> discussing seat names (growth.padStyleFor input). */
+  /** handle -> discussing seat names (growth.padStyleFor input).
+   *  Keys are TWIG handles for task discussions (provenance lives
+   *  on tasks), plus the root branch of a loose-task tree, whose
+   *  root IS the task. Project branches never appear here. */
   discussion: Map<string, string[]>
   elementsByHandle: Map<string, BenchElement>
   footing: Footing
@@ -352,6 +446,15 @@ function buildTree(args: {
     state: string
     sourceKind: BenchBranch['sourceKind']
     task: Task | null
+    subtaskCount: number
+    proposals: BenchProposal[]
+  }>
+  twigDrafts?: Array<{
+    id: string
+    name: string
+    state: string
+    task: Task
+    parentId: string | null
     subtaskCount: number
     proposals: BenchProposal[]
   }>
@@ -388,14 +491,57 @@ function buildTree(args: {
     proposals: d.proposals,
     element: elements.get(d.id)!,
   }))
+  const twigDrafts = (args.twigDrafts ?? []).map((d) => {
+    const { weight, rule: weightRule } = strandWeightForTask(d.task, d.subtaskCount)
+    const { register: geometryRegister, rule: geometryRule } = geometryRegisterFor(
+      d.state,
+      d.proposals.length > 0,
+    )
+    return { ...d, weight, weightRule, geometryRegister, geometryRule }
+  })
+  const twigSpecs = dealTwigSpecs(twigDrafts)
+  const twigs: BenchTwig[] = twigDrafts.map((d) => ({
+    id: d.id,
+    name: d.name,
+    state: d.state,
+    task: d.task,
+    parentId: d.parentId,
+    subtaskCount: d.subtaskCount,
+    jin: d.state === 'Dropped',
+    weight: d.weight,
+    weightRule: d.weightRule,
+    geometryRegister: d.geometryRegister,
+    geometryRule: d.geometryRule,
+    discussion: discussionForTask(d.task),
+    proposals: d.proposals,
+    spec: twigSpecs.get(d.id)!,
+  }))
   const discussion = new Map<string, string[]>()
   for (const b of branches) {
     if (b.discussion) discussion.set(b.id, [b.discussion.seatName])
   }
+  for (const t of twigs) {
+    if (t.discussion) discussion.set(t.id, [t.discussion.seatName])
+  }
   const grown = growTree(
     branches.map((b) => b.element),
     args.crosses,
+    twigs.map((t) => t.spec),
   )
+  // padStyleFor looks every pad's handle up here: branches AND
+  // twigs, the twig element in the same shape growth.ts deals it.
+  const elementsByHandle = new Map<string, BenchElement>(elements)
+  for (const t of twigs) {
+    elementsByHandle.set(t.id, {
+      handle: t.id,
+      register: t.spec.register,
+      side: t.spec.fork,
+      tGrow: t.spec.station,
+      elev: 0,
+      lenOld: t.spec.lenOld,
+      sprite: t.spec.sprite,
+    })
+  }
   const footing = footingFor({ proseChars: args.rootProse, hasVerbatim: args.hasVerbatim })
   const notebook = [...args.notebook].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
   return {
@@ -406,10 +552,11 @@ function buildTree(args: {
     register,
     registerRule,
     branches,
+    twigs,
     crosses: args.crosses,
     grown,
     discussion,
-    elementsByHandle: elements,
+    elementsByHandle,
     footing,
     notebook,
   }
@@ -428,7 +575,7 @@ function branchNotebookEntries(branch: {
       out.push({
         kind: 'Documented',
         title: `Discussed with ${branch.discussion.seatName} — ${branch.name}`,
-        body: `This branch came out of a recorded conversation with ${branch.discussion.seatName}. The proposal that created it is kept on the record with a verbatim evidence quote from that conversation.`,
+        body: `This task came out of a recorded conversation with ${branch.discussion.seatName}. The proposal that created it is kept on the record with a verbatim evidence quote from that conversation.`,
         custody: `Task record · origin_seat ${t.origin_seat} · origin_conversation_id ${branch.discussion.conversationId} · origin_message_id ${t.origin_message_id ?? '—'}.`,
         date: t.created_at,
       })
@@ -483,15 +630,20 @@ export function buildProjectTree(
   entities: BenchEntities,
   proposalsByParent: ReadonlyMap<string, BenchProposal[]>,
 ): BenchTreeModel {
+  // A project standing as its own tree (a loose project on the
+  // shelf, or an initiative's branch brought forward): the project
+  // is the trunk, and its top-level tasks are TWIGS off the trunk —
+  // the same level they hold on their initiative's tree, off its
+  // branch. Subtasks are not twigs of twigs (see dealTwigSpecs).
   const tasks = entities.tasks.filter((t) => t.project_id === project.id)
   const top = tasks.filter((t) => !t.parent_task_id)
   const subtaskCount = (id: string) => tasks.filter((t) => t.parent_task_id === id).length
-  const drafts = top.map((t) => ({
+  const twigDrafts = top.map((t) => ({
     id: t.id,
     name: t.title,
     state: t.status,
-    sourceKind: 'task' as const,
     task: t,
+    parentId: null,
     subtaskCount: subtaskCount(t.id),
     proposals: proposalsByParent.get(t.id) ?? [],
   }))
@@ -521,7 +673,7 @@ export function buildProjectTree(
       date: project.updated_at,
     })
   }
-  for (const d of drafts) {
+  for (const d of twigDrafts) {
     notebook.push(
       ...branchNotebookEntries({
         name: d.name,
@@ -548,11 +700,11 @@ export function buildProjectTree(
   }
   const rootProse =
     proseOf(project.brief, project.notes, project.next_step_ai) +
-    drafts.reduce(
+    twigDrafts.reduce(
       (n, d) => n + proseOf(d.task?.description, d.task?.notes, d.task?.completion_criteria),
       0,
     )
-  const hasVerbatim = drafts.some((d) => discussionForTask(d.task) !== null)
+  const hasVerbatim = twigDrafts.some((d) => discussionForTask(d.task) !== null)
   const attached =
     project.initiative_id !== null ||
     top.length > 0 ||
@@ -565,7 +717,8 @@ export function buildProjectTree(
     title: project.title,
     state: project.status,
     attached,
-    branchDrafts: drafts,
+    branchDrafts: [],
+    twigDrafts,
     crosses,
     rootProse,
     hasVerbatim,
@@ -578,6 +731,12 @@ export function buildInitiativeTree(
   entities: BenchEntities,
   proposalsByParent: ReadonlyMap<string, BenchProposal[]>,
 ): BenchTreeModel {
+  // THE corrected grammar (founder, 2026-11-24): the initiative is
+  // the TREE, its projects are the BRANCHES, and each project's
+  // top-level tasks are TWIGS off that project's branch. Foliage,
+  // wire and jin attach at the twig, because that is the level of
+  // the record they belong to (a task's provenance, a task's
+  // proposals, a task's state).
   const projects = entities.projects.filter((p) => p.initiative_id === initiative.id)
   const drafts = projects.map((p) => ({
     id: p.id,
@@ -585,10 +744,39 @@ export function buildInitiativeTree(
     state: p.status,
     sourceKind: 'project' as const,
     task: null,
-    subtaskCount: entities.tasks.filter((t) => t.project_id === p.id).length,
+    subtaskCount: entities.tasks.filter((t) => t.project_id === p.id && !t.parent_task_id).length,
     proposals: [] as BenchProposal[],
   }))
-  void proposalsByParent
+  const twigDrafts: Array<{
+    id: string
+    name: string
+    state: string
+    task: Task
+    parentId: string | null
+    subtaskCount: number
+    proposals: BenchProposal[]
+  }> = []
+  for (const p of projects) {
+    const tasks = entities.tasks.filter((t) => t.project_id === p.id)
+    for (const t of tasks.filter((x) => !x.parent_task_id)) {
+      twigDrafts.push({
+        id: t.id,
+        name: t.title,
+        state: t.status,
+        task: t,
+        parentId: p.id,
+        subtaskCount: tasks.filter((x) => x.parent_task_id === t.id).length,
+        proposals: proposalsByParent.get(t.id) ?? [],
+      })
+    }
+  }
+  const twigIds = new Set(twigDrafts.map((d) => d.id))
+  const crosses: Array<[string, string]> = []
+  for (const d of twigDrafts) {
+    for (const dep of d.task.dependency_ids ?? []) {
+      if (twigIds.has(dep)) crosses.push([d.id, dep])
+    }
+  }
   const notebook: NotebookEntry[] = []
   if (initiative.brief?.trim()) {
     notebook.push({
@@ -617,6 +805,23 @@ export function buildInitiativeTree(
       date: initiative.updated_at,
     })
   }
+  for (const d of twigDrafts) {
+    notebook.push(
+      ...branchNotebookEntries({
+        name: d.name,
+        task: d.task,
+        discussion: discussionForTask(d.task),
+        proposals: d.proposals,
+      }),
+    )
+  }
+  const rootProse =
+    proseOf(initiative.brief, initiative.notes, initiative.next_step_ai) +
+    twigDrafts.reduce(
+      (n, d) => n + proseOf(d.task.description, d.task.notes, d.task.completion_criteria),
+      0,
+    )
+  const hasVerbatim = twigDrafts.some((d) => discussionForTask(d.task) !== null)
   return buildTree({
     rootId: initiative.id,
     rootKind: 'initiative',
@@ -624,9 +829,10 @@ export function buildInitiativeTree(
     state: initiative.status,
     attached: true,
     branchDrafts: drafts,
-    crosses: [],
-    rootProse: proseOf(initiative.brief, initiative.notes, initiative.next_step_ai),
-    hasVerbatim: false,
+    twigDrafts,
+    crosses,
+    rootProse,
+    hasVerbatim,
     notebook,
   })
 }

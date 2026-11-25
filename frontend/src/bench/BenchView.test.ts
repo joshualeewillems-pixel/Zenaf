@@ -3,12 +3,14 @@
  * Bench view — jsdom render verification against a stubbed Vision
  * Execution API (the same routes the product uses).
  *
- * The stubbed record holds one project with three branches: one
- * whose record carries cross-seat discussion evidence (origin
- * provenance from a conversation with Maeve), one carrying a pending
- * recorded proposal from Valen (wire), and one dropped (jin). The
+ * The stubbed record holds one project with three twigs (tasks —
+ * the corrected grammar: a project standing as its own tree carries
+ * its tasks as twigs off the trunk): one whose record carries
+ * cross-seat discussion evidence (origin provenance from a
+ * conversation with Maeve), one carrying a pending recorded
+ * proposal from Valen (wire), and one dropped (jin). The
  * suite asserts: the shelf captions true kinds; foliage is marked
- * ONLY on the evidenced branch; the wire tap opens the proposal;
+ * ONLY on the evidenced twig; the wire tap opens the proposal;
  * "Let this stand" takes the governed approve endpoint and lands in
  * the verdict log; the footing opens the notebook quoting the
  * record. CouncilChat is stubbed — the chat seam is covered by its
@@ -169,32 +171,34 @@ describe("Severine's Bench — render verification", () => {
     expect(ideaTile?.getAttribute('data-register')).toBe('sumi')
   })
 
-  it('foliage is marked ONLY on the branch with discussion evidence', async () => {
+  it('foliage is marked ONLY on the twig with discussion evidence', async () => {
     await renderBench()
     await click(findButton('', ['data-shelf-item', 'p1']))
-    const rows = [...container!.querySelectorAll('[data-branch-row]')]
-    expect(rows.map((r) => r.getAttribute('data-branch-row'))).toEqual(
+    // the project's tasks stand as twig rows — there are no task branches
+    expect(container!.querySelectorAll('[data-branch-row]')).toHaveLength(0)
+    const rows = [...container!.querySelectorAll('[data-twig-row]')]
+    expect(rows.map((r) => r.getAttribute('data-twig-row'))).toEqual(
       expect.arrayContaining(['t-timber', 't-bookings', 't-old']),
     )
-    const foliage = rows.map((r) => [r.getAttribute('data-branch-row'), r.getAttribute('data-foliage-seat')])
+    const foliage = rows.map((r) => [r.getAttribute('data-twig-row'), r.getAttribute('data-foliage-seat')])
     expect(foliage).toContainEqual(['t-timber', 'guardian'])
     expect(foliage).toContainEqual(['t-bookings', ''])
     expect(foliage).toContainEqual(['t-old', ''])
-    // selecting the evidenced branch states the evidence in words
-    await click(findButton('', ['data-branch-row', 't-timber']))
-    const detail = container!.querySelector('[data-branch-detail="t-timber"]')
+    // selecting the evidenced twig states the evidence in words
+    await click(findButton('', ['data-twig-row', 't-timber']))
+    const detail = container!.querySelector('[data-twig-detail="t-timber"]')
     expect(detail?.textContent).toContain('foliage in Maeve’s colour')
     expect(detail?.textContent).toContain('discussed with Maeve')
-    // selecting a bare branch says so honestly
-    await click(findButton('', ['data-branch-row', 't-bookings']))
-    const bare = container!.querySelector('[data-branch-detail="t-bookings"]')
+    // selecting a bare twig says so honestly
+    await click(findButton('', ['data-twig-row', 't-bookings']))
+    const bare = container!.querySelector('[data-twig-detail="t-bookings"]')
     expect(bare?.textContent).toContain('It is bare')
   })
 
   it('the wire tap opens the proposal and "Let this stand" takes the governed approve path', async () => {
     await renderBench()
     await click(findButton('', ['data-shelf-item', 'p1']))
-    const wire = container!.querySelector('[data-tap="wire"][data-branch="t-bookings"]')
+    const wire = container!.querySelector('[data-tap="wire"][data-twig="t-bookings"]')
     expect(wire).not.toBeNull()
     await click(wire as HTMLElement)
     const card = container!.querySelector('[data-proposal-card="prop-1"]')
@@ -217,7 +221,7 @@ describe("Severine's Bench — render verification", () => {
   it('"Cut this back" takes the governed decline path', async () => {
     await renderBench()
     await click(findButton('', ['data-shelf-item', 'p1']))
-    const wire = container!.querySelector('[data-tap="wire"][data-branch="t-bookings"]')
+    const wire = container!.querySelector('[data-tap="wire"][data-twig="t-bookings"]')
     await click(wire as HTMLElement)
     await click(findButton('Cut this back'))
     expect(
@@ -252,6 +256,13 @@ describe("Severine's Bench — render verification", () => {
       required_assets: [], dependencies: '', risks: '', recommendation: '',
       kill_criteria: '', notes: '', created_at: '2026-05-01T00:00:00', updated_at: '2026-05-01T00:00:00',
     }
+    const OWNED_TASKS = [
+      taskRow({
+        id: 't-owned-1', project_id: 'p-owned', title: 'Survey the depot',
+        origin_seat: 'guardian', origin_conversation_id: 'talk-9', origin_message_id: 'm-3',
+      }),
+      taskRow({ id: 't-owned-2', project_id: 'p-owned', title: 'Price the steel' }),
+    ]
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: unknown, init?: { method?: string }) => {
@@ -260,7 +271,7 @@ describe("Severine's Bench — render verification", () => {
         const json = (body: unknown) =>
           new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
         if (url.includes('/vision-execution/projects')) return json([PROJECT, OWNED])
-        if (url.includes('/vision-execution/tasks')) return json(TASKS)
+        if (url.includes('/vision-execution/tasks')) return json([...TASKS, ...OWNED_TASKS])
         if (url.includes('/vision-execution/ideas')) return json([IDEA])
         if (url.includes('/vision-execution/initiatives')) return json([INI])
         if (url.includes('/vision-execution/persons')) return json([])
@@ -276,16 +287,28 @@ describe("Severine's Bench — render verification", () => {
     expect(container!.querySelector('[data-shelf-item="p1"]')).not.toBeNull()
     expect(container!.querySelector('[data-shelf-item="p-owned"]')).toBeNull()
     // Open the initiative's tree: the owned project stands as a
-    // branch, and its detail carries the door to its own tree.
+    // BRANCH, its tasks as TWIGS on the branch — the discussed twig
+    // carrying Maeve's foliage mark, the branch itself none.
     await click(findButton('', ['data-shelf-item', 'i1']))
     const row = container!.querySelector('[data-branch-row="p-owned"]')
     expect(row).not.toBeNull()
+    expect(row!.getAttribute('data-foliage-seat')).toBe('')
+    const twigRow = container!.querySelector('[data-twig-row="t-owned-1"]')
+    expect(twigRow).not.toBeNull()
+    expect(twigRow!.getAttribute('data-foliage-seat')).toBe('guardian')
+    expect(container!.querySelector('[data-twig-row="t-owned-2"]')).not.toBeNull()
+    // The branch's detail carries the door that brings the BRANCH
+    // forward — at working size, with its twigs on it.
     await click(row as HTMLElement)
     const detail = container!.querySelector('[data-branch-detail="p-owned"]')
     expect(detail).not.toBeNull()
-    await click(findButton('Bring this project to the bench'))
+    expect(detail!.textContent).toContain('stand as twigs on this branch')
+    await click(findButton('Bring this branch forward'))
     const benchChat = container!.querySelector('[data-testid="severine-chat"]')
     expect(benchChat?.getAttribute('data-conversation-id')).toBe('bench:project:p-owned')
+    // Forward, the same tasks stand as twigs off the trunk.
+    expect(container!.querySelector('[data-twig-row="t-owned-1"]')).not.toBeNull()
+    expect(container!.querySelector('[data-branch-row]')).toBeNull()
   })
 
   it("the conversation beside the bench is Severine's, following the open tree", async () => {

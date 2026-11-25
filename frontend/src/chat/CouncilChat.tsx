@@ -710,70 +710,6 @@ export default function CouncilChat({
 
   return (
     <div className="flex flex-col gap-3" data-conversation={conversationKey}>
-      {/* Seat switcher — tapping branches the ongoing conversation.
-          Hidden when the chat is locked to one seat (strand interviews):
-          there is nothing to switch to, and no fan-out. */}
-      {!lockArchetypeId && (
-        <>
-          <SeatChips
-            activeId={chooseMultiple ? null : activeId}
-            checkable={chooseMultiple}
-            checkedIds={checkedSeatIds}
-            onToggleCheck={(id) =>
-              setCheckedSeatIds((prev) =>
-                prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id],
-              )
-            }
-            onSelect={(id) => {
-              swapComposer(id)
-              setActiveId(id)
-              setCouncilMode(false)
-            }}
-          />
-
-          {/* choose multiple — checkboxes on the seat chips above; the
-              send fans out to exactly the checked seats. Tapping again
-              exits checkbox mode and clears the checked set. */}
-          <div className="flex flex-wrap items-center gap-3 -mt-1">
-            <button
-              type="button"
-              onClick={() => {
-                if (chooseMultiple) {
-                  // Exit: back to the active seat, or 'unselected'
-                  // when no seat is picked.
-                  swapComposer(activeId ?? UNSELECTED_DRAFT_SEAT)
-                  setChooseMultiple(false)
-                  setCouncilMode(false)
-                  setCheckedSeatIds([])
-                } else {
-                  // Enter: every seat checked (the old all-seats
-                  // behaviour is the starting point); uncheck to narrow.
-                  swapComposer(COUNCIL_DRAFT_SEAT)
-                  setChooseMultiple(true)
-                  setCouncilMode(true)
-                  setCheckedSeatIds([...SEAT_ORDER])
-                }
-              }}
-              aria-pressed={chooseMultiple}
-              className={`min-h-[44px] px-4 rounded-full border text-sm font-medium ${
-                chooseMultiple
-                  ? 'bg-amber-950/40 text-amber-300 border-amber-700/50'
-                  : 'border-stone-700 text-stone-400'
-              }`}
-            >
-              {chooseMultiple ? '✓ choose multiple' : 'choose multiple'}
-            </button>
-            {chooseMultiple && (
-              <p className="text-[11px] text-stone-500">
-                {checkedSeatIds.length === 0
-                  ? 'Choose at least one seat above — nothing is checked yet.'
-                  : 'One message — only the checked seats answer here, under their own names.'}
-              </p>
-            )}
-          </div>
-        </>
-      )}
-
       {/* Hydration failure is not an empty thread: banner + retry, and
        *  send stays disabled until a retry succeeds. */}
       {conversationId && hydrateError && (
@@ -819,12 +755,6 @@ export default function CouncilChat({
               )}
             </div>
           )}
-        {!activeId && !councilMode && (
-          <p className="text-sm text-stone-400 leading-relaxed px-1 py-2">
-            Pick a voice above to begin — one conversation, tap a seat to
-            branch it whenever you like. Or ask the whole council at once.
-          </p>
-        )}
         {messages.map((m, i) =>
           m.role === 'user' ? (
             <div key={i} className="flex justify-end">
@@ -937,6 +867,70 @@ export default function CouncilChat({
         )}
         <div ref={chatEndRef} />
       </div>
+
+      {/* Seat switcher — tapping branches the ongoing conversation.
+          Hidden when the chat is locked to one seat (strand interviews):
+          there is nothing to switch to, and no fan-out. */}
+      {!lockArchetypeId && (
+        <>
+          <SeatChips
+            activeId={chooseMultiple ? null : activeId}
+            checkable={chooseMultiple}
+            checkedIds={checkedSeatIds}
+            onToggleCheck={(id) =>
+              setCheckedSeatIds((prev) =>
+                prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id],
+              )
+            }
+            onSelect={(id) => {
+              swapComposer(id)
+              setActiveId(id)
+              setCouncilMode(false)
+            }}
+          />
+
+          {/* choose multiple — checkboxes on the seat chips above; the
+              send fans out to exactly the checked seats. Tapping again
+              exits checkbox mode and clears the checked set. */}
+          <div className="flex flex-wrap items-center gap-3 -mt-1">
+            <button
+              type="button"
+              onClick={() => {
+                if (chooseMultiple) {
+                  // Exit: back to the active seat, or 'unselected'
+                  // when no seat is picked.
+                  swapComposer(activeId ?? UNSELECTED_DRAFT_SEAT)
+                  setChooseMultiple(false)
+                  setCouncilMode(false)
+                  setCheckedSeatIds([])
+                } else {
+                  // Enter: every seat checked (the old all-seats
+                  // behaviour is the starting point); uncheck to narrow.
+                  swapComposer(COUNCIL_DRAFT_SEAT)
+                  setChooseMultiple(true)
+                  setCouncilMode(true)
+                  setCheckedSeatIds([...SEAT_ORDER])
+                }
+              }}
+              aria-pressed={chooseMultiple}
+              className={`min-h-[44px] px-4 rounded-full border text-sm font-medium ${
+                chooseMultiple
+                  ? 'bg-amber-950/40 text-amber-300 border-amber-700/50'
+                  : 'border-stone-700 text-stone-400'
+              }`}
+            >
+              {chooseMultiple ? '✓ choose multiple' : 'choose multiple'}
+            </button>
+            {chooseMultiple && (
+              <p className="text-[11px] text-stone-500">
+                {checkedSeatIds.length === 0
+                  ? 'Choose at least one seat above — nothing is checked yet.'
+                  : 'One message — only the checked seats answer here, under their own names.'}
+              </p>
+            )}
+          </div>
+        </>
+      )}
 
       {(activeId || councilMode) && (
         <div className="rounded-2xl border border-stone-700/60 bg-stone-900/70 p-2 space-y-2">

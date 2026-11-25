@@ -40,8 +40,10 @@ import {
   deriveCapacityPicture,
   deriveObstacles,
   deriveSignalMarkers,
+  estimateLabelWidth,
   fullDate,
   groupOverviewByInitiative,
+  layoutBoardLabels,
   moveHold,
   obstacleDomainLabel,
   parseDateMs,
@@ -51,8 +53,11 @@ import {
   setRiverWindow,
   shortDate,
   signalsForProject,
+  stripWaypointLabels,
   toLocalDateTimeString,
   withdrawRiver,
+  type BoardLabelItem,
+  type BoardLabelPlacement,
   type BoardObstacle,
   type BoardSignal,
   type BoardWaypoint,
@@ -879,6 +884,67 @@ function FocusBoard({
     ...routes.a.map((w, index) => ({ w, bandY: ROUTE_A_Y, index })),
     ...routes.b.map((w, index) => ({ w, bandY: ROUTE_B_Y, index })),
   ]
+
+  /* Label de-overlap (diagnosis 2026-11-25): waypoint pairs, the
+   * start/finish banner labels, and obstacle labels are laid out as
+   * boxes by layoutBoardLabels — until this pass, placement was a
+   * pure function of fraction and index and the lettering collided
+   * wherever dates cluster, above all at the finish. The items carry
+   * each label's natural anchor (the positions it would have had);
+   * the pass returns placements that never overlap and stay on the
+   * map. Rendering below reads the placement back as an offset inside
+   * each label's own group, so handlers and structure are unchanged,
+   * and a dragged waypoint's label follows the same drag override its
+   * dot follows. */
+  const waypointTitle = (w: BoardWaypoint): string =>
+    w.task.title.length > 26 ? `${w.task.title.slice(0, 25)}…` : w.task.title
+  const obstacleLabelText = (ob: BoardObstacle): string =>
+    ob.kind === 'gate' ? 'Gate Keeper' : ob.kind === 'crossing' ? 'Crossing' : ob.kindLabel
+  const obstacleLabelY = (ob: BoardObstacle): number =>
+    ob.kind === 'gate' ? 30 : ob.kind === 'crossing' ? 32 : 26
+  const labelItems: BoardLabelItem[] = [
+    {
+      id: 'banner:start',
+      anchorX: X0,
+      top: MID_Y + 28 - 11,
+      width: estimateLabelWidth(`Start · ${shortDate(new Date(span.startMs))}`, 11),
+      height: 14,
+    },
+    {
+      id: 'banner:finish',
+      anchorX: X1,
+      top: MID_Y + 30 - 11,
+      width: estimateLabelWidth(`Finish · ${shortDate(new Date(span.endMs))}`, 11),
+      height: 14,
+    },
+    ...obstacles.map((ob) => ({
+      id: `obstacle:${ob.id}`,
+      anchorX: xForFraction(ob.fraction),
+      top: MID_Y + obstacleLabelY(ob) - 11,
+      width: estimateLabelWidth(obstacleLabelText(ob), 10.5),
+      height: 14,
+    })),
+    ...allWaypoints.map(({ w, bandY, index }) => {
+      const f = drag && drag.taskId === w.task.id ? drag.fraction : w.fraction
+      const tier = index % 2 === 0 ? 30 : 46
+      const sub = w.done ? 'done' : shortDate(dateAtFraction(span, f))
+      return {
+        id: `waypoint:${bandY}:${w.task.id}`,
+        anchorX: xForFraction(f),
+        top: waypointY(bandY, index) + tier - 11,
+        width: Math.max(estimateLabelWidth(waypointTitle(w), 11), estimateLabelWidth(sub, 10)),
+        height: 27,
+      }
+    }),
+  ]
+  const labelPlacements = new Map<string, BoardLabelPlacement>(
+    layoutBoardLabels(labelItems, { minX: 8, maxX: MAP_W - 8, minY: 8, maxY: FOCUS_H - 8 }).map(
+      (p) => [p.id, p],
+    ),
+  )
+  const placedLabel = (id: string): BoardLabelPlacement | undefined => labelPlacements.get(id)
+  const startLabel = placedLabel('banner:start')
+  const finishLabel = placedLabel('banner:finish')
   const terrainAt = (taskId: string): { x: number; y: number } => {
     const onA = routes.a.find((w) => w.task.id === taskId)
     if (onA) return { x: xForFraction(onA.fraction), y: ROUTE_A_Y }
@@ -1045,6 +1111,9 @@ function FocusBoard({
             const x = xForFraction(ob.fraction)
             const isGate = ob.kind === 'gate'
             const isCrossing = ob.kind === 'crossing'
+            const lp = placedLabel(`obstacle:${ob.id}`)
+            const labelX = lp ? lp.x - x : 0
+            const labelY = lp ? lp.top + 11 - MID_Y : obstacleLabelY(ob)
             return (
               <g
                 key={ob.id}
@@ -1057,7 +1126,7 @@ function FocusBoard({
                     <rect x="-16" y="-13" width="5" height="24" fill="#8d8574" stroke="#5f594c" />
                     <rect x="11" y="-13" width="5" height="24" fill="#8d8574" stroke="#5f594c" />
                     <rect x="-19" y="-18" width="38" height="5" rx="2" fill="#75705f" />
-                    <text y="30" textAnchor="middle" fontSize="10.5" fill="#7a5a12">
+                    <text x={labelX} y={labelY} textAnchor="middle" fontSize="10.5" fill="#7a5a12">
                       Gate Keeper
                     </text>
                   </>
@@ -1065,14 +1134,14 @@ function FocusBoard({
                   <>
                     <path d="M-13 8 L0 -8 L13 8" fill="none" stroke="#33655f" strokeWidth="2.6" />
                     <path d="M-13 15 L0 -1 L13 15" fill="none" stroke="#33655f" strokeWidth="2.6" opacity="0.6" />
-                    <text y="32" textAnchor="middle" fontSize="10.5" fill="#33655f">
+                    <text x={labelX} y={labelY} textAnchor="middle" fontSize="10.5" fill="#33655f">
                       Crossing
                     </text>
                   </>
                 ) : (
                   <>
                     <path d="M0 -9 L7 0 L0 9 L-7 0 Z" fill={ob.kind === 'overdue' ? '#a8741a' : '#8c2e1e'} stroke={INK} strokeWidth="0.8" />
-                    <text y="26" textAnchor="middle" fontSize="10.5" fill={ob.kind === 'overdue' ? '#7a5a12' : '#8c2e1e'}>
+                    <text x={labelX} y={labelY} textAnchor="middle" fontSize="10.5" fill={ob.kind === 'overdue' ? '#7a5a12' : '#8c2e1e'}>
                       {ob.kindLabel}
                     </text>
                   </>
@@ -1132,14 +1201,14 @@ function FocusBoard({
           {/* start camp + finish banner */}
           <g transform={`translate(${X0},${MID_Y})`} style={{ cursor: 'pointer' }} onClick={() => openEndpoint('start')}>
             <path d="M-13 10 L0 -12 L13 10 Z" fill="#8a6a42" stroke="#6b5133" strokeWidth="1.2" />
-            <text y="28" textAnchor="middle" fontSize="11" fill={INK}>
+            <text x={startLabel ? startLabel.x - X0 : 0} y={startLabel ? startLabel.top + 11 - MID_Y : 28} textAnchor="middle" fontSize="11" fill={INK}>
               Start · {shortDate(new Date(span.startMs))}
             </text>
           </g>
           <g transform={`translate(${X1},${MID_Y})`} style={{ cursor: 'pointer' }} onClick={() => openEndpoint('finish')}>
             <line x1="0" y1="12" x2="0" y2="-24" stroke={INK} strokeWidth="2.2" />
             <path d="M0 -24 L20 -19 L0 -14 Z" fill={EMBER} />
-            <text y="30" textAnchor="middle" fontSize="11" fill={INK}>
+            <text x={finishLabel ? finishLabel.x - X1 : 0} y={finishLabel ? finishLabel.top + 11 - MID_Y : 30} textAnchor="middle" fontSize="11" fill={INK}>
               Finish · {shortDate(new Date(span.endMs))}
             </text>
           </g>
@@ -1150,6 +1219,10 @@ function FocusBoard({
             const x = xForFraction(f)
             const y = waypointY(bandY, index)
             const labelTier = index % 2 === 0 ? 30 : 46
+            const lp = placedLabel(`waypoint:${bandY}:${w.task.id}`)
+            const labelX = lp ? lp.x - x : 0
+            const titleY = lp ? lp.top + 11 - y : labelTier
+            const subY = lp ? lp.top + 24 - y : labelTier + 13
             return (
               <g
                 key={`${bandY}-${w.task.id}`}
@@ -1173,10 +1246,10 @@ function FocusBoard({
                 ) : (
                   <circle r="9" fill={bandY === ROUTE_A_Y ? '#a63d2a' : '#33655f'} stroke="#f1e8d0" strokeWidth="1.6" />
                 )}
-                <text y={labelTier} textAnchor="middle" fontSize="11" fill={INK} style={{ pointerEvents: 'none' }}>
-                  {w.task.title.length > 26 ? `${w.task.title.slice(0, 25)}…` : w.task.title}
+                <text x={labelX} y={titleY} textAnchor="middle" fontSize="11" fill={INK} style={{ pointerEvents: 'none' }}>
+                  {waypointTitle(w)}
                 </text>
-                <text y={labelTier + 13} textAnchor="middle" fontSize="10" fill="#6b5a43" style={{ pointerEvents: 'none' }}>
+                <text x={labelX} y={subY} textAnchor="middle" fontSize="10" fill="#6b5a43" style={{ pointerEvents: 'none' }}>
                   {w.done ? 'done' : shortDate(dateAtFraction(span, f))}
                 </text>
               </g>
@@ -1273,11 +1346,11 @@ function FocusBoard({
           <text x={X1} y={16} textAnchor="end" fontSize="10.5" fill={INK}>
             {shortDate(new Date(span.endMs))}
           </text>
-          {routes.a.map((w) => (
-            <g key={w.task.id} transform={`translate(${xForFraction(w.fraction)},30)`}>
+          {stripWaypointLabels(routes.a, span).map((label) => (
+            <g key={label.fraction} transform={`translate(${xForFraction(label.fraction)},30)`}>
               <line y1="-6" y2="6" stroke={INK} strokeWidth="1.4" />
               <text y={24} textAnchor="middle" fontSize="9.5" fill="#6b5a43">
-                {w.done ? 'done' : shortDate(dateAtFraction(span, w.fraction))}
+                {label.text}
               </text>
             </g>
           ))}

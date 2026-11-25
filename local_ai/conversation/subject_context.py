@@ -71,11 +71,11 @@ BLOCK_CHAR_CAP = 2000
 #: are counted in an omitted line, never dropped silently.
 CHILDREN_CAP = 10
 
-#: The four interface surfaces whose conversations carry a selected
+#: The five interface surfaces whose conversations carry a selected
 #: subject through the LiveContext seam. A conversation from any
 #: other sheet (or no sheet) never gains the block.
 _INTERFACE_SHEET_TYPES = frozenset(
-    {"campaign_board", "aria_atelier", "bench", "jynx_scroll"}
+    {"campaign_board", "aria_atelier", "bench", "jynx_scroll", "living_palace"}
 )
 
 #: Entity types that resolve against the vision_execution store.

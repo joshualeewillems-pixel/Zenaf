@@ -42,11 +42,24 @@
  * recorded status — a Blocked item wears Jynx's violet, the one
  * scroll that stands out among plain ones.
  *
- * The drawing feed is the seam named in scrollApi.ts: neither the
- * pencil prompt channel nor the designed [[chalk]] carriage can
- * deliver drawing geometry to the frontend today, so the feed
- * resolves empty and the unrolled scroll stands honestly blank —
- * no placeholder art, no invented drawings.
+ * The drawing feed is the read side of the [[chalk]] carriage
+ * (scrollApi.ts): GET /conversation/drawings serves the caller's
+ * drawings oldest first, and the surface renders them section by
+ * section on the open scroll. With the carriage's server flag
+ * off, no drawings are made and the feed is honestly empty — the
+ * unrolled scroll stands blank, with no placeholder art and no
+ * invented drawings. The feed stays current without polling: it
+ * re-reads when a scroll is opened or stepped back to, when a
+ * conversation turn lands beside the scroll (CouncilChat's
+ * onTurnSent — the carriage parses Jynx's tail server-side during
+ * the turn, so a drawing made in that turn is already persisted
+ * when the reply lands), and when the window regains focus or
+ * visibility. A drawing that arrives while a scroll is open joins
+ * its sections in place — the sheet does not re-unroll under the
+ * visitor. The open scroll's own rollers page its drawings: the
+ * top roller rolls back toward the older drawings, the bottom
+ * roller forward toward the newer — the same section state the
+ * screen's chrome pager drives.
  *
  * Talk is the existing council conversation, opened with Jynx
  * (maverick). No separate chat engine. Jynx takes they/them in
@@ -128,6 +141,14 @@ function letterName(title: string, max: number): string {
   return t.length > max ? `${t.slice(0, max - 1)}…` : t
 }
 
+/** A refetched feed is "the same" when it carries the same
+ *  drawings in the same order — ids are the drawings' identity.
+ *  Returning the previous list untouched keeps the visitor's
+ *  section, selection and unroll clock exactly where they were. */
+function sameDrawings(a: ScrollDrawing[], b: ScrollDrawing[]): boolean {
+  return a.length === b.length && a.every((d, i) => d.id === b[i].id)
+}
+
 function prefersReducedMotion(): boolean {
   try {
     return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
@@ -169,6 +190,42 @@ export default function JynxScrollView() {
     void load()
   }, [load])
 
+  /** Re-read ONLY the drawing feed (see the header: the triggers).
+   *  An unchanged feed keeps the previous list object, so nothing
+   *  re-renders and the visitor's place is untouched; a grown feed
+   *  swaps the list in place — the section state is separate, so
+   *  the visitor stays on the drawing they were looking at and
+   *  the new one waits at the end of the pager. A failed re-read
+   *  keeps the drawings already on the surface: the error screen
+   *  belongs to the first load alone, and a refresh must never
+   *  blank a scroll that loaded fine. */
+  const refreshDrawings = useCallback(async () => {
+    try {
+      const draws = await fetchScrollDrawings()
+      setDrawings((prev) => (sameDrawings(prev, draws) ? prev : draws))
+    } catch {
+      /* keep what the surface already holds */
+    }
+  }, [])
+
+  // The window waking is a refresh trigger too: Jynx may have
+  // drawn in another tab, or on the phone while this pane sat
+  // open. No polling — focus and visibility changes only.
+  useEffect(() => {
+    const onFocus = () => {
+      void refreshDrawings()
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void refreshDrawings()
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [refreshDrawings])
+
   const shelf = useMemo(
     () =>
       entities
@@ -201,7 +258,11 @@ export default function JynxScrollView() {
   // The unroll + the draw-out share one clock: opening a scroll (or
   // rolling to a new section) restarts it — the sheet unrolls, then
   // the section's marks arrive in order. Reduced motion shows the
-  // finished sheet at once.
+  // finished sheet at once. The clock deliberately does NOT key on
+  // the drawings list: a drawing that arrives mid-viewing (a
+  // refresh after Jynx's turn) joins the pager in place instead of
+  // re-unrolling the sheet under the visitor — it gets its own
+  // unroll when the visitor rolls to its section.
   useEffect(() => {
     setElapsed(0)
     if (!open) return
@@ -212,29 +273,51 @@ export default function JynxScrollView() {
     const start = Date.now()
     const timer = setInterval(() => setElapsed(Date.now() - start), 50)
     return () => clearInterval(timer)
-  }, [openKey, section, drawings, open])
+  }, [openKey, section, open])
 
-  /** Choosing a scroll from the shelf opens its own screen. */
-  const choose = useCallback((scroll: ShelfScroll) => {
-    setOpenTrail([`${scroll.kind}:${scroll.id}`])
-    setSection(0)
-    setSelectedDrawingId(null)
-  }, [])
+  /** Choosing a scroll from the shelf opens its own screen. The
+   *  drawing feed re-reads on the way in — Jynx may have drawn
+   *  while this pane sat on the shelf. */
+  const choose = useCallback(
+    (scroll: ShelfScroll) => {
+      setOpenTrail([`${scroll.kind}:${scroll.id}`])
+      setSection(0)
+      setSelectedDrawingId(null)
+      void refreshDrawings()
+    },
+    [refreshDrawings],
+  )
 
   /** Opening a child from the open scroll's screen: the trail
    *  deepens, so the back step returns to this parent. */
-  const openChild = useCallback((scroll: ShelfScroll) => {
-    setOpenTrail((trail) => [...trail, `${scroll.kind}:${scroll.id}`])
-    setSection(0)
-    setSelectedDrawingId(null)
-  }, [])
+  const openChild = useCallback(
+    (scroll: ShelfScroll) => {
+      setOpenTrail((trail) => [...trail, `${scroll.kind}:${scroll.id}`])
+      setSection(0)
+      setSelectedDrawingId(null)
+      void refreshDrawings()
+    },
+    [refreshDrawings],
+  )
 
   /** One step back: to the parent scroll, or to the shelf. */
   const goBack = useCallback(() => {
     setOpenTrail((trail) => trail.slice(0, -1))
     setSection(0)
     setSelectedDrawingId(null)
-  }, [])
+    void refreshDrawings()
+  }, [refreshDrawings])
+
+  /** A turn just landed in the conversation beside the scroll.
+   *  CouncilChat fires onTurnSent on its success arms only, after
+   *  the reply lands — and the carriage persists a turn's drawings
+   *  server-side before that reply is served, so a drawing Jynx
+   *  made in this turn is already in the feed. Re-read it: this
+   *  is the trigger that lands a fresh drawing on a pane that was
+   *  open while Jynx drew. */
+  const onTurnLanded = useCallback(() => {
+    void refreshDrawings()
+  }, [refreshDrawings])
 
   /* --------------------------- chat wiring --------------------------- */
 
@@ -341,6 +424,7 @@ export default function JynxScrollView() {
             initialArchetypeId="maverick"
             conversationId={conversationId}
             context={chatContext}
+            onTurnSent={onTurnLanded}
           />
         </div>
       </aside>
@@ -533,6 +617,41 @@ function OpenScrollScreen({
             selected={drawing != null && selectedDrawingId === drawing.id}
             onSelectDrawing={onSelectDrawing}
           />
+
+          {/* the rollers page the drawings (founder, 2026-11-25):
+              the ground's top roller rolls back toward the older
+              drawings — the scroll's history — and its bottom
+              roller rolls forward toward the newer, driving the
+              same section state as the chrome pager below. The
+              hit bands lie on the rollers themselves, clear of the
+              parchment interior, and carry no visible text: the
+              rollers are the scroll's furniture, not its sheet.
+              At either end the roller is inert, as the pager's
+              disabled button is. */}
+          {drawingCount > 1 ? (
+            <>
+              <RollerControl
+                testId="roller-back"
+                label="Previous drawing"
+                disabled={section === 0}
+                x={SCREEN_CX - GROUND_W / 2 - 14}
+                y={SHEET_TOP}
+                width={GROUND_W + 28}
+                height={54}
+                onRoll={() => onSection(Math.max(0, section - 1))}
+              />
+              <RollerControl
+                testId="roller-forward"
+                label="Next drawing"
+                disabled={section >= drawingCount - 1}
+                x={SCREEN_CX - GROUND_W / 2 - 14}
+                y={SHEET_TOP + GROUND_H - 54}
+                width={GROUND_W + 28}
+                height={54}
+                onRoll={() => onSection(Math.min(drawingCount - 1, section + 1))}
+              />
+            </>
+          ) : null}
         </svg>
       </div>
 
@@ -591,6 +710,54 @@ function OpenScrollScreen({
         </div>
       ) : null}
     </section>
+  )
+}
+
+/** One of the open scroll's rollers as a paging control: an
+ *  invisible, generous hit band over the roller in the founder's
+ *  ground. A button in everything but paint — focusable, labelled
+ *  for assistive tech (aria labels are not visible text; the sheet
+ *  stays text-free), inert at its end of the sections. */
+function RollerControl({
+  testId,
+  label,
+  disabled,
+  x,
+  y,
+  width,
+  height,
+  onRoll,
+}: {
+  testId: string
+  label: string
+  disabled: boolean
+  x: number
+  y: number
+  width: number
+  height: number
+  onRoll: () => void
+}) {
+  return (
+    <g
+      role="button"
+      data-testid={testId}
+      aria-label={label}
+      aria-disabled={disabled}
+      tabIndex={disabled ? -1 : 0}
+      style={{ cursor: disabled ? 'default' : 'pointer' }}
+      onClick={() => {
+        if (!disabled) onRoll()
+      }}
+      onKeyDown={(e) => {
+        if (disabled) return
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onRoll()
+        }
+      }}
+    >
+      <rect x={x} y={y} width={width} height={height} fill="#ffffff" fillOpacity={0} />
+    </g>
   )
 }
 

@@ -389,6 +389,7 @@ class ConversationService:
         event_sink: EventSink | None = None,
         steward_context_provider: Callable[..., Any] | None = None,
         pencil_context_provider: Callable[..., Any] | None = None,
+        champion_pencil_context_provider: Callable[..., Any] | None = None,
         noting_writer: Any | None = None,
     ) -> None:
         self.store = store
@@ -409,6 +410,18 @@ class ConversationService:
         # Every other seat's path is identical with or without it,
         # and the Weaver's facts-only provider above is untouched.
         self._pencil_context_provider = pencil_context_provider
+        # V3 pencil carriage for the encountering seat (champion):
+        # an optional provider consulted ONLY for the champion
+        # (archetype "champion"), self-gated on the pencil master
+        # switch and the independent carriage toggle
+        # ZENAF_PENCIL_CHAMPION (both default off) inside the
+        # provider. It is handed the turn's conversation_id because
+        # encounter carriage is keyed to the encounter's own
+        # conversation. Every other seat's path is identical with
+        # or without it; the toggle gates rendering only and
+        # influences no other code path in this service — in
+        # particular not the obligation block below.
+        self._champion_pencil_context_provider = champion_pencil_context_provider
         # Phase 2 (Narrative Steward, Weaver-first): an optional
         # provider of prepared steward context, called ONLY for the
         # Weaver (archetype "conductor"). Every other seat's path is
@@ -526,6 +539,38 @@ class ConversationService:
             except Exception:
                 logger.exception(
                     "steward: pencil context failed; continuing without it"
+                )
+                pencil_block = None
+                pencil_thread_ids = ()
+                pencil_reading_ids = ()
+
+        # V3: the encountering seat's own carriage — the champion
+        # consults the same pencil provider slot discipline through
+        # its dedicated provider, behind the independent carriage
+        # toggle (ZENAF_PENCIL_CHAMPION, default off, self-gated in
+        # the provider). With the toggle off the provider returns
+        # None before any store read and the turn is byte-identical
+        # to V1-head behavior.
+        if (
+            arch_id == "champion"
+            and self._champion_pencil_context_provider is not None
+        ):
+            try:
+                (
+                    pencil_block,
+                    pencil_thread_ids,
+                    pencil_reading_ids,
+                ) = _split_provider_result(
+                    self._champion_pencil_context_provider(
+                        user_id,
+                        message,
+                        history_turns,
+                        conversation_id=conversation_id,
+                    )
+                )
+            except Exception:
+                logger.exception(
+                    "steward: champion pencil context failed; continuing without it"
                 )
                 pencil_block = None
                 pencil_thread_ids = ()

@@ -846,8 +846,11 @@ export function FloorScene({
   )
 }
 
-/** Scales with empty pans — an instrument, unweighed. */
-export function ScalesGlyph({ scale = 1 }: { scale?: number }) {
+/** The scales glyph — an instrument. Its pans stand empty unless
+ *  weighed: a room whose task carries a recorded estimate shows a
+ *  weight resting in the pan (Scales-1 — established material is
+ *  the room scales' to show; an unweighed room keeps empty pans). */
+export function ScalesGlyph({ scale = 1, weighed = false }: { scale?: number; weighed?: boolean }) {
   return (
     <g transform={`scale(${scale})`} pointerEvents="none">
       <line x1={0} y1={-26} x2={0} y2={10} stroke={PAL.inkSoft} strokeWidth={2.6} />
@@ -860,6 +863,12 @@ export function ScalesGlyph({ scale = 1 }: { scale?: number }) {
           <path d={`M ${px - 11} -8 A 11 5 0 0 0 ${px + 11} -8 Z`} fill={PAL.stone} stroke={PAL.stoneDark} />
         </g>
       ))}
+      {weighed && (
+        <g>
+          <path d="M -29.5 -15.5 L -18.5 -15.5 L -20.8 -9.2 L -27.2 -9.2 Z" fill={PAL.stoneDark} />
+          <path d="M -26.5 -15.5 A 2.5 2.5 0 0 1 -21.5 -15.5" fill="none" stroke={PAL.stoneDark} strokeWidth={1.4} />
+        </g>
+      )}
       <rect x={-10} y={10} width={20} height={5} rx={2} fill={PAL.stoneDark} />
     </g>
   )
@@ -1039,11 +1048,12 @@ export function RoomScene({
         </g>
       </g>
 
-      {/* the scales — an instrument, its pans empty */}
+      {/* the scales — an instrument; a weight rests in the pan only
+          where the room's task carries a recorded estimate */}
       <g data-testid="palace-room-scales" onClick={() => onFurniture('scales')} style={{ cursor: 'pointer' }}>
         <circle cx={452} cy={362} r={36} fill="transparent" />
         <g transform="translate(452 372)">
-          <ScalesGlyph scale={1.15} />
+          <ScalesGlyph scale={1.15} weighed={model.task.estimated_hours != null} />
         </g>
       </g>
 

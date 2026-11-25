@@ -11,11 +11,13 @@
  * extended to this sheet).
  *
  * The world reads the visitor's real Vision Execution records via
- * palaceApi; it writes nothing. Boundaries: the per-subject boundary
- * store is NOT commissioned — the threshold is an affordance whose
- * panel composes only from records that exist today (core-profile
- * declarations, strand topic boundaries, permission state), fetched
- * lazily when a doorway is tapped.
+ * palaceApi. It writes in exactly one place: the scales' settle act
+ * (Scales-1, below) — the visitor's own explicit confirmation,
+ * through the VE routes that already exist. Boundaries: the
+ * per-subject boundary store is NOT commissioned — the threshold is
+ * an affordance whose panel composes only from records that exist
+ * today (core-profile declarations, strand topic boundaries,
+ * permission state), fetched lazily when a doorway is tapped.
  *
  * The shared attributed subject read (founder ruling 2026-11-25)
  * composes this world's three further expressions per subject,
@@ -40,19 +42,33 @@
  * it lives, and resting is a legitimate state. Conversation stays
  * a natural entry into reconsideration — this door adds a place,
  * it formalizes nothing said in the chat beside it.
+ *
+ * Scales-1 (founder ruling 2026-11-25 09:51 PT, refinement 3):
+ * exploration before establishment. Tapping a floor's scales — or
+ * a room's, where the room's task carries a recorded estimate —
+ * opens the weighing: hypothetical figures adjusted from their
+ * recorded baselines, alternative arrangements kept side by side
+ * for the session, and the derived consequences (the backend
+ * capacity derivation, mirrored in palaceLogic) shown as the
+ * balance moves. Exploration writes nothing and is discarded on
+ * closing. Only the settle act writes: the settled figures through
+ * the existing VE routes, and the weighing itself as a decision
+ * carrying its provenance — the explored arrangement, the settled
+ * figures, and the recorded figures they replaced.
  */
 import * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CouncilChat from '../chat/CouncilChat'
 import SplitShell from '../components/SplitShell'
 import { SEAT_COLORS, type SeatId } from '../council/colors'
-import type { Idea } from '../vision-execution/types'
+import type { Idea, Project, Task } from '../vision-execution/types'
 import {
   attendingGuests,
   buildBuilding,
   buildCompound,
   buildFloor,
   buildRoom,
+  buildWeighingDecision,
   composeBoundaryPanel,
   composeSubjectPending,
   composeSubjectThresholds,
@@ -62,11 +78,19 @@ import {
   pendingActs,
   pendingEvidenceRefs,
   pendingSummaryLines,
+  recordedCapacityFor,
   vesselPending,
+  weighingBaseline,
+  weighingChanges,
+  weighingConsequences,
+  weighingWithKeeper,
   type AttributedRead,
   type BoundaryPanelModel,
   type PalaceData,
   type PendingReviewItem,
+  type WeighingBaseline,
+  type WeighingFigures,
+  type WeighingPicture,
 } from './palaceLogic'
 import {
   acceptReviewItem,
@@ -78,6 +102,7 @@ import {
   PALACE_STRAND_KEYS,
   rejectReviewItem,
   requestReconsideration,
+  settleWeighing,
   unresolveReviewItem,
 } from './palaceApi'
 import { BuildingScene, CompoundScene, FloorScene, RoomScene } from './palaceCanvas'
@@ -95,6 +120,7 @@ type Panel =
   | { kind: 'idea'; ideaId: string }
   | { kind: 'vessel' }
   | { kind: 'guest'; seat: SeatId }
+  | { kind: 'weighing' }
   | null
 
 const GUARDIAN = SEAT_COLORS.guardian
@@ -309,6 +335,40 @@ function ReconsiderAsk({
   )
 }
 
+/** One person's side of the scales, in words the house would use:
+ *  the committed hours, and the balance against their recorded
+ *  capacity — over, within, exactly at, or no judgement where no
+ *  capacity is recorded. */
+function pictureLine(p: WeighingPicture): string {
+  const committed = `${p.name} — ${p.committedHours}h a week committed`
+  if (p.capacityHours == null) {
+    return `${committed}; no capacity is recorded for them, so the scales make no judgement.`
+  }
+  if (p.over) return `${committed} against a recorded capacity of ${p.capacityHours}h — over by ${p.capacityDelta}h.`
+  if (p.capacityDelta != null && p.capacityDelta < 0) {
+    return `${committed} against a recorded capacity of ${p.capacityHours}h — within it, with ${-p.capacityDelta}h to spare.`
+  }
+  return `${committed} against a recorded capacity of ${p.capacityHours}h — exactly at it.`
+}
+
+function samePicture(a: WeighingPicture, b: WeighingPicture): boolean {
+  return (
+    a.committedHours === b.committedHours &&
+    a.capacityHours === b.capacityHours &&
+    a.capacityDelta === b.capacityDelta &&
+    a.over === b.over
+  )
+}
+
+function sameFigures(a: WeighingFigures, b: WeighingFigures): boolean {
+  return (
+    a.projectHours === b.projectHours &&
+    a.taskHours === b.taskHours &&
+    a.keeperId === b.keeperId &&
+    a.keeperCapacity === b.keeperCapacity
+  )
+}
+
 export default function LivingPalaceView({
   onFollowGuest,
 }: {
@@ -335,21 +395,21 @@ export default function LivingPalaceView({
 
   const current = trail[trail.length - 1]
 
+  const loadEntities = useCallback(async () => {
+    const entities = await fetchPalaceEntities()
+    setData(entities)
+    setCoreNonNegotiables(entities.coreProfile?.non_negotiables ?? null)
+  }, [])
+
   useEffect(() => {
     let cancelled = false
-    fetchPalaceEntities()
-      .then((entities) => {
-        if (cancelled) return
-        setData(entities)
-        setCoreNonNegotiables(entities.coreProfile?.non_negotiables ?? null)
-      })
-      .catch(() => {
-        if (!cancelled) setLoadError('The Palace could not be reached — its records did not load.')
-      })
+    loadEntities().catch(() => {
+      if (!cancelled) setLoadError('The Palace could not be reached — its records did not load.')
+    })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [loadEntities])
 
   const say = useCallback((text: string) => {
     if (toastTimer.current) window.clearTimeout(toastTimer.current)
@@ -465,6 +525,74 @@ export default function LivingPalaceView({
     },
     [refreshSubjectRead, say],
   )
+  /* ---------------- Scales-1: the weighing ---------------- */
+
+  /** The open weighing, if any: its recorded baseline, the
+   *  arrangement being explored, and the alternative arrangements
+   *  kept for comparison. Session-local in full — nothing here is
+   *  written anywhere until the settle act. */
+  const [weighing, setWeighing] = useState<{
+    baseline: WeighingBaseline
+    figures: WeighingFigures
+    alternatives: { label: string; figures: WeighingFigures }[]
+  } | null>(null)
+  const [settling, setSettling] = useState(false)
+
+  const openWeighing = useCallback(
+    (project: Project | null, task: Task | null) => {
+      if (!data) return
+      const baseline = weighingBaseline(data, project, task)
+      setWeighing({ baseline, figures: baseline.figures, alternatives: [] })
+      setPanel({ kind: 'weighing' })
+    },
+    [data],
+  )
+
+  const closeWeighing = useCallback(() => {
+    setPanel(null)
+    setWeighing(null)
+  }, [])
+
+  /** The settle act — the ONLY write the Palace makes. The figures
+   *  go through their existing routes; the weighing is kept as a
+   *  decision only when every figure landed. The toast says exactly
+   *  what the record now holds, including when the decision's
+   *  keeping was refused (it stands behind a permission the Palace
+   *  cannot open from here). */
+  const runSettle = useCallback(async () => {
+    if (!data || !weighing) return
+    const changes = weighingChanges(data, weighing.baseline, weighing.figures)
+    if (!changes.changed) return
+    const decision = buildWeighingDecision(data, weighing.baseline, weighing.figures, changes)
+    setSettling(true)
+    const outcome = await settleWeighing({
+      projectId: weighing.baseline.project?.id ?? null,
+      taskId: weighing.baseline.task?.id ?? null,
+      changes,
+      decision,
+    })
+    setSettling(false)
+    if (outcome.failed) {
+      if (outcome.landed.length > 0) {
+        say(
+          `The weighing only partly settled: ${outcome.landed.join(', ')} reached the record, but ${outcome.failed} did not — and the weighing was not kept as a decision, so the record claims no more than happened.`,
+        )
+        closeWeighing()
+        void loadEntities().catch(() => {})
+      } else {
+        say(`The weighing did not settle: ${outcome.failed} did not reach the record, and nothing was written.`)
+      }
+      return
+    }
+    closeWeighing()
+    void loadEntities().catch(() => {})
+    say(
+      outcome.decisionRecorded
+        ? 'Settled into the record — and the weighing is kept as a decision, with the figures it replaced.'
+        : 'The figures stand settled in the record. The weighing itself could not be kept as a decision — that keeping stands behind a permission the Palace cannot open from here.',
+    )
+  }, [data, weighing, say, closeWeighing, loadEntities])
+
   const subjectGuests = useMemo(() => attendingGuests(subjectRead), [subjectRead])
   const subjectGuestSeats = useMemo(() => subjectGuests.map((g) => g.seat), [subjectGuests])
   const layerNoun = current.layer === 'room' ? 'room' : 'floor'
@@ -472,12 +600,14 @@ export default function LivingPalaceView({
   const push = useCallback((next: PalaceLayer) => {
     setTrail((t) => [...t, next])
     setPanel(null)
+    setWeighing(null)
     setRoomLit(false)
   }, [])
 
   const goToTrailIndex = useCallback((index: number) => {
     setTrail((t) => t.slice(0, index + 1))
     setPanel(null)
+    setWeighing(null)
     setRoomLit(false)
   }, [])
 
@@ -573,9 +703,13 @@ export default function LivingPalaceView({
     (kind: 'scales' | 'vessel' | 'chest' | 'table' | 'mandala' | 'plant') => {
       if (!room) return
       if (kind === 'scales') {
-        say(
-          'The scales stand in every room, ready to weigh what a piece of work asks of you. Their pans are empty: weighing is not a built record, so nothing placed here is recorded — an unweighed undertaking, not a claim of balance.',
-        )
+        if (room.task.estimated_hours != null) {
+          openWeighing(room.project, room.task)
+        } else {
+          say(
+            'The scales stand in every room, ready to weigh what a piece of work asks of you. Their pans are empty for this room: no estimate is recorded for it, and a weighing begins from the record’s own figures — there is nothing here to place on them yet. An unweighed undertaking, not a claim of balance.',
+          )
+        }
       } else if (kind === 'vessel') {
         const heldNow = composeVesselHeld(subjectRead)
         if (
@@ -616,7 +750,7 @@ export default function LivingPalaceView({
         )
       }
     },
-    [room, say, subjectRead, subjectReadLoading],
+    [room, say, subjectRead, subjectReadLoading, openWeighing],
   )
 
   /* ---------------- chat subject ---------------- */
@@ -675,6 +809,28 @@ export default function LivingPalaceView({
   const vesselDoorItems = vesselPending(subjectRead)
   const openCandidacyReadingIds = new Set(vesselHeld.openReconsiderations.map((r) => r.reading_id))
   const guestPanelSeat = panel?.kind === 'guest' ? subjectGuests.find((g) => g.seat === panel.seat) : undefined
+  const weighingConsequencesNow = useMemo(
+    () => (data && weighing ? weighingConsequences(data, weighing.baseline, weighing.figures) : []),
+    [data, weighing],
+  )
+  const weighingChangesNow = useMemo(
+    () => (data && weighing ? weighingChanges(data, weighing.baseline, weighing.figures) : null),
+    [data, weighing],
+  )
+  const keeperNameOf = useCallback(
+    (id: string | null) => data?.persons.find((p) => p.id === id)?.name ?? 'The keeper of this floor',
+    [data],
+  )
+  const setWeighingFigure =
+    (key: 'projectHours' | 'taskHours' | 'keeperCapacity') =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const v = parseFloat(e.target.value)
+      setWeighing((w) =>
+        w
+          ? { ...w, figures: { ...w.figures, [key]: Number.isFinite(v) && v >= 0 ? v : w.figures[key] } }
+          : w,
+      )
+    }
 
   const left = (
     <div className="flex h-full flex-col bg-[#f7f1e3]">
@@ -778,12 +934,9 @@ export default function LivingPalaceView({
             onGuest={(seat) => setPanel({ kind: 'guest', seat })}
             onOpenRoom={openTask}
             onThreshold={() => void openBoundaries()}
-            onScales={() =>
-              floor.scalesFigures &&
-              say(
-                `The floor's scales hold recorded figures: this floor asks ${floor.scalesFigures.projectHours} hours a week, against ${floor.scalesFigures.ownerName}'s recorded capacity of ${floor.scalesFigures.capacityHours}. The figures are the record's own — the Palace invents none.`,
-              )
-            }
+            onScales={() => {
+              if (floor.scalesFigures && floorProject) openWeighing(floorProject, null)
+            }}
           />
         )}
         {data && room && current.layer === 'room' && (
@@ -1076,6 +1229,224 @@ export default function LivingPalaceView({
                 </p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {panel?.kind === 'weighing' && weighing && data && (
+        <div data-testid="palace-weighing-panel" className="max-h-[46%] overflow-y-auto border-t border-[#e3d5b8] bg-[#fffaf0] px-4 py-3 text-sm text-[#4a3f30]">
+          <div className="flex items-baseline justify-between">
+            <h3 className="font-semibold">
+              The scales — {weighing.baseline.task ? weighing.baseline.task.title : weighing.baseline.project?.title}
+            </h3>
+            <button type="button" className="text-xs underline decoration-dotted" onClick={closeWeighing}>
+              Close
+            </button>
+          </div>
+          <div className="mt-2 space-y-3 leading-relaxed">
+            <p className="text-xs text-[#6b5b45]">
+              A weighing changes nothing in the record. Move the figures and watch where the balance lies; only
+              settling writes them down, and closing the scales keeps nothing of the arrangement.
+            </p>
+            {weighing.baseline.task && (
+              <label className="block">
+                <span className="font-medium">This room’s estimate</span>
+                <span className="mt-1 flex items-center gap-2">
+                  <input
+                    data-testid="palace-weighing-task-hours"
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    value={weighing.figures.taskHours ?? ''}
+                    onChange={setWeighingFigure('taskHours')}
+                    className="w-24 rounded-lg border border-[#c9b995] bg-white/80 px-2 py-1 text-sm text-[#4a3f30]"
+                  />
+                  <span className="text-xs text-[#6b5b45]">
+                    hours · as recorded: {weighing.baseline.figures.taskHours}h
+                  </span>
+                </span>
+              </label>
+            )}
+            {weighing.baseline.project && (
+              <label className="block">
+                <span className="font-medium">This floor asks, each week</span>
+                <span className="mt-1 flex items-center gap-2">
+                  <input
+                    data-testid="palace-weighing-project-hours"
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    disabled={!weighing.baseline.adjustable.projectHours}
+                    value={weighing.figures.projectHours ?? ''}
+                    onChange={setWeighingFigure('projectHours')}
+                    className="w-24 rounded-lg border border-[#c9b995] bg-white/80 px-2 py-1 text-sm text-[#4a3f30] disabled:opacity-50"
+                  />
+                  <span className="text-xs text-[#6b5b45]">
+                    {weighing.baseline.adjustable.projectHours
+                      ? `hours · as recorded: ${weighing.baseline.figures.projectHours}h`
+                      : 'no weekly figure is recorded for this floor — there is nothing to place on this pan'}
+                  </span>
+                </span>
+              </label>
+            )}
+            {weighing.baseline.project && weighing.baseline.adjustable.keeper && (
+              <label className="block">
+                <span className="font-medium">Who keeps this floor</span>
+                <span className="mt-1 flex items-center gap-2">
+                  <select
+                    data-testid="palace-weighing-keeper"
+                    value={weighing.figures.keeperId ?? ''}
+                    onChange={(e) => {
+                      const id = e.target.value
+                      if (!id) return
+                      setWeighing((w) =>
+                        w ? { ...w, figures: weighingWithKeeper(data, w.figures, id) } : w,
+                      )
+                    }}
+                    className="rounded-lg border border-[#c9b995] bg-white/80 px-2 py-1 text-sm text-[#4a3f30]"
+                  >
+                    {weighing.baseline.keeperCandidates.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-xs text-[#6b5b45]">
+                    as recorded: {keeperNameOf(weighing.baseline.figures.keeperId)}
+                  </span>
+                </span>
+              </label>
+            )}
+            {weighing.baseline.project &&
+              weighing.figures.keeperId &&
+              (recordedCapacityFor(data, weighing.figures.keeperId) != null ? (
+                <label className="block">
+                  <span className="font-medium">{keeperNameOf(weighing.figures.keeperId)}’s weekly capacity</span>
+                  <span className="mt-1 flex items-center gap-2">
+                    <input
+                      data-testid="palace-weighing-capacity"
+                      type="number"
+                      min={0}
+                      step={0.5}
+                      value={weighing.figures.keeperCapacity ?? ''}
+                      onChange={setWeighingFigure('keeperCapacity')}
+                      className="w-24 rounded-lg border border-[#c9b995] bg-white/80 px-2 py-1 text-sm text-[#4a3f30]"
+                    />
+                    <span className="text-xs text-[#6b5b45]">
+                      hours · as recorded: {recordedCapacityFor(data, weighing.figures.keeperId)}h
+                    </span>
+                  </span>
+                </label>
+              ) : (
+                <p className="text-xs text-[#6b5b45]">
+                  No capacity is recorded for {keeperNameOf(weighing.figures.keeperId)} — that side of the scales
+                  stands empty, and nothing is invented to fill it.
+                </p>
+              ))}
+            {weighingConsequencesNow.length > 0 && (
+              <div>
+                <p className="font-medium">Where the balance lies</p>
+                <ul className="mt-1 space-y-1.5">
+                  {weighingConsequencesNow.map((c) => (
+                    <li key={c.arranged.personId}>
+                      <p>{pictureLine(c.arranged)}</p>
+                      {!samePicture(c.arranged, c.recorded) && (
+                        <p className="text-xs text-[#6b5b45]">As recorded: {pictureLine(c.recorded)}</p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  data-testid="palace-weighing-stash"
+                  className={PANEL_BUTTON}
+                  disabled={sameFigures(weighing.figures, weighing.baseline.figures)}
+                  onClick={() =>
+                    setWeighing((w) =>
+                      w
+                        ? {
+                            ...w,
+                            alternatives: [
+                              ...w.alternatives,
+                              { label: `Arrangement ${w.alternatives.length + 1}`, figures: w.figures },
+                            ],
+                          }
+                        : w,
+                    )
+                  }
+                >
+                  Keep this arrangement
+                </button>
+                <button
+                  type="button"
+                  data-testid="palace-weighing-reset"
+                  className={PANEL_BUTTON}
+                  disabled={sameFigures(weighing.figures, weighing.baseline.figures)}
+                  onClick={() =>
+                    setWeighing((w) => (w ? { ...w, figures: w.baseline.figures } : w))
+                  }
+                >
+                  Return to the recorded figures
+                </button>
+              </div>
+              {weighing.alternatives.map((alt, i) => {
+                const parts: string[] = []
+                if (weighing.baseline.task && alt.figures.taskHours != null) {
+                  parts.push(`room ${alt.figures.taskHours}h`)
+                }
+                if (weighing.baseline.project && alt.figures.projectHours != null) {
+                  parts.push(`floor asks ${alt.figures.projectHours}h a week`)
+                }
+                if (alt.figures.keeperId) parts.push(`${keeperNameOf(alt.figures.keeperId)} keeps it`)
+                if (alt.figures.keeperCapacity != null) parts.push(`capacity ${alt.figures.keeperCapacity}h`)
+                return (
+                  <div key={i} className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-[#6b5b45]">
+                    <span>
+                      <span className="font-medium text-[#4a3f30]">{alt.label}</span> — {parts.join(' · ')}
+                    </span>
+                    <button
+                      type="button"
+                      data-testid={`palace-weighing-restore-${i}`}
+                      className="underline decoration-dotted"
+                      onClick={() => setWeighing((w) => (w ? { ...w, figures: alt.figures } : w))}
+                    >
+                      Return to it
+                    </button>
+                    <button
+                      type="button"
+                      data-testid={`palace-weighing-drop-${i}`}
+                      className="underline decoration-dotted"
+                      onClick={() =>
+                        setWeighing((w) =>
+                          w ? { ...w, alternatives: w.alternatives.filter((_, j) => j !== i) } : w,
+                        )
+                      }
+                    >
+                      Set aside
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="border-t border-[#e3d5b8] pt-2">
+              <button
+                type="button"
+                data-testid="palace-weighing-settle"
+                className={PANEL_BUTTON}
+                disabled={!weighingChangesNow?.changed || settling}
+                onClick={() => void runSettle()}
+              >
+                {settling ? 'Settling…' : 'Settle these figures into the record'}
+              </button>
+              <p className="mt-1 text-xs text-[#6b5b45]">
+                Settling writes the figures through the house’s own records, and keeps the weighing as a decision —
+                the arrangement explored, the figures settled, and the recorded figures they replaced.
+              </p>
+            </div>
           </div>
         </div>
       )}

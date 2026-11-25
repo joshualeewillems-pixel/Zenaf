@@ -6,6 +6,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import type { Initiative, Project, Task } from '../types'
 import { buildTimelineRows, TIMELINE_ROW_HEIGHT_PX } from './timelineUtils'
+import { defaultNestedCollapsedIds } from '../nestedVisibility'
 import type { TimelineZoom, TimelineRow } from './timelineTypes'
 import { TimelineTree } from './TimelineTree'
 import { TimelineGrid, getRange } from './TimelineGrid'
@@ -36,20 +37,31 @@ export function ProjectsTimelineView({
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
   const [zoom, setZoom] = useState<TimelineZoom>('month')
   const [anchorDate, setAnchorDate] = useState(() => new Date())
-  const hasInitializedCollapsed = useRef(false)
+  // Parents + loose by default: every initiative, project, and parent task
+  // starts collapsed so only parents and loose items are listed; the loose
+  // section groups stay open so loose projects/tasks themselves are listed.
+  // Ids are defaulted once each (tracked in nestedSeenRef) so data arriving
+  // later also starts nested, while a parent the user already un-nested is
+  // never re-collapsed by a refetch.
+  const nestedSeenRef = useRef<Set<string>>(new Set())
   useEffect(() => {
-    if (hasInitializedCollapsed.current) return
-    if (initiatives.length === 0 && projects.length === 0) return
-    hasInitializedCollapsed.current = true
+    const defaults = defaultNestedCollapsedIds(initiatives, projects, tasks)
+    const fresh = [...defaults].filter((id) => !nestedSeenRef.current.has(id))
+    if (fresh.length === 0) return
+    fresh.forEach((id) => nestedSeenRef.current.add(id))
     setCollapsedIds((prev) => {
       const next = new Set(prev)
-      initiatives.forEach((i) => next.add(i.id))
-      projects.forEach((p) => next.add(p.id))
-      next.add('_unanchored')
-      next.add('_orphan_tasks')
+      fresh.forEach((id) => next.add(id))
       return next
     })
-  }, [initiatives, projects])
+  }, [initiatives, projects, tasks])
+
+  const expandAll = useCallback(() => setCollapsedIds(new Set()), [])
+  const collapseAll = useCallback(() => {
+    const defaults = defaultNestedCollapsedIds(initiatives, projects, tasks)
+    defaults.forEach((id) => nestedSeenRef.current.add(id))
+    setCollapsedIds(defaults)
+  }, [initiatives, projects, tasks])
 
   const toggleCollapsed = useCallback((id: string) => {
     setCollapsedIds((prev) => {
@@ -121,6 +133,20 @@ export function ProjectsTimelineView({
           className="text-xs text-slate-500 hover:text-slate-300 whitespace-nowrap shrink-0"
         >
           Today
+        </button>
+        <button
+          type="button"
+          onClick={expandAll}
+          className="text-xs text-slate-500 hover:text-slate-300 whitespace-nowrap shrink-0"
+        >
+          Expand all
+        </button>
+        <button
+          type="button"
+          onClick={collapseAll}
+          className="text-xs text-slate-500 hover:text-slate-300 whitespace-nowrap shrink-0"
+        >
+          Collapse all
         </button>
       </div>
       <div className="flex flex-1 min-h-0 overflow-x-auto overflow-y-hidden border border-slate-600 rounded-lg bg-slate-800/30">

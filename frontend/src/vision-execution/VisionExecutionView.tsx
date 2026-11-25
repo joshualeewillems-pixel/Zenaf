@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useCallback, useRef, useMemo, type MutableRefObject } from 'react'
+import { Fragment, useState, useEffect, useCallback, useRef, useMemo, type Dispatch, type MutableRefObject, type ReactNode, type SetStateAction } from 'react'
 import {
   VISION_EXECUTION_API,
   type CoreProfile,
@@ -21,6 +21,15 @@ import { TaskSoilDevAppend } from './dev/TaskSoilDevAppend'
 import type { VisionMapEntityBundle } from '../vision-map/blockersFromVe'
 import { VE_EVALUATE_ACTION_INTENTS, visionExecutionEvaluateRouting } from './veRunRoutingContext'
 import { ProjectsViewModeToggle, ProjectsTimelineView } from './timeline'
+import {
+  allNestableIds,
+  looseProjects,
+  looseTasks,
+  projectsOfInitiative,
+  rootTasksOf,
+  subtasksOf,
+  tasksOfProject,
+} from './nestedVisibility'
 import type { ProjectsViewMode } from './timeline'
 import {
   buildManualProcessingChunks,
@@ -741,10 +750,82 @@ function RoadmapView({
         ? initiatives.filter((i) => activeStatuses.includes(i.status))
         : initiatives.filter((i) => i.status === statusFilter)
   const getPersonName = (id: string | null) => (id ? persons.find((p) => p.id === id)?.name ?? id : '—')
+  // Parents + loose by default: initiatives start collapsed; projects,
+  // tasks, and subtasks appear only when their parent is un-nested.
+  const [roadmapExpandedInitiatives, setRoadmapExpandedInitiatives] = useState<string[]>([])
+  const [roadmapExpandedProjects, setRoadmapExpandedProjects] = useState<string[]>([])
+  const [roadmapExpandedTasks, setRoadmapExpandedTasks] = useState<string[]>([])
+  const toggleIn = (setter: Dispatch<SetStateAction<string[]>>) => (id: string) =>
+    setter((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  const toggleRoadmapInitiative = toggleIn(setRoadmapExpandedInitiatives)
+  const toggleRoadmapProject = toggleIn(setRoadmapExpandedProjects)
+  const toggleRoadmapTask = toggleIn(setRoadmapExpandedTasks)
+  const roadmapExpandAll = () => {
+    const all = allNestableIds(initiatives, projects, tasks)
+    setRoadmapExpandedInitiatives(all.initiativeIds)
+    setRoadmapExpandedProjects(all.projectIds)
+    setRoadmapExpandedTasks(all.taskIds)
+  }
+  const roadmapCollapseAll = () => {
+    setRoadmapExpandedInitiatives([])
+    setRoadmapExpandedProjects([])
+    setRoadmapExpandedTasks([])
+  }
+  const renderRoadmapTasks = (scopeTasks: Task[], depth: number): ReactNode =>
+    rootTasksOf(scopeTasks).map((t) => {
+      const subs = subtasksOf(scopeTasks, t.id)
+      const expanded = roadmapExpandedTasks.includes(t.id)
+      return (
+        <Fragment key={t.id}>
+          <li>
+            <span
+              className="text-slate-500 select-none cursor-pointer mr-1"
+              onClick={() => subs.length > 0 && toggleRoadmapTask(t.id)}
+            >
+              {subs.length > 0 ? (expanded ? '▼' : '▶') : '·'}
+            </span>
+            {veEntityDisplayStr(t.title)} {t.assignee_id ? `(${getPersonName(t.assignee_id)})` : ''} — {veEntityDisplayStr(t.status)}
+          </li>
+          {expanded && subs.length > 0 && (
+            <li>
+              <ul className="ml-3 mt-1 space-y-0.5" style={{ marginLeft: 12 + depth * 8 }}>
+                {renderRoadmapTasks(subs, depth + 1)}
+              </ul>
+            </li>
+          )}
+        </Fragment>
+      )
+    })
+  const renderRoadmapProject = (proj: Project) => {
+    const projTasks = tasksOfProject(tasks, proj.id)
+    const projExpanded = roadmapExpandedProjects.includes(proj.id)
+    return (
+      <div key={proj.id} className="text-sm">
+        <div className="flex items-center gap-2 text-slate-300">
+          <span
+            className="text-slate-500 select-none cursor-pointer"
+            onClick={() => projTasks.length > 0 && toggleRoadmapProject(proj.id)}
+          >
+            {projTasks.length > 0 ? (projExpanded ? '▼' : '▶') : '·'}
+          </span>
+          <span>{veEntityDisplayStr(proj.title)}</span>
+          <span className="text-xs text-slate-500">({veEntityDisplayStr(proj.status)})</span>
+          {proj.start_date || proj.end_date ? <span className="text-xs text-slate-500">{proj.start_date ?? '…'} → {proj.end_date ?? '…'}</span> : null}
+        </div>
+        {projExpanded && projTasks.length > 0 && (
+          <ul className="ml-3 mt-1 space-y-0.5 text-xs text-slate-400">
+            {renderRoadmapTasks(projTasks, 0)}
+          </ul>
+        )}
+      </div>
+    )
+  }
   return (
     <div className="space-y-4 flex-1 min-h-0 overflow-auto">
       <div className="flex items-center gap-3 flex-wrap">
         <h3 className="text-sm font-medium text-slate-200">Roadmap</h3>
+        <button type="button" onClick={roadmapExpandAll} className="text-xs text-slate-500 hover:text-slate-300">Expand all</button>
+        <button type="button" onClick={roadmapCollapseAll} className="text-xs text-slate-500 hover:text-slate-300">Collapse all</button>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
@@ -757,18 +838,29 @@ function RoadmapView({
           ))}
         </select>
       </div>
-      <p className="text-slate-500 text-xs">Initiatives with child projects and tasks. No new core entity — view over existing data.</p>
+      <p className="text-slate-500 text-xs">Initiatives and loose items by default — un-nest an initiative to see its projects and tasks. No new core entity — view over existing data.</p>
       <div className="space-y-4">
-        {initFiltered.length === 0 ? (
+        {initFiltered.length === 0 && looseProjects(projects).length === 0 && looseTasks(tasks).length === 0 ? (
           <p className="text-slate-500 text-sm">No initiatives match the filter.</p>
         ) : (
-          initFiltered.map((init) => {
-            const initProjects = projects.filter((p) => p.initiative_id === init.id)
+          <>
+          {initFiltered.map((init) => {
+            const initProjects = projectsOfInitiative(projects, init.id)
+            const initExpanded = roadmapExpandedInitiatives.includes(init.id)
             const briefLine = veEntityDisplayStr(init.brief)
             return (
               <div key={init.id} className="rounded-xl border border-slate-600 bg-slate-800/50 p-4">
                 <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className="font-medium text-slate-200">{veEntityDisplayStr(init.title)}</span>
+                  <span className="font-medium text-slate-200 flex items-center gap-2">
+                    <span
+                      className="text-slate-400 select-none cursor-pointer"
+                      onClick={() => initProjects.length > 0 && toggleRoadmapInitiative(init.id)}
+                    >
+                      {initProjects.length > 0 ? (initExpanded ? '▼' : '▶') : '·'}
+                    </span>
+                    {veEntityDisplayStr(init.title)}
+                    {initProjects.length > 0 && <span className="text-xs text-slate-500">{initProjects.length} project{initProjects.length === 1 ? '' : 's'}</span>}
+                  </span>
                   <span className="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300">{veEntityDisplayStr(init.status)}</span>
                 </div>
                 {briefLine ? (
@@ -777,35 +869,35 @@ function RoadmapView({
                     {briefLine.length > 160 ? '…' : ''}
                   </p>
                 ) : null}
-                <div className="ml-3 space-y-2 border-l-2 border-slate-600 pl-3">
-                  {initProjects.length === 0 ? (
-                    <p className="text-slate-500 text-xs">No projects</p>
-                  ) : (
-                    initProjects.map((proj) => {
-                      const projTasks = tasks.filter((t) => t.project_id === proj.id)
-                      return (
-                        <div key={proj.id} className="text-sm">
-                          <div className="flex items-center gap-2 text-slate-300">
-                            <span>{veEntityDisplayStr(proj.title)}</span>
-                            <span className="text-xs text-slate-500">({veEntityDisplayStr(proj.status)})</span>
-                            {proj.start_date || proj.end_date ? <span className="text-xs text-slate-500">{proj.start_date ?? '…'} → {proj.end_date ?? '…'}</span> : null}
-                          </div>
-                          <ul className="ml-3 mt-1 space-y-0.5 text-xs text-slate-400">
-                            {projTasks.slice(0, 8).map((t) => (
-                              <li key={t.id}>
-                                · {veEntityDisplayStr(t.title)} {t.assignee_id ? `(${getPersonName(t.assignee_id)})` : ''} — {veEntityDisplayStr(t.status)}
-                              </li>
-                            ))}
-                            {projTasks.length > 8 && <li className="text-slate-500">+{projTasks.length - 8} more</li>}
-                          </ul>
-                        </div>
-                      )
-                    })
-                  )}
-                </div>
+                {initExpanded && (
+                  <div className="ml-3 space-y-2 border-l-2 border-slate-600 pl-3">
+                    {initProjects.length === 0 ? (
+                      <p className="text-slate-500 text-xs">No projects</p>
+                    ) : (
+                      initProjects.map((proj) => renderRoadmapProject(proj))
+                    )}
+                  </div>
+                )}
               </div>
             )
-          })
+          })}
+          {looseProjects(projects).length > 0 && (
+            <div className="rounded-xl border border-slate-600 bg-slate-800/50 p-4">
+              <div className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Unanchored projects</div>
+              <div className="ml-3 space-y-2 border-l-2 border-slate-600 pl-3">
+                {looseProjects(projects).map((proj) => renderRoadmapProject(proj))}
+              </div>
+            </div>
+          )}
+          {looseTasks(tasks).length > 0 && (
+            <div className="rounded-xl border border-slate-600 bg-slate-800/50 p-4">
+              <div className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Tasks without project</div>
+              <ul className="ml-3 space-y-0.5 text-xs text-slate-400 border-l-2 border-slate-600 pl-3">
+                {renderRoadmapTasks(tasks.filter((t) => !t.project_id), 0)}
+              </ul>
+            </div>
+          )}
+          </>
         )}
       </div>
     </div>
@@ -5550,6 +5642,21 @@ export function VisionExecutionView({
   const toggleExecutionListProject = useCallback((id: string) => {
     setExecutionListExpandedProjects((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }, [])
+  const [executionListExpandedTasks, setExecutionListExpandedTasks] = useState<string[]>([])
+  const toggleExecutionListTask = useCallback((id: string) => {
+    setExecutionListExpandedTasks((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }, [])
+  const expandAllExecutionList = useCallback(() => {
+    const all = allNestableIds(initiatives, projects, tasks)
+    setExecutionListExpandedInitiatives(all.initiativeIds)
+    setExecutionListExpandedProjects(all.projectIds)
+    setExecutionListExpandedTasks(all.taskIds)
+  }, [initiatives, projects, tasks])
+  const collapseAllExecutionList = useCallback(() => {
+    setExecutionListExpandedInitiatives([])
+    setExecutionListExpandedProjects([])
+    setExecutionListExpandedTasks([])
+  }, [])
 
   // Meeting Capture: paste / upload → extract → staging → review → commit
   const STAGING_STORAGE_KEY = 'zenaf-meeting-staging'
@@ -7567,6 +7674,54 @@ export function VisionExecutionView({
     return `${t.slice(0, maxChars)}…`
   }
 
+  // Execution list task tree: root tasks only; subtasks un-nest under
+  // their parent task (parents + loose by default, at every level).
+  const renderExecutionListTasks = (scopeTasks: Task[], projectId: string | null): ReactNode =>
+    rootTasksOf(scopeTasks).map((t) => {
+      const subs = subtasksOf(scopeTasks, t.id)
+      const taskExpanded = executionListExpandedTasks.includes(t.id)
+      return (
+        <div key={t.id}>
+          <div
+            className={`rounded border p-2 text-sm cursor-pointer flex items-start gap-2 ${
+              detailTaskId === t.id ? 'border-amber-500 bg-amber-900/20' : 'border-slate-600 bg-slate-700/20'
+            }`}
+            onClick={(e) => {
+              e.stopPropagation()
+              setDetailTaskId(t.id)
+              setDetailProjectId(projectId)
+              setDetailInitiativeId(null)
+              setSelectedId(t.id)
+            }}
+          >
+            <span
+              className="text-slate-500 select-none shrink-0"
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleExecutionListTask(t.id)
+              }}
+            >
+              {subs.length > 0 ? (taskExpanded ? '▼' : '▶') : '·'}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium text-slate-200 truncate">{veEntityDisplayStr(t.title)}</span>
+                <span className="text-slate-500 text-[11px] shrink-0">
+                  Task · {veEntityDisplayStr(t.status) || '—'}
+                </span>
+              </div>
+              <p className="text-slate-400 text-xs mt-0.5 truncate">{truncateText(t.description || t.title, 56) || 'No description'}</p>
+            </div>
+          </div>
+          {taskExpanded && subs.length > 0 && (
+            <div className="ml-4 mt-1 space-y-1 border-l border-slate-600 pl-2">
+              {renderExecutionListTasks(subs, projectId)}
+            </div>
+          )}
+        </div>
+      )
+    })
+
   const handleCreateSeatRequest = async () => {
     setError(null)
     try {
@@ -9266,16 +9421,20 @@ export function VisionExecutionView({
             {showCreateTask && <CreateTaskForm projects={projects} onSave={handleCreateTask} onCancel={() => setShowCreateTask(false)} />}
             {executionViewMode === 'list' && (
               <>
+                <div className="flex items-center gap-3 -mb-2">
+                  <button type="button" onClick={expandAllExecutionList} className="text-xs text-slate-500 hover:text-slate-300">Expand all</button>
+                  <button type="button" onClick={collapseAllExecutionList} className="text-xs text-slate-500 hover:text-slate-300">Collapse all</button>
+                </div>
                 {loading ? (
                   <p className="text-slate-500 text-sm">Loading…</p>
                 ) : initiatives.length === 0 &&
-                  projects.filter((p) => !p.initiative_id).length === 0 &&
+                  looseProjects(projects).length === 0 &&
                   tasks.filter((t) => !t.project_id).length === 0 ? (
                   <p className="text-slate-500 text-sm">No initiatives, projects, or standalone tasks yet.</p>
                 ) : (
                   <div className="space-y-1 max-h-[480px] overflow-y-auto">
                     {initiatives.map((init) => {
-                      const initProjects = projects.filter((p) => p.initiative_id === init.id)
+                      const initProjects = projectsOfInitiative(projects, init.id)
                       const initExpanded = executionListExpandedInitiatives.includes(init.id)
                       const summaryText = truncateText(init.brief, 72) || 'No brief'
                       return (
@@ -9302,7 +9461,7 @@ export function VisionExecutionView({
                           {initExpanded && initProjects.length > 0 && (
                             <div className="ml-4 mt-1 space-y-1 border-l border-slate-600 pl-2">
                               {initProjects.map((p) => {
-                                const projTasks = tasks.filter((t) => t.project_id === p.id)
+                                const projTasks = tasksOfProject(tasks, p.id)
                                 const projExpanded = executionListExpandedProjects.includes(p.id)
                                 const pSummary = truncateText(p.brief, 60) || 'No brief'
                                 return (
@@ -9328,23 +9487,7 @@ export function VisionExecutionView({
                                     </div>
                                     {projExpanded && projTasks.length > 0 && (
                                       <div className="ml-4 mt-1 space-y-1 border-l border-slate-600 pl-2">
-                                        {projTasks.map((t) => (
-                                          <div
-                                            key={t.id}
-                                            className={`rounded border p-2 text-sm cursor-pointer ${
-                                              detailTaskId === t.id ? 'border-amber-500 bg-amber-900/20' : 'border-slate-600 bg-slate-700/20'
-                                            }`}
-                                            onClick={(e) => { e.stopPropagation(); setDetailTaskId(t.id); setDetailProjectId(p.id); setDetailInitiativeId(null); setSelectedId(t.id) }}
-                                          >
-                                            <div className="flex items-center justify-between gap-2">
-                                              <span className="font-medium text-slate-200 truncate">{veEntityDisplayStr(t.title)}</span>
-                                              <span className="text-slate-500 text-[11px] shrink-0">
-                                                Task · {veEntityDisplayStr(t.status) || '—'}
-                                              </span>
-                                            </div>
-                                            <p className="text-slate-400 text-xs mt-0.5 truncate">{truncateText(t.description || t.title, 56) || 'No description'}</p>
-                                          </div>
-                                        ))}
+                                        {renderExecutionListTasks(projTasks, p.id)}
                                       </div>
                                     )}
                                   </div>
@@ -9355,11 +9498,11 @@ export function VisionExecutionView({
                         </div>
                       )
                     })}
-                    {projects.filter((p) => !p.initiative_id).length > 0 && (
+                    {looseProjects(projects).length > 0 && (
                       <div className="mt-2 pt-2 border-t border-slate-600">
                         <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1.5">Unanchored projects</div>
-                        {projects.filter((p) => !p.initiative_id).map((p) => {
-                          const projTasks = tasks.filter((t) => t.project_id === p.id)
+                        {looseProjects(projects).map((p) => {
+                          const projTasks = tasksOfProject(tasks, p.id)
                           const projExpanded = executionListExpandedProjects.includes(p.id)
                           const pSummary = truncateText(p.brief, 60) || 'No brief'
                           return (
@@ -9385,23 +9528,7 @@ export function VisionExecutionView({
                               </div>
                               {projExpanded && projTasks.length > 0 && (
                                 <div className="ml-4 mt-1 space-y-1 border-l border-slate-600 pl-2">
-                                  {projTasks.map((t) => (
-                                    <div
-                                      key={t.id}
-                                      className={`rounded border p-2 text-sm cursor-pointer ${
-                                        detailTaskId === t.id ? 'border-amber-500 bg-amber-900/20' : 'border-slate-600 bg-slate-700/20'
-                                      }`}
-                                      onClick={(e) => { e.stopPropagation(); setDetailTaskId(t.id); setDetailProjectId(p.id); setDetailInitiativeId(null); setSelectedId(t.id) }}
-                                    >
-                                      <div className="flex items-center justify-between gap-2">
-                                        <span className="font-medium text-slate-200 truncate">{veEntityDisplayStr(t.title)}</span>
-                                        <span className="text-slate-500 text-[11px] shrink-0">
-                                          Task · {veEntityDisplayStr(t.status) || '—'}
-                                        </span>
-                                      </div>
-                                      <p className="text-slate-400 text-xs mt-0.5 truncate">{truncateText(t.description || t.title, 56) || 'No description'}</p>
-                                    </div>
-                                  ))}
+                                  {renderExecutionListTasks(projTasks, p.id)}
                                 </div>
                               )}
                             </div>
@@ -9409,37 +9536,11 @@ export function VisionExecutionView({
                         })}
                       </div>
                     )}
-                    {tasks.filter((t) => !t.project_id).length > 0 && (
+                    {looseTasks(tasks).length > 0 && (
                       <div className="mt-2 pt-2 border-t border-slate-600">
                         <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1.5">Tasks without project</div>
                         <div className="space-y-1">
-                          {tasks
-                            .filter((t) => !t.project_id)
-                            .map((t) => (
-                              <div
-                                key={t.id}
-                                className={`rounded border p-2 text-sm cursor-pointer ${
-                                  detailTaskId === t.id ? 'border-amber-500 bg-amber-900/20' : 'border-slate-600 bg-slate-700/20'
-                                }`}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setDetailTaskId(t.id)
-                                  setDetailProjectId(null)
-                                  setDetailInitiativeId(null)
-                                  setSelectedId(t.id)
-                                }}
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="font-medium text-slate-200 truncate">{veEntityDisplayStr(t.title)}</span>
-                                  <span className="text-slate-500 text-[11px] shrink-0">
-                                    Task · {veEntityDisplayStr(t.status) || '—'}
-                                  </span>
-                                </div>
-                                <p className="text-slate-400 text-xs mt-0.5 truncate">
-                                  {truncateText(t.description || t.title, 56) || 'No description'}
-                                </p>
-                              </div>
-                            ))}
+                          {renderExecutionListTasks(tasks.filter((t) => !t.project_id), null)}
                         </div>
                       </div>
                     )}

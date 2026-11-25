@@ -49,6 +49,7 @@ import {
   expandCairn,
   isGardenStackData,
   subtreeCairnIds,
+  subtreeChildNodeIds,
   type CairnEntry,
   type CairnIndex,
 } from './cairn'
@@ -669,6 +670,29 @@ function VisionMapFlow({
   )
 
   /**
+   * Un-nest everything (founder, 2026-11-25: "should be able to un nest
+   * in all cases but default should be nested"): every initiative
+   * unstacks and every project cairn fans out, so the full graph —
+   * parents, projects, tasks, outcomes — is on the map at once. The
+   * per-parent toggles still restack/refold individually from here.
+   */
+  const showEverything = useCallback(() => {
+    setStackedInitiatives(new Set())
+    setExpandedCairns(new Set(Object.keys(cairnIndexRef.current)))
+  }, [])
+
+  /**
+   * Return to the nested default (parents + loose only): every
+   * initiative restacks and every cairn refolds. Nothing is deleted —
+   * the same toggles un-nest any parent again in place.
+   */
+  const nestAll = useCallback(() => {
+    if (!baseGraph) return
+    setStackedInitiatives(defaultStackedTreeIds(baseGraph.nodes))
+    setExpandedCairns(new Set())
+  }, [baseGraph])
+
+  /**
    * Open a stone's data — the exact selection a tap produces
    * (MapChatShell payload included). The double-tap routes here: a hold
    * no longer opens data (it arms drag, then toggles), and collapsing a
@@ -1213,10 +1237,11 @@ function VisionMapFlow({
     let piles = 0
     let hiddenCairns = 0
     for (const treeId of stackedInitiatives) {
-      const ids = subtreeCairnIds(treeId, baseGraph.nodes, baseGraph.edges)
-      if (ids.length === 0) continue
+      // A pile stands when the stack hides ANY child — a cairn, or a
+      // lone child stone that never piled (parents + loose default).
+      if (subtreeChildNodeIds(treeId, baseGraph.nodes, baseGraph.edges).length === 0) continue
       piles += 1
-      hiddenCairns += ids.length
+      hiddenCairns += subtreeCairnIds(treeId, baseGraph.nodes, baseGraph.edges).length
     }
     return piles === 0 ? null : { piles, hiddenCairns }
   }, [stackedInitiatives, baseGraph])
@@ -1282,6 +1307,30 @@ function VisionMapFlow({
                     className="block min-h-[44px] w-full px-4 py-2 text-left text-sm text-stone-100 hover:bg-stone-800 disabled:opacity-50"
                   >
                     Refresh data
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChromeMenuOpen(false)
+                      showEverything()
+                    }}
+                    disabled={loadState !== 'ok' || nodeCount === 0}
+                    title="Un-nest every initiative and project — show the full graph"
+                    className="block min-h-[44px] w-full px-4 py-2 text-left text-sm text-stone-200 hover:bg-stone-800 disabled:opacity-40"
+                  >
+                    Show everything (un-nest all)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChromeMenuOpen(false)
+                      nestAll()
+                    }}
+                    disabled={loadState !== 'ok' || nodeCount === 0}
+                    title="Back to the nested default — parents and loose stones only"
+                    className="block min-h-[44px] w-full px-4 py-2 text-left text-sm text-stone-200 hover:bg-stone-800 disabled:opacity-40"
+                  >
+                    Nest all (default view)
                   </button>
                   <button
                     type="button"

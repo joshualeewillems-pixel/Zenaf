@@ -814,3 +814,346 @@ export const PENDING_KIND_LABELS: Record<string, string> = {
   correspondence: 'A correspondence between threads',
   reconsideration: 'A request to look again',
 }
+
+/* ------------------------------------------------------------------ */
+/* Scales-1 — the weighing: exploration before establishment           */
+/*                                                                     */
+/* The scales are Maeve's instrument for asking where the balance    */
+/* lies. Until now they only displayed: floor scales stand on        */
+/* recorded figures, room scales stand empty. Scales-1 lets the      */
+/* visitor WEIGH — adjust hypothetical figures, compare alternative  */
+/* arrangements, and see the derived consequences — and, only on     */
+/* his explicit settle act, establish the settled figures into the   */
+/* records (the writes live in palaceApi, through the VE routes      */
+/* that already exist; the provenance rides POST /decisions).        */
+/*                                                                     */
+/* Exploration is session-local and writes nothing (the Campaign     */
+/* Board's provisional-declaration honesty): closing the scales      */
+/* discards the arrangement. A weighing begins ALWAYS from recorded  */
+/* figures, and a figure with no recorded baseline is not            */
+/* adjustable — no baseline is invented, and the scales stay empty   */
+/* where there is nothing recorded to place on them.                 */
+/*                                                                     */
+/* The consequence arithmetic mirrors the backend derivation         */
+/* EXACTLY: local_ai/vision_execution/derived.py                     */
+/* add_capacity_derived — committed hours are the sum of             */
+/* estimated_weekly_hours over projects with status Ready or Active  */
+/* that the person owns or supports (a null estimate counts 0;       */
+/* owned-and-supported counts once); activeWeeklyHours rounds to     */
+/* one decimal; capacityDelta is the UNROUNDED sum minus capacity,   */
+/* rounded; overcapacity is the unrounded difference > 0. Where a    */
+/* person has no recorded capacity profile, the Palace makes no      */
+/* judgement: capacity and delta are null — no figure, no balance    */
+/* (the floor scales' standing rule, and the Board's convention).    */
+/* ------------------------------------------------------------------ */
+
+export interface WeighingFigures {
+  /** The floor's weekly ask — the project's estimated_weekly_hours. */
+  projectHours: number | null
+  /** The room's own estimate — the task's estimated_hours (room
+   *  anchors only; null for a floor weighing). */
+  taskHours: number | null
+  /** Who keeps the floor — the project's owner_id. */
+  keeperId: string | null
+  /** The recorded weekly capacity OF keeperId — whoever keeps the
+   *  floor in this arrangement — or null where that keeper has no
+   *  capacity recorded. */
+  keeperCapacity: number | null
+}
+
+export interface WeighingBaseline {
+  project: Project | null
+  task: Task | null
+  /** The recorded figures the weighing starts from. */
+  figures: WeighingFigures
+  /** Only figures with a recorded baseline may be adjusted. */
+  adjustable: {
+    projectHours: boolean
+    taskHours: boolean
+    keeper: boolean
+    keeperCapacity: boolean
+  }
+  /** Every recorded person — the keeper may be re-seated only to
+   *  someone the record knows. */
+  keeperCandidates: Person[]
+}
+
+/** A person's recorded weekly capacity, or null where no profile
+ *  is recorded for them. */
+export function recordedCapacityFor(data: PalaceData, personId: string | null): number | null {
+  if (!personId) return null
+  const profile = data.capacityProfiles.find((c) => c.person_id === personId)
+  return profile ? profile.weekly_capacity_hours : null
+}
+
+export function weighingBaseline(
+  data: PalaceData,
+  project: Project | null,
+  task: Task | null,
+): WeighingBaseline {
+  const keeperId = project?.owner_id ?? null
+  const keeperCapacity = recordedCapacityFor(data, keeperId)
+  return {
+    project,
+    task,
+    figures: {
+      projectHours: project?.estimated_weekly_hours ?? null,
+      taskHours: task?.estimated_hours ?? null,
+      keeperId,
+      keeperCapacity,
+    },
+    adjustable: {
+      projectHours: project?.estimated_weekly_hours != null,
+      taskHours: task?.estimated_hours != null,
+      keeper: keeperId != null,
+      keeperCapacity: keeperCapacity != null,
+    },
+    keeperCandidates: data.persons,
+  }
+}
+
+/** Re-seat the keeper in an arrangement: the capacity figure
+ *  follows the seat — it becomes the NEW keeper's recorded capacity
+ *  (or null where they have none recorded, and so not adjustable
+ *  for them). The previous keeper's capacity is never carried onto
+ *  another person. */
+export function weighingWithKeeper(
+  data: PalaceData,
+  figures: WeighingFigures,
+  keeperId: string,
+): WeighingFigures {
+  return { ...figures, keeperId, keeperCapacity: recordedCapacityFor(data, keeperId) }
+}
+
+export interface WeighingPicture {
+  personId: string
+  name: string
+  /** activeWeeklyHours, in derived.py's terms. */
+  committedHours: number
+  capacityHours: number | null
+  capacityDelta: number | null
+  /** derived.py's overcapacity: the unrounded difference > 0. */
+  over: boolean
+}
+
+function round1(x: number): number {
+  return Math.round(x * 10) / 10
+}
+
+/** One person's capacity picture under a given body of projects —
+ *  add_capacity_derived's arithmetic, step for step. */
+function capacityPicture(projects: Project[], capacityHours: number | null, person: Person): WeighingPicture {
+  let active = 0
+  for (const p of projects) {
+    const status = (p.status ?? '').trim()
+    if (status !== 'Ready' && status !== 'Active') continue
+    const involved =
+      p.owner_id === person.id ||
+      (Array.isArray(p.supporting_owner_ids) && p.supporting_owner_ids.includes(person.id))
+    if (involved) active += p.estimated_weekly_hours ?? 0
+  }
+  return {
+    personId: person.id,
+    name: person.name,
+    committedHours: round1(active),
+    capacityHours,
+    capacityDelta: capacityHours != null ? round1(active - capacityHours) : null,
+    over: capacityHours != null ? active - capacityHours > 0 : false,
+  }
+}
+
+/** The hypothetical body of work an arrangement describes: the
+ *  anchor project's hours and keeper replaced by the arrangement's,
+ *  and a capacity lookup in which the arrangement's keeper capacity
+ *  stands for that keeper. Pure — the data given is never mutated,
+ *  and figures the arrangement does not carry (null) leave the
+ *  record's own values standing. */
+export function applyWeighingFigures(
+  data: PalaceData,
+  baseline: WeighingBaseline,
+  figures: WeighingFigures,
+): { projects: Project[]; capacityOf: (personId: string) => number | null } {
+  const anchor = baseline.project
+  const projects = anchor
+    ? data.projects.map((p) =>
+        p.id === anchor.id
+          ? {
+              ...p,
+              estimated_weekly_hours: figures.projectHours ?? p.estimated_weekly_hours,
+              owner_id: figures.keeperId ?? p.owner_id,
+            }
+          : p,
+      )
+    : data.projects
+  const capacityOf = (personId: string): number | null => {
+    if (figures.keeperId === personId && figures.keeperCapacity != null) return figures.keeperCapacity
+    return recordedCapacityFor(data, personId)
+  }
+  return { projects, capacityOf }
+}
+
+/** The derived consequences of an arrangement, for every person the
+ *  floor's work touches: its keeper (the arrangement's, then the
+ *  recorded one, where they differ), its recorded supporters, and
+ *  the assignees of its rooms — the same people the Board's
+ *  capacity picture reads. Each person's picture is given twice:
+ *  as recorded, and as the arrangement would leave it. A room with
+ *  no floor (a loose task) has no capacity consequences — task
+ *  estimates are not weekly commitments in the derivation, and the
+ *  weighing invents none. */
+export function weighingConsequences(
+  data: PalaceData,
+  baseline: WeighingBaseline,
+  figures: WeighingFigures,
+): { recorded: WeighingPicture; arranged: WeighingPicture }[] {
+  const project = baseline.project
+  if (!project) return []
+  const ids: string[] = []
+  const add = (id: string | null | undefined) => {
+    if (id && !ids.includes(id)) ids.push(id)
+  }
+  add(figures.keeperId)
+  add(baseline.figures.keeperId)
+  for (const id of project.supporting_owner_ids ?? []) add(id)
+  for (const t of data.tasks) if (t.project_id === project.id) add(t.assignee_id)
+  const recordedArr = applyWeighingFigures(data, baseline, baseline.figures)
+  const arrangedArr = applyWeighingFigures(data, baseline, figures)
+  const out: { recorded: WeighingPicture; arranged: WeighingPicture }[] = []
+  for (const id of ids) {
+    const person = data.persons.find((p) => p.id === id)
+    if (!person) continue
+    out.push({
+      recorded: capacityPicture(recordedArr.projects, recordedArr.capacityOf(id), person),
+      arranged: capacityPicture(arrangedArr.projects, arrangedArr.capacityOf(id), person),
+    })
+  }
+  return out
+}
+
+/* ------------------------------------------------------------------ */
+/* establishment — what the settle act would write                     */
+/* ------------------------------------------------------------------ */
+
+export interface WeighingChanges {
+  /** One PATCH /projects/{id} body carrying every settled floor
+   *  figure that changed (the route applies only sent fields). */
+  projectPatch: { estimated_weekly_hours?: number; owner_id?: string } | null
+  /** PATCH /tasks/{id} — the room's settled estimate. */
+  taskPatch: { estimated_hours: number } | null
+  /** PUT /capacity-profiles — the settled capacity of whoever
+   *  keeps the floor in the settled arrangement. */
+  capacityPut: { person_id: string; weekly_capacity_hours: number } | null
+  changed: boolean
+}
+
+/** The write plan for a settle act: exactly the figures that differ
+ *  from their recorded baselines, each through its existing route.
+ *  Every adjustable figure has a route — there are no
+ *  exploration-only figures in this build. Capacity settles against
+ *  the RECORDED capacity of the arrangement's keeper, so re-seating
+ *  the keeper alone never rewrites anyone's capacity. */
+export function weighingChanges(
+  data: PalaceData,
+  baseline: WeighingBaseline,
+  figures: WeighingFigures,
+): WeighingChanges {
+  const base = baseline.figures
+  let projectPatch: WeighingChanges['projectPatch'] = null
+  if (baseline.project) {
+    const patch: { estimated_weekly_hours?: number; owner_id?: string } = {}
+    if (figures.projectHours != null && figures.projectHours !== base.projectHours) {
+      patch.estimated_weekly_hours = figures.projectHours
+    }
+    if (figures.keeperId != null && figures.keeperId !== base.keeperId) {
+      patch.owner_id = figures.keeperId
+    }
+    if (Object.keys(patch).length > 0) projectPatch = patch
+  }
+  const taskPatch =
+    baseline.task && figures.taskHours != null && figures.taskHours !== base.taskHours
+      ? { estimated_hours: figures.taskHours }
+      : null
+  const capacityPut =
+    figures.keeperId != null &&
+    figures.keeperCapacity != null &&
+    figures.keeperCapacity !== recordedCapacityFor(data, figures.keeperId)
+      ? { person_id: figures.keeperId, weekly_capacity_hours: figures.keeperCapacity }
+      : null
+  return {
+    projectPatch,
+    taskPatch,
+    capacityPut,
+    changed: projectPatch != null || taskPatch != null || capacityPut != null,
+  }
+}
+
+export const WEIGHING_DECISION_TYPE = 'scales_weighing'
+
+export interface WeighingDecisionPayload {
+  entity_type: 'project' | 'task'
+  entity_id: string
+  decision_type: string
+  ai_proposal_snapshot: Record<string, unknown>
+  final_values_snapshot: Record<string, unknown>
+}
+
+function figureSnapshot(baseline: WeighingBaseline, f: WeighingFigures): Record<string, unknown> {
+  const snap: Record<string, unknown> = {}
+  if (baseline.project) {
+    snap.project_id = baseline.project.id
+    snap.project_weekly_hours = f.projectHours
+    snap.keeper_id = f.keeperId
+    snap.keeper_capacity_hours = f.keeperCapacity
+  }
+  if (baseline.task) {
+    snap.task_id = baseline.task.id
+    snap.task_estimated_hours = f.taskHours
+  }
+  return snap
+}
+
+/** The weighing's provenance, in POST /decisions' existing shape
+ *  (DecisionCreateRequest — no new fields, no widened record): the
+ *  explored arrangement rides the proposal snapshot with its
+ *  derived consequences; the settled figures ride the final one;
+ *  BOTH carry the recorded figures they supersede. Who settled and
+ *  when are the decision row's own server-stamped owner and
+ *  created_at — the route stamps them, so the client neither sends
+ *  nor invents them. The decision is keyed to the entity whose
+ *  record principally changed: the floor when any floor figure or
+ *  the keeper's capacity settled, otherwise the room. */
+export function buildWeighingDecision(
+  data: PalaceData,
+  baseline: WeighingBaseline,
+  figures: WeighingFigures,
+  changes: WeighingChanges,
+): WeighingDecisionPayload | null {
+  const onProject =
+    changes.projectPatch != null || changes.capacityPut != null || baseline.task == null
+  const anchor = onProject ? baseline.project : baseline.task
+  if (!anchor) return null
+  const consequences = weighingConsequences(data, baseline, figures)
+  return {
+    entity_type: onProject ? 'project' : 'task',
+    entity_id: anchor.id,
+    decision_type: WEIGHING_DECISION_TYPE,
+    ai_proposal_snapshot: {
+      kind: WEIGHING_DECISION_TYPE,
+      explored: figureSnapshot(baseline, figures),
+      recorded_before: figureSnapshot(baseline, baseline.figures),
+      consequences: consequences.map((c) => ({
+        person_id: c.arranged.personId,
+        name: c.arranged.name,
+        committed_hours: c.arranged.committedHours,
+        capacity_hours: c.arranged.capacityHours,
+        capacity_delta: c.arranged.capacityDelta,
+        overcapacity: c.arranged.over,
+      })),
+    },
+    final_values_snapshot: {
+      kind: WEIGHING_DECISION_TYPE,
+      settled: figureSnapshot(baseline, figures),
+      recorded_before: figureSnapshot(baseline, baseline.figures),
+    },
+  }
+}

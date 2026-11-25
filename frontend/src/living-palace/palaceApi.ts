@@ -24,7 +24,13 @@ import {
 import { fetchVisionMapEntities } from '../vision-map/veMapApi'
 import { apiBase } from '../apiBase'
 import { fetchPermissionHome } from '../settings/api'
-import type { AttributedRead, PalaceData, StrandBoundarySet } from './palaceLogic'
+import type {
+  AttributedRead,
+  PalaceData,
+  StrandBoundarySet,
+  WeighingChanges,
+  WeighingDecisionPayload,
+} from './palaceLogic'
 
 export interface PalaceEntities extends PalaceData {
   /** The canonical core profile (its declared non-negotiables are
@@ -224,4 +230,82 @@ export async function exploreReviewItem(itemId: string, strandKey: string): Prom
  *  verdict like any other proposal. */
 export async function requestReconsideration(readingId: string, reason: string): Promise<boolean> {
   return postReview(`/reading/${readingId}/reconsider`, { reason })
+}
+
+/* ------------------------------------------------------------------ */
+/* Scales-1 — the settle act's writes.                                 */
+/*                                                                     */
+/* Exploration never calls any of this: these functions run ONLY     */
+/* from the weighing panel's settle act, the visitor's explicit      */
+/* confirmation. Every write goes through a route that already       */
+/* exists, with the payload shape that route already takes — the     */
+/* same PATCH /projects and PATCH /tasks the Campaign Board writes   */
+/* through, the VE workspace's own PUT /capacity-profiles body, and  */
+/* POST /decisions in DecisionCreateRequest's shape. No new route,   */
+/* no new record family, no model call.                              */
+/* ------------------------------------------------------------------ */
+
+async function veWriteOk(method: 'PATCH' | 'PUT' | 'POST', path: string, body: unknown): Promise<boolean> {
+  try {
+    const res = await fetch(`${VISION_EXECUTION_API}${path}`, {
+      method,
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+export interface WeighingSettleOutcome {
+  /** The figure writes that reached the record, in the order they
+   *  were made. */
+  landed: string[]
+  /** The first figure write that failed, if any. Settling stops
+   *  there, and the decision is NOT recorded — a decision claiming
+   *  figures that never landed would misrecord the weighing. */
+  failed: string | null
+  decisionAttempted: boolean
+  /** The decision write is separately fallible: POST /decisions
+   *  stands behind the profile-learning permission, which the
+   *  Palace cannot open from here. Figures that landed stand
+   *  regardless; the caller reports the keeping honestly. */
+  decisionRecorded: boolean
+}
+
+/** Settle a weighing: write the changed figures through their
+ *  existing routes (floor figures, then the room's estimate, then
+ *  the keeper's capacity), and — only when every figure landed —
+ *  record the weighing itself as a decision carrying its
+ *  provenance. */
+export async function settleWeighing(input: {
+  projectId: string | null
+  taskId: string | null
+  changes: WeighingChanges
+  decision: WeighingDecisionPayload | null
+}): Promise<WeighingSettleOutcome> {
+  const landed: string[] = []
+  const { changes } = input
+  if (changes.projectPatch && input.projectId) {
+    const ok = await veWriteOk('PATCH', `/projects/${input.projectId}`, changes.projectPatch)
+    if (!ok) return { landed, failed: 'the floor’s figures', decisionAttempted: false, decisionRecorded: false }
+    landed.push('the floor’s figures')
+  }
+  if (changes.taskPatch && input.taskId) {
+    const ok = await veWriteOk('PATCH', `/tasks/${input.taskId}`, changes.taskPatch)
+    if (!ok) return { landed, failed: 'the room’s estimate', decisionAttempted: false, decisionRecorded: false }
+    landed.push('the room’s estimate')
+  }
+  if (changes.capacityPut) {
+    const ok = await veWriteOk('PUT', '/capacity-profiles', changes.capacityPut)
+    if (!ok) return { landed, failed: 'the keeper’s capacity', decisionAttempted: false, decisionRecorded: false }
+    landed.push('the keeper’s capacity')
+  }
+  let decisionRecorded = false
+  if (input.decision) {
+    decisionRecorded = await veWriteOk('POST', '/decisions', input.decision)
+  }
+  return { landed, failed: null, decisionAttempted: input.decision != null, decisionRecorded }
 }

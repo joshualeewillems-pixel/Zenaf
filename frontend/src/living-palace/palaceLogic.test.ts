@@ -24,11 +24,13 @@ import type {
 } from '../vision-execution/types'
 import { SEAT_COLORS } from '../council/colors'
 import {
+  applyWeighingFigures,
   attendingGuests,
   buildBuilding,
   buildCompound,
   buildFloor,
   buildRoom,
+  buildWeighingDecision,
   composeBoundaryPanel,
   composeSubjectPending,
   composeSubjectThresholds,
@@ -38,9 +40,15 @@ import {
   pendingActs,
   pendingEvidenceRefs,
   pendingSummaryLines,
+  recordedCapacityFor,
   vesselPending,
+  weighingBaseline,
+  weighingChanges,
+  weighingConsequences,
+  weighingWithKeeper,
   type AttributedRead,
   type PalaceData,
+  type WeighingFigures,
 } from './palaceLogic'
 
 const PERSON: Person = {
@@ -561,5 +569,265 @@ describe('the verdict door composition (Slice 1)', () => {
     expect(pendingEvidenceRefs(candidacy)).toEqual([])
     expect(pendingSummaryLines(reading)).toEqual(['A newer tension, awaiting a word'])
     expect(pendingSummaryLines(candidacy)).toEqual(['The delivery facts changed.'])
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* Scales-1 — the weighing                                             */
+/*                                                                     */
+/* The fixture body for the weighing describes: Jo (capacity 20)     */
+/* keeps the anchor floor PA (Active, 6h, Sam supporting); Sam       */
+/* (capacity 10) also keeps PB (Ready, 8h) — so as recorded Sam is   */
+/* committed 14h against 10h and stands over. Two heavy projects in  */
+/* non-counting statuses (In Progress, Done) and a null-estimate     */
+/* project test the derivation's edges; PE is owned AND supported    */
+/* by Jo, to be counted once.                                        */
+/* ------------------------------------------------------------------ */
+
+const SAM: Person = {
+  id: 'per2',
+  name: 'Sam Support',
+  role: '',
+  notes: '',
+  created_at: '2026-05-01T00:00:00',
+  updated_at: '2026-05-01T00:00:00',
+} as Person
+
+const NOPROFILE: Person = {
+  id: 'per3',
+  name: 'Noor Unprofiled',
+  role: '',
+  notes: '',
+  created_at: '2026-05-01T00:00:00',
+  updated_at: '2026-05-01T00:00:00',
+} as Person
+
+const SAM_PROFILE: CapacityProfile = {
+  person_id: 'per2',
+  weekly_capacity_hours: 10,
+  created_at: '2026-05-01T00:00:00',
+  updated_at: '2026-05-01T00:00:00',
+}
+
+const PA = project({ id: 'pa', title: 'Anchor floor', owner_id: 'per1', supporting_owner_ids: ['per2'], estimated_weekly_hours: 6 })
+const PB = project({ id: 'pb', title: 'Sam’s own floor', status: 'Ready', owner_id: 'per2', estimated_weekly_hours: 8 })
+const PC = project({ id: 'pc', title: 'Under way', status: 'In Progress', owner_id: 'per1', estimated_weekly_hours: 40 })
+const PD = project({ id: 'pd', title: 'Finished', status: 'Done', owner_id: 'per1', estimated_weekly_hours: 40 })
+const PE = project({ id: 'pe', title: 'Owned and supported', owner_id: 'per1', supporting_owner_ids: ['per1'], estimated_weekly_hours: 3 })
+const PF = project({ id: 'pf', title: 'Noor’s floor', owner_id: 'per3', estimated_weekly_hours: 5 })
+const PG = project({ id: 'pg', title: 'Unestimated', owner_id: 'per1', estimated_weekly_hours: null })
+
+const WA = task({ id: 'wa', project_id: 'pa', title: 'Weighed room', estimated_hours: 4, assignee_id: 'per2' })
+const WB = task({ id: 'wb', project_id: 'pa', title: 'Unweighed room', estimated_hours: null })
+
+const WDATA: PalaceData = {
+  ideas: [],
+  initiatives: [I1],
+  projects: [PA, PB, PC, PD, PE, PF, PG],
+  tasks: [WA, WB],
+  persons: [PERSON, SAM, NOPROFILE],
+  assets: [],
+  capacityProfiles: [PROFILE, SAM_PROFILE],
+}
+
+function pictureFor(
+  consequences: ReturnType<typeof weighingConsequences>,
+  personId: string,
+): { recorded: (typeof consequences)[number]['recorded']; arranged: (typeof consequences)[number]['arranged'] } {
+  const row = consequences.find((c) => c.arranged.personId === personId)
+  expect(row, `no consequence for ${personId}`).toBeDefined()
+  return row!
+}
+
+describe('Scales-1 — the weighing baseline', () => {
+  it('starts from recorded figures only; only recorded figures are adjustable', () => {
+    const floorBase = weighingBaseline(WDATA, PA, null)
+    expect(floorBase.figures).toEqual({ projectHours: 6, taskHours: null, keeperId: 'per1', keeperCapacity: 20 })
+    expect(floorBase.adjustable).toEqual({ projectHours: true, taskHours: false, keeper: true, keeperCapacity: true })
+
+    const roomBase = weighingBaseline(WDATA, PA, WA)
+    expect(roomBase.figures.taskHours).toBe(4)
+    expect(roomBase.adjustable.taskHours).toBe(true)
+
+    const unweighed = weighingBaseline(WDATA, PA, WB)
+    expect(unweighed.figures.taskHours).toBeNull()
+    expect(unweighed.adjustable.taskHours).toBe(false)
+  })
+
+  it('a floor with nothing recorded exposes nothing to adjust', () => {
+    const bare = weighingBaseline(WDATA, P2, null) // owner null, hours null
+    expect(bare.figures).toEqual({ projectHours: null, taskHours: null, keeperId: null, keeperCapacity: null })
+    expect(bare.adjustable).toEqual({ projectHours: false, taskHours: false, keeper: false, keeperCapacity: false })
+  })
+
+  it('a keeper with no recorded capacity has none to adjust', () => {
+    const base = weighingBaseline(WDATA, PF, null)
+    expect(base.figures.keeperId).toBe('per3')
+    expect(base.figures.keeperCapacity).toBeNull()
+    expect(base.adjustable.keeper).toBe(true)
+    expect(base.adjustable.keeperCapacity).toBe(false)
+    expect(recordedCapacityFor(WDATA, 'per3')).toBeNull()
+    expect(recordedCapacityFor(WDATA, null)).toBeNull()
+  })
+
+  it('re-seating the keeper re-bases the capacity figure to the new keeper’s record', () => {
+    const base = weighingBaseline(WDATA, PA, null)
+    const toSam = weighingWithKeeper(WDATA, base.figures, 'per2')
+    expect(toSam.keeperId).toBe('per2')
+    expect(toSam.keeperCapacity).toBe(10)
+    const toNoor = weighingWithKeeper(WDATA, base.figures, 'per3')
+    expect(toNoor.keeperCapacity).toBeNull()
+  })
+})
+
+describe('Scales-1 — the derivation mirror (derived.py add_capacity_derived)', () => {
+  it('counts Ready/Active only, owner-or-supporter once, null estimates as 0', () => {
+    const base = weighingBaseline(WDATA, PA, null)
+    const consequences = weighingConsequences(WDATA, base, base.figures)
+    // Jo: PA 6 + PE 3 (owned AND supported — once) = 9; PC/PD excluded by
+    // status; PG's null counts 0. Against capacity 20: within.
+    const jo = pictureFor(consequences, 'per1')
+    expect(jo.recorded.committedHours).toBe(9)
+    expect(jo.recorded.capacityHours).toBe(20)
+    expect(jo.recorded.capacityDelta).toBe(-11)
+    expect(jo.recorded.over).toBe(false)
+    // Sam: PA 6 (supporting) + PB 8 (owner) = 14 against 10: over by 4.
+    const sam = pictureFor(consequences, 'per2')
+    expect(sam.recorded.committedHours).toBe(14)
+    expect(sam.recorded.capacityDelta).toBe(4)
+    expect(sam.recorded.over).toBe(true)
+  })
+
+  it('rounds as the backend rounds — and judges over on the UNROUNDED difference', () => {
+    // 10.04 committed against capacity 10: activeWeeklyHours reads
+    // 10.0 and capacityDelta reads 0.0, yet overcapacity is TRUE,
+    // because derived.py tests the unrounded difference.
+    const edge = project({ id: 'edge', status: 'Active', owner_id: 'per1', estimated_weekly_hours: 10.04 })
+    const edgeData: PalaceData = {
+      ...WDATA,
+      projects: [edge],
+      capacityProfiles: [{ ...PROFILE, weekly_capacity_hours: 10 }],
+    }
+    const base = weighingBaseline(edgeData, edge, null)
+    const jo = pictureFor(weighingConsequences(edgeData, base, base.figures), 'per1')
+    expect(jo.recorded.committedHours).toBe(10)
+    expect(jo.recorded.capacityDelta).toBe(0)
+    expect(jo.recorded.over).toBe(true)
+  })
+
+  it('makes no judgement where no capacity is recorded', () => {
+    const base = weighingBaseline(WDATA, PF, null)
+    const noor = pictureFor(weighingConsequences(WDATA, base, base.figures), 'per3')
+    expect(noor.recorded.committedHours).toBe(5)
+    expect(noor.recorded.capacityHours).toBeNull()
+    expect(noor.recorded.capacityDelta).toBeNull()
+    expect(noor.recorded.over).toBe(false)
+  })
+
+  it('a loose task has no capacity consequences — task estimates are not weekly commitments', () => {
+    const loose = task({ id: 'lt2', project_id: null, title: 'Loose', estimated_hours: 3 })
+    const base = weighingBaseline(WDATA, null, loose)
+    expect(weighingConsequences(WDATA, base, base.figures)).toEqual([])
+  })
+})
+
+describe('Scales-1 — exploration', () => {
+  it('moves the derived balance without touching the record', () => {
+    const base = weighingBaseline(WDATA, PA, null)
+    const figures: WeighingFigures = { ...base.figures, projectHours: 30 }
+    const arrangedProjects = applyWeighingFigures(WDATA, base, figures).projects
+    expect(arrangedProjects.find((p) => p.id === 'pa')?.estimated_weekly_hours).toBe(30)
+    // The record itself is untouched — exploration is pure.
+    expect(WDATA.projects.find((p) => p.id === 'pa')?.estimated_weekly_hours).toBe(6)
+    expect(PA.estimated_weekly_hours).toBe(6)
+
+    const consequences = weighingConsequences(WDATA, base, figures)
+    const jo = pictureFor(consequences, 'per1')
+    expect(jo.arranged.committedHours).toBe(33) // 30 + PE 3
+    expect(jo.arranged.over).toBe(true)
+    expect(jo.recorded.committedHours).toBe(9)
+    const sam = pictureFor(consequences, 'per2')
+    expect(sam.arranged.committedHours).toBe(38) // 30 supporting + PB 8
+  })
+
+  it('re-seating the keeper moves the commitment between keepers', () => {
+    const base = weighingBaseline(WDATA, PA, null)
+    const figures = weighingWithKeeper(WDATA, base.figures, 'per2')
+    const consequences = weighingConsequences(WDATA, base, figures)
+    const jo = pictureFor(consequences, 'per1')
+    expect(jo.arranged.committedHours).toBe(3) // only PE remains hers
+    const sam = pictureFor(consequences, 'per2')
+    // PA counts ONCE for Sam (owner now, and still a supporter) + PB 8.
+    expect(sam.arranged.committedHours).toBe(14)
+    expect(sam.arranged.capacityHours).toBe(10)
+  })
+})
+
+describe('Scales-1 — establishment', () => {
+  it('an unchanged arrangement settles nothing', () => {
+    const base = weighingBaseline(WDATA, PA, WA)
+    const changes = weighingChanges(WDATA, base, base.figures)
+    expect(changes).toEqual({ projectPatch: null, taskPatch: null, capacityPut: null, changed: false })
+  })
+
+  it('writes exactly the settled figures, each through its own route shape', () => {
+    const base = weighingBaseline(WDATA, PA, WA)
+    const figures: WeighingFigures = { projectHours: 12, taskHours: 9, keeperId: 'per1', keeperCapacity: 20 }
+    const changes = weighingChanges(WDATA, base, figures)
+    expect(changes.projectPatch).toEqual({ estimated_weekly_hours: 12 })
+    expect(changes.taskPatch).toEqual({ estimated_hours: 9 })
+    expect(changes.capacityPut).toBeNull()
+    expect(changes.changed).toBe(true)
+  })
+
+  it('re-seating alone never rewrites capacity; adjusting the new keeper’s does', () => {
+    const base = weighingBaseline(WDATA, PA, null)
+    const reseated = weighingWithKeeper(WDATA, base.figures, 'per2')
+    const onlyReseat = weighingChanges(WDATA, base, reseated)
+    expect(onlyReseat.projectPatch).toEqual({ owner_id: 'per2' })
+    expect(onlyReseat.capacityPut).toBeNull()
+
+    const adjusted = weighingChanges(WDATA, base, { ...reseated, keeperCapacity: 16 })
+    expect(adjusted.capacityPut).toEqual({ person_id: 'per2', weekly_capacity_hours: 16 })
+  })
+
+  it('the decision carries the weighing’s provenance in the existing shape', () => {
+    const base = weighingBaseline(WDATA, PA, null)
+    const figures: WeighingFigures = { ...base.figures, projectHours: 30 }
+    const changes = weighingChanges(WDATA, base, figures)
+    const decision = buildWeighingDecision(WDATA, base, figures, changes)
+    expect(decision).not.toBeNull()
+    expect(decision!.entity_type).toBe('project')
+    expect(decision!.entity_id).toBe('pa')
+    expect(decision!.decision_type).toBe('scales_weighing')
+    const proposal = decision!.ai_proposal_snapshot as {
+      explored: Record<string, unknown>
+      recorded_before: Record<string, unknown>
+      consequences: { person_id: string; overcapacity: boolean }[]
+    }
+    expect(proposal.explored.project_weekly_hours).toBe(30)
+    expect(proposal.recorded_before.project_weekly_hours).toBe(6)
+    expect(proposal.consequences.find((c) => c.person_id === 'per2')?.overcapacity).toBe(true)
+    const final = decision!.final_values_snapshot as {
+      settled: Record<string, unknown>
+      recorded_before: Record<string, unknown>
+    }
+    expect(final.settled.project_weekly_hours).toBe(30)
+    expect(final.recorded_before.project_weekly_hours).toBe(6)
+    // No who/when is invented client-side: the route stamps the
+    // decision row's owner and created_at.
+    expect(JSON.stringify(decision)).not.toContain('user_id')
+    expect(JSON.stringify(decision)).not.toContain('created_at')
+  })
+
+  it('a room-only weighing keys its decision to the room', () => {
+    const base = weighingBaseline(WDATA, PA, WA)
+    const figures: WeighingFigures = { ...base.figures, taskHours: 9 }
+    const changes = weighingChanges(WDATA, base, figures)
+    const decision = buildWeighingDecision(WDATA, base, figures, changes)
+    expect(decision!.entity_type).toBe('task')
+    expect(decision!.entity_id).toBe('wa')
+    const proposal = decision!.ai_proposal_snapshot as { explored: Record<string, unknown> }
+    expect(proposal.explored.task_estimated_hours).toBe(9)
   })
 })

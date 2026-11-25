@@ -1,0 +1,23 @@
+/* The Living Palace — the one animation the fire needs. Lifted from
+   the founder-ruled prototype: the seven tongues flicker as one. */
+.living-palace-scene .flame-flicker {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: palace-flick 1.6s ease-in-out infinite alternate;
+}
+@keyframes palace-flick {
+  from {
+    transform: scaleY(0.94);
+  }
+  to {
+    transform: scaleY(1.05);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .living-palace-scene .flame-flicker {
+    animation: none;
+  }
+}
+.living-palace-scene svg text {
+  user-select: none;
+}

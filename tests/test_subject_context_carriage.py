@@ -301,8 +301,8 @@ def test_non_interface_sheet_never_carries_the_block(ve_conn, conv_store):
 def test_assembler_gates(ve_conn):
     task = _make_task(ALICE, "Gated", status="Todo")
     base = {"entity_type": "task", "entity_id": task["id"]}
-    # Each of the four interface sheets carries it.
-    for sheet in ("campaign_board", "aria_atelier", "bench", "jynx_scroll"):
+    # Each of the five interface sheets carries it.
+    for sheet in ("campaign_board", "aria_atelier", "bench", "jynx_scroll", "living_palace"):
         assert SC.build_subject_context(ALICE, {"sheet_type": sheet, **base}) is not None, sheet
     # Non-VE entity types never resolve (a Scroll drawing is not a record).
     assert SC.build_subject_context(
@@ -471,3 +471,76 @@ def test_ai_notes_never_displace_the_records_own_fields(ve_conn):
     assert len(body) <= SC.BLOCK_CHAR_CAP
     assert "The founder's own brief, in full." in body
     assert "truncated" in body
+
+
+# ---------------------------------------------------------------------------
+# the Living Palace — Maeve's seat home joins the seam (2026-11-25)
+# ---------------------------------------------------------------------------
+
+
+def test_palace_task_subject_rides_for_the_guardian(ve_conn, conv_store):
+    """A room selected in the Palace carries its record into Maeve's
+    next turn — the same carriage the other four worlds have."""
+    project = _make_project(ALICE, "Winter client season")
+    task = _make_task(
+        ALICE,
+        "Order timber",
+        project_id=project["id"],
+        status="Todo",
+        notes="The yard confirmed the delivery slot on Tuesday.",
+    )
+    prompt = _turn_prompt(
+        conv_store,
+        ALICE,
+        "guardian",
+        {"sheet_type": "living_palace", "entity_type": "task", "entity_id": task["id"]},
+    )
+    assert SC.BEGIN_FENCE in prompt
+    assert "Order timber" in prompt
+    assert "The yard confirmed the delivery slot on Tuesday." in prompt
+
+
+def test_palace_building_and_table_subjects_ride(ve_conn):
+    """The Palace's other subject levels — a building (initiative)
+    and an idea resting on the drawing table — resolve identically."""
+    initiative = _make_initiative(ALICE, "Rebuild the workshop business", brief="The court's brief.")
+    block = SC.build_subject_context(
+        ALICE,
+        {"sheet_type": "living_palace", "entity_type": "initiative", "entity_id": initiative["id"]},
+    )
+    assert block is not None
+    assert "Rebuild the workshop business" in block
+    idea = _make_idea(ALICE, "Take on an apprentice", summary="A penciled possibility.")
+    block = SC.build_subject_context(
+        ALICE,
+        {"sheet_type": "living_palace", "entity_type": "idea", "entity_id": idea["id"]},
+    )
+    assert block is not None
+    assert "Take on an apprentice" in block
+
+
+def test_palace_no_selection_is_byte_identical(ve_conn, conv_store):
+    """Standing in the compound with nothing selected, a Palace
+    conversation assembles exactly as before — no block, and an
+    unresolved Palace selection changes nothing beyond the
+    pre-existing hint line (the same idiom as the other sheets)."""
+    palace = _turn_prompt(conv_store, ALICE, "guardian", {"sheet_type": "living_palace"})
+    assert SC.BEGIN_FENCE not in palace
+    unresolved = _turn_prompt(
+        conv_store,
+        ALICE,
+        "guardian",
+        {"sheet_type": "living_palace", "entity_type": "task", "entity_id": "missing"},
+    )
+    assert _without_hint_line(unresolved) == _without_hint_line(palace)
+
+
+def test_palace_other_owners_room_yields_no_block(ve_conn):
+    bobs = _make_task(BOB, "Bob's room", status="Todo")
+    assert (
+        SC.build_subject_context(
+            ALICE,
+            {"sheet_type": "living_palace", "entity_type": "task", "entity_id": bobs["id"]},
+        )
+        is None
+    )

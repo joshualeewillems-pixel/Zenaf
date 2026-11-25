@@ -99,6 +99,7 @@ export type SheetNavView =
   | 'bench'
   | 'jynx_scroll'
   | 'aria_atelier'
+  | 'living_palace'
 
 /**
  * Cross-component ask: jump the open seat sheet to that seat's review
@@ -364,6 +365,7 @@ const SEAT_NAV_ITEMS: Record<string, Array<{ id: string; title: string; desc: st
     { id: 'vision_tables', title: 'Vision (tables)', desc: 'The same work, as tables.', nav: 'vision_execution' },
   ],
   guardian: [
+    { id: 'living_palace', title: 'The Living Palace', desc: 'Your whole world as a house — its buildings, floors and rooms, and what each one holds.', nav: 'living_palace' },
     { id: 'provenance', title: 'Provenance', desc: 'Where your material came from — and where it went.', nav: 'provenance' },
   ],
   skeptic: [
@@ -392,6 +394,7 @@ export const SEAT_HOME_NAV: Record<string, SheetNavView> = {
   maverick: 'jynx_scroll',
   conductor: 'aria_atelier',
   skeptic: 'bench',
+  guardian: 'living_palace',
 }
 
 /** Seat-owned sheet items (Maverick only, founder 2026-11-12): Mint —

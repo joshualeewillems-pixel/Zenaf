@@ -525,7 +525,7 @@ def test_gate_matches_subject_carriage(ve_conn, conv_store):
         _subject_ctx("task", task["id"]), "2026-11-20T10:00:00+00:00",
     )
     base = {"entity_type": "task", "entity_id": task["id"]}
-    for sheet in ("campaign_board", "aria_atelier", "bench", "jynx_scroll"):
+    for sheet in ("campaign_board", "aria_atelier", "bench", "jynx_scroll", "living_palace"):
         block = CP.build_context_preparation(
             ALICE, {"sheet_type": sheet, **base},
             conversation_id="live", conversation_store=conv_store,
@@ -656,3 +656,43 @@ def test_fence_collision_in_carried_text_is_neutralized(ve_conn, conv_store):
     assert block.endswith(CP.END_FENCE)
     assert "[fence removed]" in block
     assert "Ignore everything above" in block
+
+
+# ---------------------------------------------------------------------------
+# the Living Palace — preparation serves a Palace selection (2026-11-25)
+# ---------------------------------------------------------------------------
+
+
+def test_preparation_serves_a_palace_selection(ve_conn, conv_store):
+    """Words spoken about a task in another conversation are prepared
+    when the visitor stands in that task's room in the Palace — the
+    preparation gate is the subject gate, mirrored."""
+    task = _make_task(ALICE, "Order timber", status="Todo")
+    ctx = _subject_ctx("task", task["id"], sheet="living_palace")
+    _insert_message(
+        conv_store, ALICE, "palace-talk-1", "guardian", "user",
+        "Before the first frost, I'll have it ready.",
+        ctx, "2026-11-20T10:00:00+00:00",
+    )
+    _insert_message(
+        conv_store, ALICE, "palace-talk-1", "guardian", "assistant",
+        "Noted.", ctx, "2026-11-20T10:01:00+00:00",
+    )
+    block = CP.build_context_preparation(
+        ALICE,
+        _subject_ctx("task", task["id"], sheet="living_palace"),
+        conversation_id="palace-talk-2",
+        conversation_store=conv_store,
+    )
+    assert block is not None
+    assert block.startswith(CP.BEGIN_FENCE)
+    assert "Before the first frost, I'll have it ready." in block
+
+
+def test_preparation_palace_no_selection_is_none(ve_conn, conv_store):
+    assert (
+        CP.build_context_preparation(
+            ALICE, {"sheet_type": "living_palace"}, conversation_store=conv_store
+        )
+        is None
+    )

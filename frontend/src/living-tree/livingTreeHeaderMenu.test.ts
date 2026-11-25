@@ -58,6 +58,7 @@ describe('buildSeatHeaderMenu', () => {
       'Today',
       'Review',
       'Upload',
+      'The Living Palace',
       'Provenance',
     ])
     const skeptic = buildSeatHeaderMenu({

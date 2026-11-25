@@ -176,7 +176,8 @@ describe('tree datum sync on a data-only status update', () => {
     // their home surfaces (the Campaign Board, the Atelier, the
     // Scroll, the Bench), so their sheets no longer open from the tree —
     // their hit groups below still prove the datum reached their
-    // nodes.
+    // nodes. The Guardian joined them 2026-11-25: her tap lands on
+    // the Living Palace.
     expect(hitGroup('arch-champion')).toBeTruthy()
     expect(hitGroup('arch-conductor')).toBeTruthy()
     expect(hitGroup('arch-maverick')).toBeTruthy()
@@ -185,12 +186,18 @@ describe('tree datum sync on a data-only status update', () => {
     await flush()
     expect(navigations).toContain('bench')
     expect(dialog()).toBeNull()
+    // The guardian's tap lands on the Living Palace — no sheet opens for her.
+    clickHitGroup('arch-guardian')
+    await flush()
+    expect(navigations).toContain('living_palace')
+    expect(dialog()).toBeNull()
     for (const seat of SEATS.filter(
       (s) =>
         s.id !== 'champion' &&
         s.id !== 'conductor' &&
         s.id !== 'maverick' &&
-        s.id !== 'skeptic',
+        s.id !== 'skeptic' &&
+        s.id !== 'guardian',
     )) {
       clickHitGroup(seat.nodeId)
       await flush()

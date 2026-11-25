@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from local_ai.conversation.context_preparation import build_context_preparation
 from local_ai.conversation.subject_context import build_subject_context
 from local_ai.council import capabilities as CAP
 from local_ai.council.archetypes import get_archetype
@@ -724,6 +725,29 @@ class ConversationService:
         # assembles byte-identically to before.
         subject_context = build_subject_context(user_id, context)
 
+        # Per-subject context preparation (founder direction,
+        # 2026-11-24): the subject block's sibling, at the same
+        # seam and under the same gate — for an interface
+        # conversation with a selected subject, prepare the
+        # subject's contexts from the caller's own records: their
+        # own earlier words about it in other conversations, the
+        # other conversations about it, steward material under the
+        # pencil layer's gates, and recorded surroundings (open
+        # signals, capacity). The service's own conversation store
+        # is passed so the linkage scan reads the same store the
+        # turn writes to. The assembler gates on the interface
+        # sheet types itself, isolates each source's failure, and
+        # never raises — mirroring the subject call it sits next
+        # to. No selection (or an unresolved/foreign id) yields no
+        # block, and the prompt assembles byte-identically to
+        # before.
+        preparation_context = build_context_preparation(
+            user_id,
+            context,
+            conversation_id=conversation_id,
+            conversation_store=self.store,
+        )
+
         # Capability C S5: first joining turn only. If a pending,
         # unexpired invitation exists for this (user, conversation,
         # seat) at turn start, the turn carries its evidence +
@@ -900,6 +924,7 @@ class ConversationService:
             obligation_context=obligation_context,
             evidence_context=evidence_context,
             subject_context=subject_context,
+            preparation_context=preparation_context,
             invitation_context=invitation_context,
             execution_context=execution_context,
             round_context=round_context,

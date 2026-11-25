@@ -954,6 +954,50 @@ class ConversationStore:
             ).fetchone()
         return int(row[0]) if row else 0
 
+    def messages_across_conversations(
+        self, user_id: str, limit: int = 500
+    ) -> list[dict[str, Any]]:
+        """The user's newest messages across ALL their conversations,
+        newest first. Read-only, strictly per-user — the ownership
+        predicate is the query's first condition, so another user's
+        rows can never match.
+
+        This is the read the per-subject context preparation
+        (local_ai/conversation/context_preparation.py) scans for
+        subject linkage: each row's parsed ``context`` is the
+        message's stored live-context snapshot. The limit bounds
+        the scan; older messages beyond it are simply not returned.
+        """
+        limit = max(1, min(int(limit or 500), 2000))
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, user_id, conversation_id, archetype_id, role, body, "
+                "mode, context_json, created_at FROM messages "
+                "WHERE user_id = ? "
+                "ORDER BY created_at DESC, id DESC LIMIT ?",
+                (user_id, limit),
+            ).fetchall()
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            try:
+                context = json.loads(r["context_json"] or "{}")
+            except Exception:
+                context = {}
+            out.append(
+                {
+                    "id": r["id"],
+                    "user_id": r["user_id"],
+                    "conversation_id": r["conversation_id"],
+                    "archetype_id": r["archetype_id"],
+                    "role": r["role"],
+                    "body": r["body"],
+                    "mode": r["mode"],
+                    "context": context,
+                    "created_at": r["created_at"],
+                }
+            )
+        return out
+
     def list_conversations(
         self,
         user_id: str,

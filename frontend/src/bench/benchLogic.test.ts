@@ -13,12 +13,14 @@ import {
   buildProjectTree,
   buildShelf,
   discussionForTask,
+  foliageSeatsForTask,
   footingFor,
   geometryRegisterFor,
   strandWeightForTask,
   verdictLogEntry,
   type BenchEntities,
   type BenchProposal,
+  type FoliageByTask,
 } from './benchLogic'
 
 function task(partial: Partial<Task> & { id: string }): Task {
@@ -137,6 +139,54 @@ describe('foliage evidence (§7)', () => {
         else expect(style).toBeNull()
       }
     }
+  })
+})
+
+describe('reading foliage (§7, the second source)', () => {
+  // Task id -> archetype ids whose steward readings touch it, as
+  // GET /vision-execution/bench-foliage serves it (gate open).
+  const READINGS: FoliageByTask = new Map<string, readonly string[]>([
+    ['t-plain', ['champion']],
+    ['t-discussed', ['guardian', 'maverick']],
+    ['t-stewarded', ['skeptic', 'not-a-seat']],
+  ])
+
+  it('merges provenance first, then reading seats — one foliage', () => {
+    expect(foliageSeatsForTask(DISCUSSED, READINGS)).toEqual([
+      { seatId: 'guardian', seatName: 'Maeve', source: 'provenance' },
+      { seatId: 'maverick', seatName: 'Jynx', source: 'reading' },
+    ])
+  })
+
+  it('a seat named by both sources is still one seat’s foliage', () => {
+    const seats = foliageSeatsForTask(DISCUSSED, READINGS)
+    expect(seats.filter((s) => s.seatId === 'guardian')).toHaveLength(1)
+    expect(seats[0].source).toBe('provenance')
+  })
+
+  it('reading foliage foliates a task with no provenance at all', () => {
+    expect(foliageSeatsForTask(PLAIN, READINGS)).toEqual([
+      { seatId: 'champion', seatName: 'Valen', source: 'reading' },
+    ])
+  })
+
+  it('the skeptic and unknown seats in a reading payload never foliate', () => {
+    expect(foliageSeatsForTask(STEWARDED, READINGS)).toEqual([])
+  })
+
+  it('in the built tree, both sources hang on their twigs as one discussion map', () => {
+    const tree = buildProjectTree(ENTITIES.projects[0], ENTITIES, new Map(), READINGS)
+    expect(tree.discussion.get('t-discussed')).toEqual(['Maeve', 'Jynx'])
+    expect(tree.discussion.get('t-plain')).toEqual(['Valen'])
+    expect(tree.discussion.has('t-stewarded')).toBe(false)
+    const twig = tree.twigs.find((t) => t.id === 't-discussed')
+    expect(twig?.foliageSeats.map((s) => s.source)).toEqual(['provenance', 'reading'])
+  })
+
+  it('without a foliage map, the tree is provenance-only (the shelf path)', () => {
+    const tree = buildProjectTree(ENTITIES.projects[0], ENTITIES, new Map())
+    expect([...tree.discussion.keys()]).toEqual(['t-discussed'])
+    expect(tree.discussion.get('t-discussed')).toEqual(['Maeve'])
   })
 })
 

@@ -7,13 +7,17 @@
  * in the user's Vision Execution record as a potted bonsai, grown —
  * not drawn — by the canonical growth grammar (growth.ts, proven
  * against growth_demo3.py), captioned with its true kind. Tapping a
- * tree brings it to the Bench at working size: branches are its
- * nested records; wire is a recorded proposal awaiting a verdict, in
- * the proposing seat's colour; jin is dropped material kept visible;
- * foliage appears ONLY where the record evidences discussion with
- * another seat (a branch's origin provenance), in that seat's
- * colour; the footing triangle is sized by the record's prose and
- * opens the notebook.
+ * tree brings it to the Bench at working size. The grammar is the
+ * founder's (corrected 2026-11-24): a tree is an initiative, its
+ * branches are the initiative's projects, and tasks branch off as
+ * TWIGS (a project standing as its own tree carries its tasks as
+ * twigs off the trunk). Wire is a recorded proposal awaiting a
+ * verdict, in the proposing seat's colour, coiled on the record it
+ * hangs on; jin is dropped material kept visible; foliage appears
+ * ONLY where the record evidences discussion with another seat —
+ * on twigs, because origin provenance is a task field — in that
+ * seat's colour; the footing triangle is sized by the record's
+ * prose and opens the notebook.
  *
  * Verdicts take the existing governed path — the same approve /
  * decline proposal endpoints the chat proposal cards use. The Bench
@@ -42,6 +46,7 @@ import {
   type BenchEntities,
   type BenchProposal,
   type BenchTreeModel,
+  type BenchTwig,
   type RootKind,
   type ShelfItem,
   type VerdictLogEntry,
@@ -71,12 +76,21 @@ function buildModelFor(
   return t ? buildLooseTaskTree(t) : null
 }
 
-/** §9: strand weight IS branch thickness — the painted width the
- *  weight deals (1 = a twig, 10 = trunk thickness), as a scale over
- *  the grammar's register width. */
-function widthScaleFor(branch: BenchBranch): number {
-  const target = 1.1 + ((branch.weight - 1) / 9) * 9.4
-  return target / PARAMS.woodW[branch.geometryRegister]
+/** §9: strand weight IS thickness — the painted width the weight
+ *  deals (1 = a twig, 10 = trunk thickness), as a scale over the
+ *  grammar's register width. One deal for branches and twigs. */
+function widthScaleFor(rec: { weight: number; geometryRegister: BenchBranch['geometryRegister'] }): number {
+  const target = 1.1 + ((rec.weight - 1) / 9) * 9.4
+  return target / PARAMS.woodW[rec.geometryRegister]
+}
+
+/** The grown path a record paints along: a branch's primary, or a
+ *  twig's own path. */
+function pathFor(tree: BenchTreeModel, id: string): Pt[] | undefined {
+  return (
+    tree.grown.primaries.get(id) ??
+    tree.grown.recordTwigs.find((r) => r.handle === id)?.pts
+  )
 }
 
 function sceneModelFor(
@@ -93,16 +107,27 @@ function sceneModelFor(
         !opts.shelf && live ? hexToRgb(SEAT_COLOUR_BY_ARCHETYPE[live.seat] ?? '#b47333') : null,
     }
   })
+  const twigs = tree.twigs.map((t) => {
+    const live = t.proposals[0]
+    return {
+      id: t.id,
+      jin: t.jin,
+      widthScale: widthScaleFor(t),
+      wireSeatColour:
+        !opts.shelf && live ? hexToRgb(SEAT_COLOUR_BY_ARCHETYPE[live.seat] ?? '#b47333') : null,
+    }
+  })
   let pencil: SceneModel['pencil'] = null
   if (!opts.shelf) {
+    const records: Array<{ id: string; state: string }> = [...tree.branches, ...tree.twigs]
     const considered =
-      tree.branches.find((b) => b.id === opts.selectedId) ??
-      tree.branches.find((b) => b.state === 'Todo' || b.state === 'Open') ??
-      tree.branches[0]
+      records.find((b) => b.id === opts.selectedId) ??
+      records.find((b) => b.state === 'Todo' || b.state === 'Open') ??
+      records[0]
     if (considered) {
       const start = trunkPoint(0.9).point
-      const primary = tree.grown.primaries.get(considered.id)
-      const tip = primary ? primary[primary.length - 1] : undefined
+      const path = pathFor(tree, considered.id)
+      const tip = path ? path[path.length - 1] : undefined
       if (tip) {
         const dx = tip[0] - start[0]
         const dy = tip[1] - start[1]
@@ -117,6 +142,7 @@ function sceneModelFor(
     elementsByHandle: tree.elementsByHandle,
     discussion: tree.discussion,
     branches,
+    twigs,
     footing: tree.footing,
     showExploratory: opts.showExploratory,
     selectedId: opts.selectedId,
@@ -171,11 +197,15 @@ export default function BenchView() {
     if (!model) return null
     // Wires decided this session stay off the tree even before the
     // refetch lands (the durable record is the proposal row itself).
-    const filtered = model.branches.map((b) => ({
+    const filteredBranches = model.branches.map((b) => ({
       ...b,
       proposals: b.proposals.filter((p) => !decidedWireIds.has(p.id)),
     }))
-    return { ...model, branches: filtered }
+    const filteredTwigs = model.twigs.map((t) => ({
+      ...t,
+      proposals: t.proposals.filter((p) => !decidedWireIds.has(p.id)),
+    }))
+    return { ...model, branches: filteredBranches, twigs: filteredTwigs }
   }, [entities, openRoot, proposalsByParent, decidedWireIds])
 
   const openTree = useCallback(
@@ -184,10 +214,25 @@ export default function BenchView() {
       setSelectedBranchId(null)
       setOpenedWire(null)
       setNotebookOpen(false)
-      if (!entities || kind !== 'project') return
-      const top = entities.tasks.filter((t) => t.project_id === id && !t.parent_task_id)
+      if (!entities) return
+      // Wire hangs on tasks (twigs): fetch pending proposals for
+      // every twig the opened tree will carry — a project's own
+      // tasks, or every project's tasks under an initiative.
+      let twigTasks: typeof entities.tasks = []
+      if (kind === 'project') {
+        twigTasks = entities.tasks.filter((t) => t.project_id === id && !t.parent_task_id)
+      } else if (kind === 'initiative') {
+        const projectIds = new Set(
+          entities.projects.filter((p) => p.initiative_id === id).map((p) => p.id),
+        )
+        twigTasks = entities.tasks.filter(
+          (t) => t.project_id !== null && projectIds.has(t.project_id) && !t.parent_task_id,
+        )
+      } else {
+        return
+      }
       const entries = await Promise.all(
-        top.map(async (t) => [t.id, await fetchPendingProposals(t.id)] as const),
+        twigTasks.map(async (t) => [t.id, await fetchPendingProposals(t.id)] as const),
       )
       setProposalsByParent((prev) => {
         const next = new Map(prev)
@@ -199,12 +244,15 @@ export default function BenchView() {
   )
 
   const selectedBranch = tree?.branches.find((b) => b.id === selectedBranchId) ?? null
+  const selectedTwig = tree?.twigs.find((t) => t.id === selectedBranchId) ?? null
 
   const applyVerdict = useCallback(
     async (kind: 'stand' | 'cut') => {
       if (!openedWire || !tree || verdictBusy) return
       const { branchId, proposal } = openedWire
-      const branch = tree.branches.find((b) => b.id === branchId)
+      const branch =
+        tree.branches.find((b) => b.id === branchId) ??
+        tree.twigs.find((t) => t.id === branchId)
       setVerdictBusy(true)
       setVerdictError(null)
       try {
@@ -224,10 +272,8 @@ export default function BenchView() {
         setOpenedWire(null)
         // The record changed (stand creates the task): re-read it.
         await load()
-        if (openRoot?.kind === 'project') {
-          const fresh = await fetchPendingProposals(branchId)
-          setProposalsByParent((prev) => new Map(prev).set(branchId, fresh))
-        }
+        const fresh = await fetchPendingProposals(branchId)
+        setProposalsByParent((prev) => new Map(prev).set(branchId, fresh))
       } catch {
         setVerdictError('The verdict did not reach the record. The coil stays where it was.')
       } finally {
@@ -245,8 +291,12 @@ export default function BenchView() {
   const chatContext: Record<string, unknown> = openRoot
     ? {
         sheet_type: 'bench',
-        entity_type: selectedBranch?.task ? 'task' : openRoot.kind,
-        entity_id: selectedBranch?.id ?? openRoot.id,
+        entity_type: selectedTwig
+          ? 'task'
+          : selectedBranch?.task
+            ? 'task'
+            : openRoot.kind,
+        entity_id: selectedTwig?.id ?? selectedBranch?.id ?? openRoot.id,
       }
     : { sheet_type: 'bench' }
 
@@ -277,7 +327,9 @@ export default function BenchView() {
   const benchScene = tree
     ? sceneModelFor(tree, { showExploratory, selectedId: selectedBranchId, shelf: false })
     : null
-  const branchNames = new Map((tree?.branches ?? []).map((b) => [b.id, b.name]))
+  const branchNames = new Map(
+    [...(tree?.branches ?? []), ...(tree?.twigs ?? [])].map((b) => [b.id, b.name]),
+  )
 
   const world = (
     <div className="p-3 lg:p-5 space-y-3">
@@ -314,16 +366,23 @@ export default function BenchView() {
                 setSelectedBranchId(id)
                 setOpenedWire(null)
               }}
+              onSelectTwig={(id) => {
+                setSelectedBranchId(id)
+                setOpenedWire(null)
+              }}
               onTapWire={(id) => {
                 setSelectedBranchId(id)
-                const branch = tree.branches.find((b) => b.id === id)
-                const proposal = branch?.proposals[0]
+                const rec =
+                  tree.branches.find((b) => b.id === id) ??
+                  tree.twigs.find((t) => t.id === id)
+                const proposal = rec?.proposals[0]
                 if (proposal) setOpenedWire({ branchId: id, proposal })
               }}
               onTapFooting={() => setNotebookOpen(true)}
               onTapPencil={() => {
+                const records = [...tree.branches, ...tree.twigs]
                 const considered =
-                  tree.branches.find((b) => b.state === 'Todo' || b.state === 'Open') ?? tree.branches[0]
+                  records.find((b) => b.state === 'Todo' || b.state === 'Open') ?? records[0]
                 if (considered) setSelectedBranchId(considered.id)
               }}
             />
@@ -362,15 +421,20 @@ export default function BenchView() {
             )}
             <div className="border-t border-dashed border-stone-400/50 px-1 pt-2">
               <h3 className="text-xs uppercase tracking-widest text-stone-500 m-0 mb-1 px-1">On this tree</h3>
-              {tree.branches.map((b) => {
-                const dot = b.jin
-                  ? '#ddd2b2'
-                  : b.proposals[0]
-                    ? (SEAT_COLOUR_BY_ARCHETYPE[b.proposals[0].seat] ?? '#b47333')
-                    : b.discussion
-                      ? (SEAT_COLOUR_BY_ARCHETYPE[b.discussion.seatId] ?? '#7a5638')
-                      : '#7a5638'
-                return (
+              {(() => {
+                const dotFor = (rec: {
+                  jin: boolean
+                  proposals: BenchProposal[]
+                  discussion: { seatId: string } | null
+                }) =>
+                  rec.jin
+                    ? '#ddd2b2'
+                    : rec.proposals[0]
+                      ? (SEAT_COLOUR_BY_ARCHETYPE[rec.proposals[0].seat] ?? '#b47333')
+                      : rec.discussion
+                        ? (SEAT_COLOUR_BY_ARCHETYPE[rec.discussion.seatId] ?? '#7a5638')
+                        : '#7a5638'
+                const branchRow = (b: BenchBranch) => (
                   <button
                     key={b.id}
                     type="button"
@@ -380,22 +444,70 @@ export default function BenchView() {
                       setSelectedBranchId(b.id)
                       setOpenedWire(null)
                     }}
-                    className={`flex w-full items-baseline gap-2 text-left px-1.5 py-2 border-b border-stone-400/30 last:border-b-0 text-stone-800 ${selectedBranchId === b.id ? 'bg-[#efe6cd]' : ''}`}
+                    className={`flex w-full items-baseline gap-2 text-left px-1.5 py-2 border-b border-stone-400/30 text-stone-800 ${selectedBranchId === b.id ? 'bg-[#efe6cd]' : ''}`}
                   >
                     <span
                       className="w-2.5 h-2.5 rounded-full shrink-0 relative top-px"
-                      style={{ background: dot }}
+                      style={{ background: dotFor(b) }}
                     />
                     <span className="flex-1 text-sm">{b.name}</span>
                     <span className="text-xs text-stone-500">{b.state}</span>
                   </button>
                 )
-              })}
+                const twigRow = (t: BenchTwig) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    data-twig-row={t.id}
+                    data-foliage-seat={t.discussion?.seatId ?? ''}
+                    onClick={() => {
+                      setSelectedBranchId(t.id)
+                      setOpenedWire(null)
+                    }}
+                    className={`flex w-full items-baseline gap-2 text-left pl-6 pr-1.5 py-1.5 border-b border-stone-400/20 text-stone-700 ${selectedBranchId === t.id ? 'bg-[#efe6cd]' : ''}`}
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0 relative top-px"
+                      style={{ background: dotFor(t) }}
+                    />
+                    <span className="flex-1 text-[0.83rem]">{t.name}</span>
+                    <span className="text-xs text-stone-500">{t.state}</span>
+                  </button>
+                )
+                return (
+                  <>
+                    {tree.branches.map((b) => (
+                      <div key={b.id}>
+                        {branchRow(b)}
+                        {tree.twigs.filter((t) => t.parentId === b.id).map(twigRow)}
+                      </div>
+                    ))}
+                    {tree.twigs.filter((t) => t.parentId === null).map(twigRow)}
+                  </>
+                )
+              })()}
               {selectedBranch && (
-                <BranchDetail branch={selectedBranch} onOpenWire={() => {
-                  const proposal = selectedBranch.proposals[0]
-                  if (proposal) setOpenedWire({ branchId: selectedBranch.id, proposal })
-                }} />
+                <BranchDetail
+                  branch={selectedBranch}
+                  onOpenWire={() => {
+                    const proposal = selectedBranch.proposals[0]
+                    if (proposal) setOpenedWire({ branchId: selectedBranch.id, proposal })
+                  }}
+                  onBringToBench={
+                    selectedBranch.sourceKind === 'project'
+                      ? () => void openTree('project', selectedBranch.id)
+                      : undefined
+                  }
+                />
+              )}
+              {selectedTwig && (
+                <TwigDetail
+                  twig={selectedTwig}
+                  onOpenWire={() => {
+                    const proposal = selectedTwig.proposals[0]
+                    if (proposal) setOpenedWire({ branchId: selectedTwig.id, proposal })
+                  }}
+                />
               )}
             </div>
           </div>
@@ -409,7 +521,11 @@ export default function BenchView() {
       {openedWire && tree && (
         <ProposalCard
           proposal={openedWire.proposal}
-          branchName={tree.branches.find((b) => b.id === openedWire.branchId)?.name ?? ''}
+          branchName={
+            tree.branches.find((b) => b.id === openedWire.branchId)?.name ??
+            tree.twigs.find((t) => t.id === openedWire.branchId)?.name ??
+            ''
+          }
           busy={verdictBusy}
           error={verdictError}
           onStand={() => void applyVerdict('stand')}
@@ -522,21 +638,47 @@ function Shelf({
 /* Branch inspection (§6/§8: provenance lives on inspection)           */
 /* ================================================================== */
 
-function BranchDetail({ branch, onOpenWire }: { branch: BenchBranch; onOpenWire: () => void }) {
+function BranchDetail({
+  branch,
+  onOpenWire,
+  onBringToBench,
+}: {
+  branch: BenchBranch
+  onOpenWire: () => void
+  /** When the branch IS a project (a branch of its initiative's
+   *  tree), the door that brings the BRANCH forward: the branch at
+   *  working size, its twigs on it — the same branch nearer, not a
+   *  separate tree. The shelf holds parents + loose only, so this
+   *  is how an initiative's project fills the bench. */
+  onBringToBench?: () => void
+}) {
   const lines: string[] = []
   lines.push(`“${branch.name}” — ${branch.state.toLowerCase()} in the record.`)
-  if (branch.subtaskCount > 0) {
+  if (branch.sourceKind === 'project') {
+    if (branch.subtaskCount > 0) {
+      lines.push(
+        `Its ${branch.subtaskCount === 1 ? 'task stands' : 'tasks stand'} as ${branch.subtaskCount === 1 ? 'a twig' : 'twigs'} on this branch — ${branch.subtaskCount} ${branch.subtaskCount === 1 ? 'twig' : 'twigs'} in the list above.`,
+      )
+    }
+  } else if (branch.subtaskCount > 0) {
     lines.push(`${branch.subtaskCount} nested ${branch.subtaskCount === 1 ? 'task' : 'tasks'} under it.`)
   }
   if (branch.jin) {
     lines.push('It stands pale — deadwood kept in the tree’s shape, not tidied away.')
   }
-  if (branch.discussion) {
-    lines.push(
-      `It carries foliage in ${branch.discussion.seatName}’s colour, because it was discussed with ${branch.discussion.seatName} — the branch came out of that recorded conversation.`,
-    )
-  } else if (!branch.jin) {
-    lines.push('It is bare — so far it has only been examined here, with Severine.')
+  if (branch.sourceKind !== 'project') {
+    // Foliage language belongs to tasks; a project branch's tasks
+    // carry it on their twigs, so the branch itself says nothing.
+    if (branch.discussion) {
+      lines.push(
+        `It carries foliage in ${branch.discussion.seatName}’s colour, because it was discussed with ${branch.discussion.seatName} — the task came out of that recorded conversation.`,
+      )
+    } else if (!branch.jin) {
+      lines.push('It is bare — so far it has only been examined here, with Severine.')
+    }
+  }
+  if (onBringToBench) {
+    lines.push('Brought forward, this branch fills the bench at working size — branch and twigs together.')
   }
   return (
     <div className="px-1.5 py-2 text-sm text-stone-700 space-y-1.5" data-branch-detail={branch.id}>
@@ -551,6 +693,62 @@ function BranchDetail({ branch, onOpenWire }: { branch: BenchBranch; onOpenWire:
           className="min-h-[36px] px-3.5 rounded-full border border-[#7c4a21] text-[#7c4a21] text-sm bg-transparent"
         >
           Open the proposal on this branch
+        </button>
+      )}
+      {onBringToBench && (
+        <button
+          type="button"
+          onClick={onBringToBench}
+          className="min-h-[36px] px-3.5 rounded-full border border-[#7c4a21] text-[#7c4a21] text-sm bg-transparent"
+        >
+          Bring this branch forward
+        </button>
+      )}
+    </div>
+  )
+}
+
+/* ================================================================== */
+/* Twig inspection — a task on its branch (or on the trunk)            */
+/* ================================================================== */
+
+function TwigDetail({
+  twig,
+  onOpenWire,
+}: {
+  twig: BenchTwig
+  onOpenWire: () => void
+}) {
+  const lines: string[] = []
+  lines.push(`“${twig.name}” — a twig, ${twig.state.toLowerCase()} in the record.`)
+  if (twig.subtaskCount > 0) {
+    lines.push(
+      `${twig.subtaskCount} nested ${twig.subtaskCount === 1 ? 'task' : 'tasks'} under it, carried in its weight — the growth grammar grows no finer level to draw them on.`,
+    )
+  }
+  if (twig.jin) {
+    lines.push('It stands pale — deadwood kept in the tree’s shape, not tidied away.')
+  }
+  if (twig.discussion) {
+    lines.push(
+      `It carries foliage in ${twig.discussion.seatName}’s colour, because it was discussed with ${twig.discussion.seatName} — the task came out of that recorded conversation.`,
+    )
+  } else if (!twig.jin) {
+    lines.push('It is bare — so far it has only been examined here, with Severine.')
+  }
+  return (
+    <div className="px-1.5 py-2 text-sm text-stone-700 space-y-1.5" data-twig-detail={twig.id}>
+      <p className="m-0">{lines.join(' ')}</p>
+      <p className="m-0 text-xs text-stone-500">
+        Strand weight {twig.weight} — {twig.weightRule}. Growth: {twig.geometryRule}.
+      </p>
+      {twig.proposals.length > 0 && (
+        <button
+          type="button"
+          onClick={onOpenWire}
+          className="min-h-[36px] px-3.5 rounded-full border border-[#7c4a21] text-[#7c4a21] text-sm bg-transparent"
+        >
+          Open the proposal on this twig
         </button>
       )}
     </div>

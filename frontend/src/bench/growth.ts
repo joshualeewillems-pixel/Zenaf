@@ -63,10 +63,46 @@ export interface Twig {
   handle: string
 }
 
+/**
+ * A RECORD twig — the corrected Bench grammar's third level
+ * (founder, 2026-11-24): a tree is an initiative, its branches are
+ * the initiative's projects, and TASKS branch off their project's
+ * branch as twigs. A twig spec names the task (handle), the branch
+ * it grows from (parentHandle — null grows from the trunk itself,
+ * which is how a loose project's own tree carries its tasks), and
+ * its dealt station/length. The port grows it with grow() at
+ * generation 2 — the machinery's own finest vocabulary (thinnest
+ * wood, its own fan twigs and anchors) — so a record twig is
+ * visually subordinate to its branch by construction, and its
+ * foliage anchors accrue under the TASK's handle, which is where
+ * the §7 evidence lives (origin provenance is a task field).
+ */
+export interface BenchTwigSpec {
+  handle: string
+  parentHandle: string | null
+  register: GeometryRegister
+  /** Station along the parent (branch primary, or the trunk when
+   *  parentHandle is null), arc fraction 0..1 — dealt, see benchLogic. */
+  station: number
+  /** Fork side off the parent's direction of growth. */
+  fork: 1 | -1
+  /** Dealt length before the register's len_scale. */
+  lenOld: number
+  sprite: number
+}
+
+export interface RecordTwig {
+  pts: Pt[]
+  handle: string
+  parentHandle: string | null
+  register: GeometryRegister
+}
+
 export interface GrownTree {
   primaries: Map<string, Pt[]>
   wood: WoodEntry[]
   twigs: Twig[]
+  recordTwigs: RecordTwig[]
   anchors: Map<string, Pt[]>
   padsByHandle: Map<string, Pad[]>
   bridges: Pad[]
@@ -238,6 +274,30 @@ export function trunkPoint(t: number): { point: Pt; tangent: Pt } {
   const y = TRUNK_PATH[i - 1][1] + (TRUNK_PATH[i][1] - TRUNK_PATH[i - 1][1]) * a
   const dx = TRUNK_PATH[i][0] - TRUNK_PATH[i - 1][0]
   const dy = TRUNK_PATH[i][1] - TRUNK_PATH[i - 1][1]
+  const L = Math.hypot(dx, dy) || 1.0
+  return { point: [x, y], tangent: [dx / L, dy / L] }
+}
+
+/** Point + unit tangent at arc fraction t of an arbitrary polyline
+ *  — trunkPoint's deal, for a branch's primary path. */
+export function pointAlongPath(
+  pts: readonly Pt[],
+  t: number,
+): { point: Pt; tangent: Pt } {
+  const cum: number[] = [0.0]
+  for (let i = 1; i < pts.length; i++) {
+    cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]))
+  }
+  const total = cum[cum.length - 1] || 1.0
+  const target = Math.max(0.0, Math.min(1.0, t)) * total
+  let i = searchsorted(cum, target)
+  i = Math.max(1, Math.min(i, pts.length - 1))
+  const seg = cum[i] - cum[i - 1] || 1.0
+  const a = (target - cum[i - 1]) / seg
+  const x = pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * a
+  const y = pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * a
+  const dx = pts[i][0] - pts[i - 1][0]
+  const dy = pts[i][1] - pts[i - 1][1]
   const L = Math.hypot(dx, dy) || 1.0
   return { point: [x, y], tangent: [dx / L, dy / L] }
 }
@@ -530,6 +590,7 @@ export function buildPads(
 export function growTree(
   elements: readonly BenchElement[],
   crosses: ReadonlyArray<readonly [string, string]> = [],
+  twigSpecs: readonly BenchTwigSpec[] = [],
 ): GrownTree {
   const out: GrowCollector = { wood: [], twigs: [], anchors: new Map() }
   const crossPartner = new Map<string, string>()
@@ -565,11 +626,61 @@ export function growTree(
   const phiApex = (Math.atan2(-tan[1], tan[0]) * 180) / Math.PI
   const apexPts = grow(tip, phiApex, 34.0, 1, elApex, rngApex, out, false)
   out.wood.push({ pts: apexPts, wRoot: 1.6, wTip: 0.4, gen: 1, handle: 'apex', register: 'pencil' })
-  const { padsByHandle, bridges } = buildPads(elements, out.anchors, crosses)
+  // Record twigs (the grammar's third level): each grows from its
+  // parent's primary — or the trunk, for a project standing as its
+  // own tree — with grow() at generation 2, the machinery's finest
+  // register: thinnest wood (1.15 -> 0.28), its own fan twigs, and
+  // anchors under the task's own handle, so foliage pads cluster
+  // per task. Each twig's seed is its own handle's, exactly as a
+  // branch's is; the fork angle is dealt from the same uniform the
+  // grammar's children draw their spread from. With no twig specs
+  // the grown tree is the canonical one, untouched — the harness
+  // equivalence in growth.test.ts grows without specs.
+  const recordTwigs: RecordTwig[] = []
+  const twigElements: BenchElement[] = []
+  for (const spec of twigSpecs) {
+    const parentPts =
+      spec.parentHandle === null ? TRUNK_PATH : primaries.get(spec.parentHandle)
+    if (!parentPts || parentPts.length < 2) continue
+    const { point: start, tangent: tan } =
+      spec.parentHandle === null
+        ? trunkPoint(spec.station)
+        : pointAlongPath(parentPts, spec.station)
+    out.anchors.set(spec.handle, [])
+    const rng = seedRng('grammar5', spec.handle)
+    const tanPhi = (Math.atan2(-tan[1], tan[0]) * 180) / Math.PI
+    let phi = tanPhi + spec.fork * rng.uniform(34, 52)
+    phi += (90.0 - phi) * 0.07
+    phi = Math.max(-18.0, Math.min(198.0, phi))
+    const length = spec.lenOld * PARAMS.lenScale[spec.register] * PARAMS.globalLen
+    const el = { handle: spec.handle, register: spec.register }
+    const pts = grow(start, phi, length, 2, el, rng, out)
+    recordTwigs.push({
+      pts,
+      handle: spec.handle,
+      parentHandle: spec.parentHandle,
+      register: spec.register,
+    })
+    twigElements.push({
+      handle: spec.handle,
+      register: spec.register,
+      side: spec.fork,
+      tGrow: spec.station,
+      elev: 0,
+      lenOld: spec.lenOld,
+      sprite: spec.sprite,
+    })
+  }
+  const { padsByHandle, bridges } = buildPads(
+    [...elements, ...twigElements],
+    out.anchors,
+    crosses,
+  )
   return {
     primaries,
     wood: out.wood,
     twigs: out.twigs,
+    recordTwigs,
     anchors: out.anchors,
     padsByHandle,
     bridges,

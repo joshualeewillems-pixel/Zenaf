@@ -2,8 +2,9 @@
  * The Bench scene on canvas: the grown tree painted by paint.ts
  * (the canonical machinery's geometry and painters), with the
  * prototype's tap geometry over it — a target at each branch's tip
- * and at its 75% point, one at each wire coil, one on the footing
- * triangle, one on the pencil stroke. The canvas is the interface;
+ * and at its 75% point, at each twig's tip and 75% point, one at
+ * each wire coil (branch or twig), one on the footing triangle,
+ * one on the pencil stroke. The canvas is the interface;
  * the buttons are invisible, named, and keyboard-reachable.
  */
 import { useEffect, useMemo, useRef } from 'react'
@@ -12,6 +13,7 @@ import type { Pt } from './growth'
 
 export interface TapTargets {
   branches: Array<{ id: string; name: string; tip: Pt; p75: Pt; coil: Pt | null }>
+  twigs: Array<{ id: string; name: string; tip: Pt; p75: Pt; coil: Pt | null }>
   footing: { x: number; y: number; w: number; h: number } | null
   pencilMid: Pt | null
 }
@@ -37,9 +39,22 @@ export function buildTapTargets(
       coil: b.wireSeatColour ? pointAlong(primary, 0.35) : null,
     })
   }
+  const twigs: TapTargets['twigs'] = []
+  for (const t of model.twigs) {
+    const path = model.grown.recordTwigs.find((r) => r.handle === t.id)?.pts
+    if (!path || path.length < 2) continue
+    twigs.push({
+      id: t.id,
+      name: branchNames.get(t.id) ?? t.id,
+      tip: path[path.length - 1],
+      p75: pointAlong(path, 0.75),
+      coil: t.wireSeatColour ? pointAlong(path, 0.35) : null,
+    })
+  }
   const ft = footingTriangle(model.footing)
   return {
     branches,
+    twigs,
     footing: ft?.box ?? null,
     pencilMid: model.pencil
       ? [
@@ -57,6 +72,7 @@ export default function BenchCanvas({
   branchNames,
   selectedId,
   onSelectBranch,
+  onSelectTwig,
   onTapWire,
   onTapFooting,
   onTapPencil,
@@ -65,6 +81,7 @@ export default function BenchCanvas({
   branchNames: ReadonlyMap<string, string>
   selectedId: string | null
   onSelectBranch: (id: string) => void
+  onSelectTwig: (id: string) => void
   onTapWire: (id: string) => void
   onTapFooting: () => void
   onTapPencil: () => void
@@ -81,7 +98,10 @@ export default function BenchCanvas({
     paintScene(ctx, model)
   }, [model])
 
-  const selectedTip = targets.branches.find((b) => b.id === selectedId)?.tip ?? null
+  const selectedTip =
+    targets.branches.find((b) => b.id === selectedId)?.tip ??
+    targets.twigs.find((t) => t.id === selectedId)?.tip ??
+    null
 
   return (
     <div className="relative w-full" style={{ aspectRatio: `${SCENE_W}/${SCENE_H}` }}>
@@ -162,6 +182,45 @@ export default function BenchCanvas({
           )}
         </span>
       ))}
+      {targets.twigs.map((t) => (
+        <span key={t.id}>
+          {[t.tip, t.p75].map((p, i) => (
+            <button
+              key={i}
+              type="button"
+              aria-label={t.name}
+              data-tap="twig"
+              data-twig={t.id}
+              onClick={() => onSelectTwig(t.id)}
+              className="absolute bg-transparent border-0 rounded-full cursor-pointer"
+              style={{
+                left: pct(p[0], SCENE_W),
+                top: pct(p[1], SCENE_H),
+                width: '9%',
+                aspectRatio: '1/1',
+                transform: 'translate(-50%,-50%)',
+              }}
+            />
+          ))}
+          {t.coil && model.showExploratory && (
+            <button
+              type="button"
+              aria-label={`Proposal on ${t.name}`}
+              data-tap="wire"
+              data-twig={t.id}
+              onClick={() => onTapWire(t.id)}
+              className="absolute bg-transparent border-0 rounded-full cursor-pointer"
+              style={{
+                left: pct(t.coil[0], SCENE_W),
+                top: pct(t.coil[1], SCENE_H),
+                width: '9%',
+                aspectRatio: '1/1',
+                transform: 'translate(-50%,-50%)',
+              }}
+            />
+          )}
+        </span>
+      ))}
       {targets.pencilMid && model.showExploratory && model.pencil && (
         <button
           type="button"
@@ -199,6 +258,13 @@ export function ShelfCanvas({ model, label }: { model: SceneModel; label: string
     let maxY = 606
     for (const w of model.grown.wood) {
       for (const [x, y] of w.pts) {
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+      }
+    }
+    for (const t of model.grown.recordTwigs) {
+      for (const [x, y] of t.pts) {
         if (x < minX) minX = x
         if (x > maxX) maxX = x
         if (y < minY) minY = y

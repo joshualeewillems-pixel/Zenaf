@@ -13,6 +13,10 @@ import type { MapNodePayload } from '../vision-map/ontology'
 import type { Initiative, Project, Task } from '../vision-execution/types'
 import {
   FILL_TAU,
+  FORMATION_SCALE,
+  GARDEN_GAP,
+  GARDEN_REF_H,
+  GARDEN_REF_W,
   STACK_DEFAULT,
   bringToFront,
   buildGarden,
@@ -27,10 +31,15 @@ import {
   fillStep,
   fillTarget,
   floorMult,
+  gardenFootprint,
+  gardenLayout,
   gardenPositions,
+  looseCairns,
+  ringInitiatives,
   rungOf,
   talkDepth,
   type GardenBundle,
+  type GardenFootprint,
 } from './atelierLogic'
 
 const initiative = (over: Record<string, unknown>): Initiative =>
@@ -271,5 +280,136 @@ describe('gardenPositions', () => {
       }
     }
     expect(gardenPositions(0)).toEqual([])
+  })
+})
+
+describe('parents + loose — the ring grouping', () => {
+  it('groups an initiative’s cairns into one ring pile; loose cairns stand alone', () => {
+    const g = buildGarden(
+      bundle({
+        projects: [
+          project({}),
+          project({ id: 'p2', title: 'Second project' }),
+          project({ id: 'p3', initiative_id: null, title: 'Loose project' }),
+        ],
+        tasks: [
+          task({}),
+          task({ id: 't2', title: 'Book the photographer' }),
+          task({ id: 't9', project_id: 'p2', title: 'Second stone' }),
+          task({ id: 't3', project_id: null, title: 'Loose errand' }),
+        ],
+      }),
+      piledIndex(),
+    )
+    const piles = ringInitiatives(g)
+    expect(piles).toHaveLength(1)
+    expect(piles[0].initiativeId).toBe('i1')
+    expect(piles[0].title).toBe('Spring line')
+    expect(piles[0].cairns.map((c) => c.projectId).sort()).toEqual(['p1', 'p2'])
+    // Stones counted across both projects (2 piled + 1 unpiled).
+    expect(piles[0].stoneCount).toBe(3)
+    // Member ids stay unique across the union, and only one
+    // branch keeps the parent flag.
+    const ids = piles[0].members.map((m) => m.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(piles[0].members.filter((m) => m.parent)).toHaveLength(1)
+
+    const loose = looseCairns(g)
+    expect(loose.map((c) => c.projectId)).toEqual(['p3'])
+    // Reachability: every garden cairn is in exactly one ring pile
+    // or stands loose.
+    const covered = [...piles.flatMap((p) => p.cairns), ...loose]
+    expect(covered.map((c) => c.projectId).sort()).toEqual(
+      g.cairns.map((c) => c.projectId).sort(),
+    )
+  })
+})
+
+describe('gardenLayout — shown labels never overlap', () => {
+  const fp = (title: string, pileH = 90, count = true): GardenFootprint =>
+    gardenFootprint({ title, pileWidthPx: 104, pileHeightPx: pileH, showCount: count })
+
+  function expectLegible(items: GardenFootprint[]) {
+    const placed = gardenLayout(items)
+    expect(placed).toHaveLength(items.length)
+    // Pairwise: no two footprint boxes come within the gap.
+    for (let i = 0; i < placed.length; i++) {
+      for (let j = i + 1; j < placed.length; j++) {
+        const a = placed[i].box
+        const b = placed[j].box
+        const ox = Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left)
+        const oy = Math.min(a.top + a.height, b.top + b.height) - Math.max(a.top, b.top)
+        expect(
+          ox <= -GARDEN_GAP + 0.5 || oy <= -GARDEN_GAP + 0.5,
+          `items ${i} and ${j} overlap (ox=${ox.toFixed(1)}, oy=${oy.toFixed(1)})`,
+        ).toBe(true)
+      }
+    }
+    for (const p of placed) {
+      // Inside the field (6px edge bleed allowed, as the garden
+      // already lets piles kiss the rim).
+      expect(p.box.left).toBeGreaterThanOrEqual(-6.5)
+      expect(p.box.top).toBeGreaterThanOrEqual(-6.5)
+      expect(p.box.left + p.box.width).toBeLessThanOrEqual(GARDEN_REF_W + 6.5)
+      expect(p.box.top + p.box.height).toBeLessThanOrEqual(GARDEN_REF_H + 6.5)
+    }
+    return placed
+  }
+
+  it('lays out a small garden legibly and deterministically', () => {
+    const items = [fp('Zenaf — outsourced executive function', 95), fp('Meet your council', 80)]
+    expect(gardenLayout(items)).toEqual(gardenLayout(items))
+    const placed = expectLegible(items)
+    // A garden that fits stands at full size.
+    expect(placed.every((p) => p.scale === 1)).toBe(true)
+  })
+
+  it('a crowded garden shrinks uniformly rather than overlapping', () => {
+    const titles = [
+      'Zenaf — outsourced executive function',
+      'Meet your council',
+      'Tier 0 — In flight, decide now',
+      'Downstream builds (noting producer + Slice 2)',
+      'Capability B trial — dentist follow-up',
+      'W1 live test task',
+      'Loose errand',
+      'Fix the gate latch',
+    ]
+    const placed = expectLegible(titles.map((t, i) => fp(t, 55 + (i % 4) * 16, i % 3 !== 0)))
+    // One uniform scale for the whole set, never below the floor.
+    expect(new Set(placed.map((p) => p.scale)).size).toBe(1)
+    expect(placed[0].scale).toBeGreaterThanOrEqual(0.55)
+  })
+
+  it('keeps a crowded garden legible — long titles, eight shown items', () => {
+    // The crowded end of what the parents+loose rule shows: two
+    // initiative piles plus a half-dozen loose items, several
+    // with label-capping titles.
+    const titles = [
+      'Zenaf — outsourced executive function',
+      'Meet your council',
+      'Tier 0 — In flight, decide now',
+      'Downstream builds (noting producer + Slice 2)',
+      'Capability B trial — dentist follow-up',
+      'W1 live test task',
+      'Loose errand',
+      'Fix the gate latch',
+    ]
+    expectLegible(titles.map((t, i) => fp(t, 55 + (i % 4) * 16, i % 3 !== 0)))
+  })
+
+  it('an empty garden lays out empty', () => {
+    expect(gardenLayout([])).toEqual([])
+  })
+})
+
+describe('the formation scale', () => {
+  it('stands substantially larger in the bowl than the unscaled stack', () => {
+    // The founder’s correction: the formation must fill
+    // substantially more of the bowl’s inner diameter, water
+    // still visible as a rim — a scale above 1.25 and below the
+    // point where the rim disappears entirely.
+    expect(FORMATION_SCALE).toBeGreaterThan(1.25)
+    expect(FORMATION_SCALE).toBeLessThan(1.45)
   })
 })

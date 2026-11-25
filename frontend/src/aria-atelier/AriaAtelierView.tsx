@@ -15,6 +15,16 @@
  * by the map's tower layout and sprite component from the same
  * members. Nothing is fixture, nothing is redrawn.
  *
+ * The ring follows the standing display rule (founder, 2026-11-24 —
+ * parents and loose items only): one cairn per INITIATIVE (the
+ * union of its projects' piles), plus the loose projects and the
+ * standalone stones. An initiative's project cairns appear in its
+ * fan when the initiative is opened; a project's stones appear in
+ * its own fan, as before — every record stays reachable through
+ * its parent. The ring's layout (gardenLayout) guarantees the
+ * shown cairns' name labels never overlap: footprints are placed
+ * on the ring and relaxed until no two touch, clear of the well.
+ *
  * Casting follows the accepted prototype (seven-interfaces, Aria
  * view): fan a cairn to see its stones; drag a stone to the well —
  * or tap the stone, then the well — to cast it. The cairn itself can
@@ -46,9 +56,14 @@ import CouncilChat from '../chat/CouncilChat'
 import SplitShell from '../components/SplitShell'
 import { CairnStoneSprite } from '../vision-map/CairnStoneSprite'
 import { CAIRN_SPRITES, UPPER_POOL } from '../vision-map/cairnSprites'
-import { towerLayoutForMembers, type PortedTowerLayout } from '../vision-map/cairnTower'
+import {
+  towerLayoutForMembers,
+  type CairnMemberInput,
+  type PortedTowerLayout,
+} from '../vision-map/cairnTower'
 import { fetchAtelierData, fetchSeatTurnCounts, type AtelierData } from './atelierApi'
 import {
+  FORMATION_SCALE,
   STACK_DEFAULT,
   VOICES,
   VOICE_BY_ARCHETYPE,
@@ -67,13 +82,18 @@ import {
   fillStep,
   fillTarget,
   floorMult,
-  gardenPositions,
+  gardenFootprint,
+  gardenLayout,
+  looseCairns,
+  ringInitiatives,
   ceilingScale,
   REPLAY_BASE_MS,
   REPLAY_HOLD_MS,
   REPLAY_RATES,
   type AtelierCairn,
+  type AtelierInitiativePile,
   type AtelierLooseStone,
+  type GardenPlacement,
   type AtelierStone,
   type CastTarget,
   type Voice,
@@ -122,9 +142,17 @@ type DragPayload =
   | { kind: 'stone'; cairn: AtelierCairn; stone: AtelierStone }
   | { kind: 'cairnBase'; cairn: AtelierCairn }
   | { kind: 'initiative'; cairn: AtelierCairn }
+  | { kind: 'initiativePile'; pile: AtelierInitiativePile }
+  | { kind: 'fanProject'; cairn: AtelierCairn }
   | { kind: 'loose'; stone: AtelierLooseStone }
 
 type Ghost = { x: number; y: number; title: string; spriteUrl: string; tint: string } | null
+
+/** One item standing in the garden's ring (parents + loose only). */
+type RingItem =
+  | { key: string; kind: 'initiative'; pile: AtelierInitiativePile }
+  | { key: string; kind: 'cairn'; cairn: AtelierCairn }
+  | { key: string; kind: 'loose'; stone: AtelierLooseStone }
 
 /** The sprite + tint a pile member wears, read off its tower layout —
  *  a fanned stone wears the same face it wears in the pile. */
@@ -145,17 +173,19 @@ function spriteForMember(
 /* ================================================================== */
 
 function PileView({
-  cairn,
+  pileId,
+  members,
   width,
   layoutRef,
 }: {
-  cairn: AtelierCairn
+  pileId: string
+  members: CairnMemberInput[]
   width: number
   layoutRef?: (layout: PortedTowerLayout) => void
 }) {
   const layout = useMemo(
-    () => towerLayoutForMembers(cairn.cairnId, cairn.members),
-    [cairn.cairnId, cairn.members],
+    () => towerLayoutForMembers(pileId, members),
+    [pileId, members],
   )
   useEffect(() => {
     layoutRef?.(layout)
@@ -207,6 +237,7 @@ export default function AriaAtelierView() {
   const [data, setData] = useState<AtelierData | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [openProjectId, setOpenProjectId] = useState<string | null>(null)
+  const [openInitiativeId, setOpenInitiativeId] = useState<string | null>(null)
   const [picked, setPicked] = useState<Picked>(null)
   const [cast, setCast] = useState<CastTarget | null>(null)
   const [casting, setCasting] = useState(false)
@@ -438,6 +469,7 @@ export default function AriaAtelierView() {
         setCast(target)
         setFormingKey((k) => k + 1)
         setOpenProjectId(null)
+        setOpenInitiativeId(null)
         setPicked(null)
       },
       REDUCED_MOTION ? 60 : 680,
@@ -474,9 +506,17 @@ export default function AriaAtelierView() {
             : { spriteUrl: CAIRN_SPRITES['stone-medium'].url, tint: NEUTRAL_WASH }
           return { title: payload.stone.title, ...s }
         }
-        case 'cairnBase': {
+        case 'cairnBase':
+        case 'fanProject': {
           return {
             title: payload.cairn.projectTitle,
+            spriteUrl: CAIRN_SPRITES['cairn-slab'].url,
+            tint: NEUTRAL_WASH,
+          }
+        }
+        case 'initiativePile': {
+          return {
+            title: payload.pile.title,
             spriteUrl: CAIRN_SPRITES['cairn-slab'].url,
             tint: NEUTRAL_WASH,
           }
@@ -519,7 +559,20 @@ export default function AriaAtelierView() {
           break
         case 'cairnBase':
           setPicked(null)
+          setOpenInitiativeId(null)
           setOpenProjectId((cur) => (cur === payload.cairn.projectId ? null : payload.cairn.projectId))
+          break
+        case 'initiativePile':
+          setPicked(null)
+          setOpenProjectId(null)
+          setOpenInitiativeId((cur) => (cur === payload.pile.initiativeId ? null : payload.pile.initiativeId))
+          break
+        case 'fanProject':
+          // A project opened from its initiative's fan: the fan
+          // steps into the project, keeping the initiative open
+          // behind it (the fan carries the way back).
+          setPicked(null)
+          setOpenProjectId(payload.cairn.projectId)
           break
       }
     },
@@ -533,8 +586,14 @@ export default function AriaAtelierView() {
           doCast(castStone(payload.cairn, payload.stone))
           break
         case 'cairnBase':
+        case 'fanProject':
           doCast(castProject(payload.cairn))
           break
+        case 'initiativePile': {
+          const t = castInitiative(payload.pile.cairns[0])
+          if (t) doCast(t)
+          break
+        }
         case 'initiative': {
           const t = castInitiative(payload.cairn)
           if (t) doCast(t)
@@ -622,8 +681,14 @@ export default function AriaAtelierView() {
     if (openProjectId && data) {
       const cairn = data.garden.cairns.find((c) => c.projectId === openProjectId)
       if (cairn) doCast(castProject(cairn))
+      return
     }
-  }, [picked, openProjectId, data, doCast])
+    if (openInitiativeId && data) {
+      const pile = ringInitiatives(data.garden).find((p) => p.initiativeId === openInitiativeId)
+      const t = pile ? castInitiative(pile.cairns[0]) : null
+      if (t) doCast(t)
+    }
+  }, [picked, openProjectId, openInitiativeId, data, doCast])
 
   /* After a turn lands in the subject conversation, re-read its
      recorded talk: depths refresh, and the seat who just spoke comes
@@ -638,6 +703,53 @@ export default function AriaAtelierView() {
       if (voice) respond(voice)
     })
   }, [cast, conversationId, respond, data, depthProject])
+
+  /* The ring's shown set — parents + loose only: initiative
+     piles, loose project cairns, standalone stones — laid out by
+     gardenLayout, which guarantees their labels never overlap.
+     Memoised on the garden: the layout is relaxation work and
+     must not re-run on interaction re-renders (drags, picks). */
+  const gardenData = data?.garden ?? null
+  const { ringItems, placements } = useMemo(() => {
+    if (!gardenData) return { ringItems: [] as RingItem[], placements: [] as GardenPlacement[] }
+    const items: RingItem[] = [
+      ...ringInitiatives(gardenData).map(
+        (pile): RingItem => ({ key: `ini-${pile.initiativeId}`, kind: 'initiative', pile }),
+      ),
+      ...looseCairns(gardenData).map(
+        (cairn): RingItem => ({ key: cairn.cairnId, kind: 'cairn', cairn }),
+      ),
+      ...gardenData.looseStones.map(
+        (stone): RingItem => ({ key: `loose-${stone.taskId}`, kind: 'loose', stone }),
+      ),
+    ]
+    const placed = gardenLayout(
+      items.map((item) => {
+        if (item.kind === 'loose') {
+          const layout = towerLayoutForMembers(
+            `atelier-loose-${item.stone.taskId}`,
+            item.stone.members,
+          )
+          return gardenFootprint({
+            title: item.stone.title,
+            pileWidthPx: 54,
+            pileHeightPx: (layout.height + 10) * (54 / layout.width),
+            showCount: false,
+          })
+        }
+        const pileId = item.kind === 'initiative' ? item.pile.pileId : item.cairn.cairnId
+        const members = item.kind === 'initiative' ? item.pile.members : item.cairn.members
+        const layout = towerLayoutForMembers(pileId, members)
+        return gardenFootprint({
+          title: item.kind === 'initiative' ? item.pile.title : item.cairn.projectTitle,
+          pileWidthPx: 104,
+          pileHeightPx: (layout.height + 10) * (104 / layout.width),
+          showCount: true,
+        })
+      }),
+    )
+    return { ringItems: items, placements: placed }
+  }, [gardenData])
 
   /* ------------------------------ render ----------------------------- */
 
@@ -667,11 +779,26 @@ export default function AriaAtelierView() {
   const openCairn = openProjectId
     ? (garden.cairns.find((c) => c.projectId === openProjectId) ?? null)
     : null
-  const items = [
-    ...garden.cairns.map((c) => ({ kind: 'cairn' as const, cairn: c })),
-    ...garden.looseStones.map((s) => ({ kind: 'loose' as const, stone: s })),
-  ]
-  const positions = gardenPositions(items.length)
+  const initiativePiles = ringInitiatives(garden)
+  const openPile = openInitiativeId
+    ? (initiativePiles.find((p) => p.initiativeId === openInitiativeId) ?? null)
+    : null
+
+  /* The ring's shown set + layout come from the memo above the
+     early returns (ringItems / placements). */
+  const anchorOf = (key: string): { x: number; y: number } => {
+    const i = ringItems.findIndex((r) => r.key === key)
+    return placements[i] ?? { x: 50, y: 16 }
+  }
+  const openAnchor = openCairn
+    ? anchorOf(
+        openCairn.initiativeId && openInitiativeId === openCairn.initiativeId
+          ? `ini-${openCairn.initiativeId}`
+          : openCairn.cairnId,
+      )
+    : openPile
+      ? anchorOf(`ini-${openPile.initiativeId}`)
+      : null
   const castSub =
     cast?.scope === 'task'
       ? cast.cairn.projectTitle
@@ -725,7 +852,7 @@ export default function AriaAtelierView() {
             <button
               ref={wellRef}
               type="button"
-              className={`atelier-well${picked || openCairn ? ' awaiting' : ''}${wellOver ? ' dragover' : ''}`}
+              className={`atelier-well${picked || openCairn || openPile ? ' awaiting' : ''}${wellOver ? ' dragover' : ''}`}
               aria-label="The well"
               onClick={onWellClick}
             >
@@ -742,8 +869,38 @@ export default function AriaAtelierView() {
               ) : null}
             </button>
 
-            {items.map((item, i) => {
-              const pos = positions[i]
+            {ringItems.map((item, i) => {
+              const pos = placements[i]
+              if (item.kind === 'initiative') {
+                const pile = item.pile
+                const isOpen = openInitiativeId === pile.initiativeId
+                return (
+                  <div
+                    key={item.key}
+                    className={`atelier-cairn${isOpen ? ' open' : ''}`}
+                    style={{
+                      left: `${pos.x}%`,
+                      top: `${pos.y}%`,
+                      transform: `translate(-50%, -56%) scale(${pos.scale})`,
+                    }}
+                    data-initiative={pile.initiativeId}
+                  >
+                    <button
+                      type="button"
+                      className="atelier-cairn-stack"
+                      aria-expanded={isOpen}
+                      aria-label={pile.title}
+                      {...dragHandlers({ kind: 'initiativePile', pile })}
+                    >
+                      <PileView pileId={pile.pileId} members={pile.members} width={104} />
+                      <span className="atelier-cairn-name">{pile.title}</span>
+                      <span className="atelier-cairn-count">
+                        {pile.stoneCount} {pile.stoneCount === 1 ? 'stone' : 'stones'}
+                      </span>
+                    </button>
+                  </div>
+                )
+              }
               if (item.kind === 'loose') {
                 const layout = towerLayoutForMembers(
                   `atelier-loose-${item.stone.taskId}`,
@@ -756,7 +913,11 @@ export default function AriaAtelierView() {
                     key={`loose-${item.stone.taskId}`}
                     type="button"
                     className="atelier-loose"
-                    style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
+                    style={{
+                      left: `${pos.x}%`,
+                      top: `${pos.y}%`,
+                      transform: `translate(-50%, -56%) scale(${pos.scale})`,
+                    }}
                     aria-label={item.stone.title}
                     {...dragHandlers({ kind: 'loose', stone: item.stone })}
                   >
@@ -790,9 +951,13 @@ export default function AriaAtelierView() {
               const isOpen = openProjectId === cairn.projectId
               return (
                 <div
-                  key={cairn.cairnId}
+                  key={item.key}
                   className={`atelier-cairn${isOpen ? ' open' : ''}`}
-                  style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
+                  style={{
+                    left: `${pos.x}%`,
+                    top: `${pos.y}%`,
+                    transform: `translate(-50%, -56%) scale(${pos.scale})`,
+                  }}
                   data-cairn={cairn.projectId}
                 >
                   <button
@@ -803,7 +968,8 @@ export default function AriaAtelierView() {
                     {...dragHandlers({ kind: 'cairnBase', cairn })}
                   >
                     <PileView
-                      cairn={cairn}
+                      pileId={cairn.cairnId}
+                      members={cairn.members}
                       width={104}
                       layoutRef={(l) => layoutsRef.current.set(cairn.cairnId, l)}
                     />
@@ -819,14 +985,25 @@ export default function AriaAtelierView() {
             {openCairn ? (
               <FanView
                 cairn={openCairn}
-                garden={garden}
+                anchor={openAnchor ?? { x: 50, y: 16 }}
+                returnTo={
+                  openPile && openCairn.initiativeId === openPile.initiativeId ? openPile : null
+                }
+                onReturn={() => setOpenProjectId(null)}
                 picked={picked}
                 dragHandlers={dragHandlers}
                 layout={layoutsRef.current.get(openCairn.cairnId) ?? null}
               />
+            ) : openPile ? (
+              <InitiativeFan
+                pile={openPile}
+                anchor={openAnchor ?? { x: 50, y: 16 }}
+                picked={picked}
+                dragHandlers={dragHandlers}
+              />
             ) : null}
 
-            {items.length === 0 ? (
+            {ringItems.length === 0 ? (
               <p
                 className="text-sm"
                 style={{
@@ -873,31 +1050,54 @@ export default function AriaAtelierView() {
 }
 
 /* ================================================================== */
-/* The fan — a cairn opened beside itself                              */
+/* The fans — a cairn opened beside itself; an initiative opened to    */
+/* its projects                                                        */
 /* ================================================================== */
+
+/** Where a fan sits relative to its ring anchor: centred on the
+ *  anchor, below it — or above it when the anchor stands low. */
+function fanPosition(anchor: { x: number; y: number }): { left: number; top: number } {
+  return {
+    left: Math.max(38, Math.min(62, anchor.x)),
+    top: anchor.y > 70 ? anchor.y - 24 : anchor.y + 7,
+  }
+}
 
 function FanView({
   cairn,
-  garden,
+  anchor,
+  returnTo,
+  onReturn,
   picked,
   dragHandlers,
   layout,
 }: {
   cairn: AtelierCairn
-  garden: AtelierData['garden']
+  anchor: { x: number; y: number }
+  /** The initiative this fan was reached through, if any — the
+   *  fan carries the way back to its fan. */
+  returnTo: AtelierInitiativePile | null
+  onReturn: () => void
   picked: Picked
   dragHandlers: (p: DragPayload) => React.HTMLAttributes<HTMLButtonElement>
   layout: PortedTowerLayout | null
 }) {
-  const pos = gardenPositions(
-    garden.cairns.length + garden.looseStones.length,
-  )[garden.cairns.findIndex((c) => c.projectId === cairn.projectId)]
-  const fanX = Math.max(38, Math.min(62, pos?.x ?? 50))
-  const fanTop = (pos?.y ?? 16) > 70 ? (pos?.y ?? 16) - 24 : (pos?.y ?? 16) + 7
+  const { left: fanX, top: fanTop } = fanPosition(anchor)
+  const pileLayout = layout ?? towerLayoutForMembers(cairn.cairnId, cairn.members)
   const initiative = castInitiative(cairn)
   return (
     <div className="atelier-fan-layer">
       <div className="atelier-fan" style={{ left: `${fanX}%`, top: `${fanTop}%` }}>
+        {returnTo ? (
+          <button
+            type="button"
+            className="atelier-fan-stone"
+            aria-label={`Back to ${returnTo.title}`}
+            onClick={onReturn}
+          >
+            <span>‹ {returnTo.title}</span>
+          </button>
+        ) : null}
         {initiative ? (
           <button
             type="button"
@@ -912,9 +1112,7 @@ function FanView({
           </button>
         ) : null}
         {cairn.stones.map((stone) => {
-          const s = layout
-            ? spriteForMember(layout, stone.memberId)
-            : { spriteUrl: CAIRN_SPRITES['stone-medium'].url, tint: NEUTRAL_WASH }
+          const s = spriteForMember(pileLayout, stone.memberId)
           return (
             <button
               key={stone.taskId}
@@ -930,6 +1128,61 @@ function FanView({
             </button>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * An initiative opened: its project cairns laid out as fan stones,
+ * headed by the undertaking itself as a castable stone. Tapping a
+ * project steps the fan into that project (fanProject); dragging
+ * any stone to the well casts its scope, as everywhere here.
+ */
+function InitiativeFan({
+  pile,
+  anchor,
+  picked,
+  dragHandlers,
+}: {
+  pile: AtelierInitiativePile
+  anchor: { x: number; y: number }
+  picked: Picked
+  dragHandlers: (p: DragPayload) => React.HTMLAttributes<HTMLButtonElement>
+}) {
+  const { left: fanX, top: fanTop } = fanPosition(anchor)
+  const representative = pile.cairns[0]
+  return (
+    <div className="atelier-fan-layer">
+      <div className="atelier-fan" style={{ left: `${fanX}%`, top: `${fanTop}%` }}>
+        <button
+          type="button"
+          className={`atelier-fan-stone${picked?.kind === 'initiative' && picked.cairn.projectId === representative.projectId ? ' picked' : ''}`}
+          aria-label={`${pile.title} — the whole undertaking`}
+          {...dragHandlers({ kind: 'initiative', cairn: representative })}
+        >
+          <span className="stone-sprite" style={{ width: 52, height: 25 }}>
+            <CairnStoneSprite src={CAIRN_SPRITES['cairn-slab'].url} tint={NEUTRAL_WASH} />
+          </span>
+          <span>{pile.title}</span>
+        </button>
+        {pile.cairns.map((cairn) => (
+          <button
+            key={cairn.projectId}
+            type="button"
+            className="atelier-fan-stone"
+            aria-label={cairn.projectTitle}
+            {...dragHandlers({ kind: 'fanProject', cairn })}
+          >
+            <span className="stone-sprite" style={{ width: 52, height: 25 }}>
+              <CairnStoneSprite src={CAIRN_SPRITES['cairn-slab'].url} tint={NEUTRAL_WASH} />
+            </span>
+            <span>{cairn.projectTitle}</span>
+            <span>
+              {cairn.stones.length} {cairn.stones.length === 1 ? 'stone' : 'stones'}
+            </span>
+          </button>
+        ))}
       </div>
     </div>
   )
@@ -981,7 +1234,10 @@ function CastView({
               role="img"
               aria-label="Seven layers, forming in the well."
             >
-              <div className="atelier-layer-stack">
+              <div
+                className="atelier-layer-stack"
+                style={{ height: `${FORMATION_SCALE * 100}%` }}
+              >
                 {VOICES.map((v) => (
                   <div
                     key={v}

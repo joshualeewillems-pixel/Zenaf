@@ -4,14 +4,18 @@
  *
  * The view mounts against a stubbed Vision Execution API carrying
  * the same shapes the Vision map reads, and must paint the garden
- * from the data: the well, and the project as a cairn of two stones.
- * Fanning the cairn and casting — tap-tap, the touch grammar — must
+ * from the data under the standing display rule — parents and
+ * loose only: the well, and the INITIATIVE standing in the ring as
+ * one cairn of two stones (its project is not in the ring).
+ * Opening the initiative fans its projects; opening a project
+ * fans its stones; casting — tap-tap, the touch grammar — must
  * load the subject's conversation in Aria's chat (CouncilChat is
  * stubbed and records its props; the chat seam itself is covered by
  * its own suite) at each scope the hierarchy carries: the stone,
  * the whole cairn (project), and the whole undertaking (initiative).
  * The cast view must carry all seven layers as transparent fill/ink
- * image pairs — no paper, no video.
+ * image pairs — no paper, no video — at the increased formation
+ * scale.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import * as React from 'react'
@@ -169,22 +173,34 @@ describe('AriaAtelierView', () => {
     await flush()
   }
 
-  it('paints the garden from the data: the well, the cairn, and Aria’s garden conversation', async () => {
+  it('paints the garden from the data: the well, the initiative cairn, and Aria’s garden conversation', async () => {
     await renderGarden()
     expect(container.querySelector('[data-testid="atelier-garden"]')).not.toBeNull()
     expect(container.querySelector('button[aria-label="The well"]')).not.toBeNull()
-    expect(container.textContent).toContain('Spring collection launch')
+    // Parents + loose only: the initiative stands in the ring as
+    // one cairn carrying both stones; its project does NOT.
+    expect(container.querySelector('[data-initiative="i1"]')).not.toBeNull()
+    expect(container.textContent).toContain('Spring line')
     expect(container.textContent).toContain('2 stones')
+    expect(container.textContent).not.toContain('Spring collection launch')
+    expect(container.querySelector('[data-cairn]')).toBeNull()
     expect(container.querySelector('[data-testid="aria-chat"]')).not.toBeNull()
     expect(lastChat().conversationId).toBe('aria-atelier:garden')
     expect(lastChat().context).toEqual({ sheet_type: 'aria_atelier' })
     expect(lastChat().initialArchetypeId).toBe('conductor')
   })
 
-  it('casts a stone: fan, tap-tap, and the subject conversation loads with the seven transparent layers', async () => {
-    await renderGarden()
+  /** Open the initiative's fan, then the project's fan. */
+  async function openProjectFan() {
+    tap(buttonByLabel('Spring line'))
+    await flush()
     tap(buttonByLabel('Spring collection launch'))
     await flush()
+  }
+
+  it('casts a stone: fans, tap-tap, and the subject conversation loads with the seven transparent layers', async () => {
+    await renderGarden()
+    await openProjectFan()
     const fanStone = buttonByLabel('Confirm the print run — from Spring collection launch')
     tap(fanStone)
     await flush()
@@ -193,6 +209,9 @@ describe('AriaAtelierView', () => {
 
     expect(container.querySelector('[data-testid="atelier-cast-circle"]')).not.toBeNull()
     expect(container.textContent).toContain('Confirm the print run')
+    // The formation stands at the increased scale in the bowl.
+    const stack = container.querySelector('.atelier-layer-stack') as HTMLElement | null
+    expect(stack?.style.height).toBe('130%')
     expect(lastChat().conversationId).toBe('aria-atelier:task:t1')
     expect(lastChat().context).toEqual({
       sheet_type: 'aria_atelier',
@@ -214,9 +233,9 @@ describe('AriaAtelierView', () => {
 
   it('casts the whole cairn, then the whole undertaking, each loading its own conversation', async () => {
     await renderGarden()
-    // Project: fan the cairn open, then tap the well with the fan open.
-    tap(buttonByLabel('Spring collection launch'))
-    await flush()
+    // Project: fan the initiative, fan the project, then tap the
+    // well with the project's fan open.
+    await openProjectFan()
     act(() => buttonByLabel('The well').click())
     await settleCast()
     expect(lastChat().conversationId).toBe('aria-atelier:project:p1')
@@ -236,10 +255,11 @@ describe('AriaAtelierView', () => {
     await flush()
     expect(container.querySelector('[data-testid="atelier-garden"]')).not.toBeNull()
 
-    // Initiative: the fan carries the undertaking as a stone.
-    tap(buttonByLabel('Spring collection launch'))
+    // Initiative: the initiative's fan carries the undertaking
+    // as a stone.
+    tap(buttonByLabel('Spring line'))
     await flush()
-    tap(buttonByLabel('Spring line — the whole undertaking, from Spring collection launch'))
+    tap(buttonByLabel('Spring line — the whole undertaking'))
     await flush()
     act(() => buttonByLabel('The well').click())
     await settleCast()

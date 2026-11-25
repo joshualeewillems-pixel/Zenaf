@@ -91,6 +91,10 @@ export interface ShelfScroll {
   id: string
   title: string
   status: string
+  /** For a task scroll: its recorded parent task's id, or null when
+   *  the task stands at the top of its list. Always null for other
+   *  kinds. The shelf's drill-in walks this edge. */
+  parentTaskId: string | null
   /** Recorded mass behind the size: initiative → project count,
    *  project → task count, task → estimated hours (null when the
    *  record carries no estimate); ideas carry no mass here. */
@@ -206,6 +210,7 @@ export function buildScrollShelf(
     mass: number | null,
     createdAt: string,
     sourceIdeaId: string | null = null,
+    parentTaskId: string | null = null,
   ): ShelfScroll => {
     const t = new Date(createdAt).getTime()
     const ageTone =
@@ -218,6 +223,7 @@ export function buildScrollShelf(
       id,
       title,
       status,
+      parentTaskId,
       mass,
       createdAt,
       sourceIdeaId,
@@ -248,7 +254,7 @@ export function buildScrollShelf(
     return {
       scroll: make('project', p.id, p.title, p.status, projectTasks.length, p.created_at),
       tasks: projectTasks.map((t) =>
-        make('task', t.id, t.title, t.status, t.estimated_hours, t.created_at),
+        make('task', t.id, t.title, t.status, t.estimated_hours, t.created_at, null, t.parent_task_id),
       ),
     }
   }
@@ -282,7 +288,7 @@ export function buildScrollShelf(
       initiative: null,
       projects: unanchored.map(projectScroll),
       looseTasks: orderTasks(looseTasks).map((t) =>
-        make('task', t.id, t.title, t.status, t.estimated_hours, t.created_at),
+        make('task', t.id, t.title, t.status, t.estimated_hours, t.created_at, null, t.parent_task_id),
       ),
       ideas: ideaScrolls,
     })
@@ -306,6 +312,86 @@ export function flattenShelf(bays: ShelfBay[]): ShelfScroll[] {
     out.push(...bay.ideas)
   }
   return out
+}
+
+/* ------------------------------------------------------------------ */
+/* Parents + loose — the shelf's default face (founder, 2026-11-24)    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The display rule, stated once for every surface: a collection
+ * shows ONLY its top-level parents and its loose items by default;
+ * children appear when their parent is opened. On the shelf that
+ * means: one scroll per initiative in the lattice, and in the bin
+ * one scroll per unanchored project, per top-level loose task, and
+ * per idea. A bay's projects, a project's tasks, and a task's
+ * subtasks are NOT on the shelf face — they are reached by opening
+ * their parent (scrollChildren), so nothing leaves reachability.
+ */
+export function shelfTopLevel(bays: ShelfBay[]): { lattice: ShelfScroll[]; bin: ShelfScroll[] } {
+  const lattice: ShelfScroll[] = []
+  const bin: ShelfScroll[] = []
+  for (const bay of bays) {
+    if (bay.initiative) {
+      lattice.push(bay.initiative)
+      continue
+    }
+    for (const p of bay.projects) bin.push(p.scroll)
+    bin.push(...topLevelTasks(bay.looseTasks))
+    bin.push(...bay.ideas)
+  }
+  return { lattice, bin }
+}
+
+/** The top of a task list: tasks with no recorded parent in the
+ *  same list (a parent outside the list leaves the task standing
+ *  at the top of its own list, as orderTasks already treats it). */
+function topLevelTasks(tasks: ShelfScroll[]): ShelfScroll[] {
+  const ids = new Set(tasks.map((t) => t.id))
+  return tasks.filter((t) => !t.parentTaskId || !ids.has(t.parentTaskId))
+}
+
+/** The task list a task scroll lives in (its project's list, or
+ *  the bin's loose list), or null when it is not a task. */
+function taskListOf(bays: ShelfBay[], scroll: ShelfScroll): ShelfScroll[] | null {
+  if (scroll.kind !== 'task') return null
+  for (const bay of bays) {
+    for (const p of bay.projects) {
+      if (p.tasks.some((t) => t.id === scroll.id)) return p.tasks
+    }
+    if (bay.looseTasks.some((t) => t.id === scroll.id)) return bay.looseTasks
+  }
+  return null
+}
+
+/**
+ * A scroll's children — what opening it reveals, in shelf order:
+ * an initiative opens to its projects; a project to its top-level
+ * tasks; a task to its subtasks within the same list; an idea has
+ * no children. Every scroll on the shelf is either top-level
+ * (shelfTopLevel) or the child of exactly one parent reached this
+ * way, so the whole archive stays reachable through its parents.
+ */
+export function scrollChildren(bays: ShelfBay[], scroll: ShelfScroll): ShelfScroll[] {
+  switch (scroll.kind) {
+    case 'initiative': {
+      const bay = bays.find((b) => b.initiative?.id === scroll.id)
+      return bay ? bay.projects.map((p) => p.scroll) : []
+    }
+    case 'project': {
+      for (const bay of bays) {
+        const found = bay.projects.find((p) => p.scroll.id === scroll.id)
+        if (found) return topLevelTasks(found.tasks)
+      }
+      return []
+    }
+    case 'task': {
+      const list = taskListOf(bays, scroll)
+      return list ? list.filter((t) => t.parentTaskId === scroll.id) : []
+    }
+    case 'idea':
+      return []
+  }
 }
 
 /* ------------------------------------------------------------------ */

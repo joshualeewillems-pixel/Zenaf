@@ -323,10 +323,25 @@
   "stageBytes": 8823609,
   "fillBytes": 502151,
   "previousInkBytes": 3547056,
-  "previousFillBytes": 119150
+  "previousFillBytes": 119150,
+  "twinBytes": 41081
  },
  "resampling": {
   "intermediate": "float-premultiplied bilinear",
   "final": "float-premultiplied lanczos"
- }
+ },
+ "twins": [
+  {
+   "voice": "lucian",
+   "stage": 6,
+   "file": "stage-lucian-6-refr.png",
+   "size": [
+    200,
+    264
+   ],
+   "bytes": 41081,
+   "sourceBytes": 151115,
+   "method": "gaussian blur sigma=1.0 at asset resolution, float premultiplied; half-resolution float-premultiplied bilinear"
+  }
+ ]
 }

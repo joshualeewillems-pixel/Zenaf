@@ -25,6 +25,10 @@ import {
   boxIntersectsWell,
   bringToFront,
   buildGarden,
+  buoyancyDrift,
+  buoyancyTransform,
+  stillComparisonIn,
+  twinOffset,
   castInitiative,
   castLooseStone,
   castProject,
@@ -620,5 +624,71 @@ describe('the formation scale', () => {
     // point where the rim disappears entirely.
     expect(FORMATION_SCALE).toBeGreaterThan(1.25)
     expect(FORMATION_SCALE).toBeLessThan(1.45)
+  })
+})
+
+describe('dynamism — buoyancy (spec §2.1, experimental)', () => {
+  it('drift amplitude halves per rank back from the front, floored at 0.3px', () => {
+    expect(buoyancyDrift(0)).toBe(1.5)
+    expect(buoyancyDrift(1)).toBe(0.75)
+    expect(buoyancyDrift(2)).toBe(0.375)
+    expect(buoyancyDrift(3)).toBe(0.3)
+    expect(buoyancyDrift(6)).toBe(0.3)
+    // Z-rank ordering: nearer the front always drifts at least
+    // as much as the layer behind it.
+    for (let r = 0; r < 6; r++) {
+      expect(buoyancyDrift(r)).toBeGreaterThanOrEqual(buoyancyDrift(r + 1))
+    }
+  })
+
+  it('translation and scale stay inside the spec bounds at every sampled phase', () => {
+    for (let rank = 0; rank < 7; rank++) {
+      const d = buoyancyDrift(rank)
+      for (let s = 0; s < 720; s++) {
+        const phase = (s / 720) * Math.PI * 4
+        const t = buoyancyTransform(phase, rank)
+        // The written values are rounded to 0.1px (per the spec),
+        // which can carry a value at most 0.05px past the exact
+        // bound; the assertions carry that rounding allowance.
+        expect(Math.abs(t.dx), `rank ${rank} phase ${phase}`).toBeLessThanOrEqual(d + 0.05 + 1e-9)
+        expect(Math.abs(t.dx)).toBeLessThanOrEqual(1.5 + 0.05 + 1e-9)
+        expect(Math.abs(t.dy)).toBeLessThanOrEqual(d * 0.6 + 0.05 + 1e-9)
+        expect(t.scale).toBeGreaterThanOrEqual(1.0)
+        expect(t.scale).toBeLessThanOrEqual(1.006)
+        // Written values are rounded to 0.1px, per the spec.
+        expect(Math.abs(t.dx * 10 - Math.round(t.dx * 10))).toBeLessThan(1e-9)
+        expect(Math.abs(t.dy * 10 - Math.round(t.dy * 10))).toBeLessThan(1e-9)
+      }
+    }
+  })
+
+  it('at phase zero the front layer rides at its full downward drift', () => {
+    const t = buoyancyTransform(0, 0)
+    expect(t.dx).toBe(0)
+    expect(t.dy).toBe(0.9) // cos(0) × 1.5 × 0.6
+    expect(t.scale).toBeCloseTo(1.003, 10)
+  })
+})
+
+describe('dynamism — the refraction twin offset (spec §2.3)', () => {
+  it('never exceeds 2px across or 1.2px down at any sampled phase', () => {
+    for (let s = 0; s < 720; s++) {
+      const phase = (s / 720) * Math.PI * 4
+      const o = twinOffset(phase)
+      expect(Math.abs(o.dx)).toBeLessThanOrEqual(2)
+      expect(Math.abs(o.dy)).toBeLessThanOrEqual(1.2)
+    }
+    expect(twinOffset(0)).toEqual({ dx: 0, dy: 1.2 })
+  })
+})
+
+describe('dynamism — the still comparison (spec §2.1 perceptual gate)', () => {
+  it('reads ?still=1 and nothing else', () => {
+    expect(stillComparisonIn('?still=1')).toBe(true)
+    expect(stillComparisonIn('?foo=2&still=1')).toBe(true)
+    expect(stillComparisonIn('?still=0')).toBe(false)
+    expect(stillComparisonIn('?still=true')).toBe(false)
+    expect(stillComparisonIn('')).toBe(false)
+    expect(stillComparisonIn('?')).toBe(false)
   })
 })

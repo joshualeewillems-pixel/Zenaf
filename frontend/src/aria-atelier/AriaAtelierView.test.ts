@@ -29,6 +29,7 @@ type ChatProps = {
   conversationId?: string
   context?: Record<string, unknown>
   initialArchetypeId?: string
+  onTurnSent?: () => void
 }
 let chatProps: ChatProps[] = []
 
@@ -43,6 +44,7 @@ vi.mock('../chat/CouncilChat', async () => {
 })
 
 import AriaAtelierView from './AriaAtelierView'
+import { ResonanceField } from './waterEngine'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -310,5 +312,155 @@ describe('AriaAtelierView', () => {
       entity_id: 'i1',
     })
     expect(container.textContent).toContain('Spring line')
+  })
+
+  /* ------------------------- dynamism ------------------------- */
+  /* The dynamism pass (founder-reviewed spec, 2026-11-25): the
+   * water answers the contracted events and nothing else; the
+   * layers ride their voices' phases; one refraction twin stands
+   * beneath Lucian's ink; ?still=1 stills all of it. The field is
+   * unavailable in jsdom (no canvas), so the pulse contract is
+   * observed at the engine's seam — a spy on ResonanceField's
+   * pulse — and phases read 0, which makes the buoyancy values
+   * deterministic: front layer translate(0px, 0.9px) scale(1.003),
+   * the twin at translate(0px, 1.2px). */
+
+  describe('dynamism (spec, 2026-11-25)', () => {
+    let pulseSpy: ReturnType<typeof vi.spyOn>
+
+    beforeEach(() => {
+      pulseSpy = vi.spyOn(ResonanceField.prototype, 'pulse')
+    })
+
+    afterEach(() => {
+      pulseSpy.mockRestore()
+    })
+
+    const pulseCalls = () =>
+      pulseSpy.mock.calls.map((c) => [c[0], c[1]] as [string, number])
+
+    async function waitFor(cond: () => boolean, timeoutMs = 9000): Promise<void> {
+      const start = Date.now()
+      while (!cond()) {
+        if (Date.now() - start > timeoutMs) throw new Error('waitFor timed out')
+        await act(async () => {
+          await new Promise((r) => setTimeout(r, 100))
+        })
+      }
+    }
+
+    async function castFirstStone() {
+      await openProjectFan()
+      tap(buttonByLabel('Confirm the print run — from Spring collection launch'))
+      await flush()
+      act(() => buttonByLabel('The well').click())
+      await settleCast()
+    }
+
+    it('the water answers the record events — and no non-events', async () => {
+      await renderGarden()
+      // Non-events first: opening fans, hovering, refocusing.
+      await openProjectFan()
+      act(() => {
+        buttonByLabel('The well').dispatchEvent(
+          new window.MouseEvent('pointermove', { bubbles: true, clientX: 30, clientY: 30 }),
+        )
+        window.dispatchEvent(new window.Event('focus'))
+      })
+      await flush()
+      expect(pulseCalls()).toEqual([])
+
+      // The cast lands (Aria, full strength) and Aria responds —
+      // her formation arrives (Aria, full strength).
+      tap(buttonByLabel('Confirm the print run — from Spring collection launch'))
+      await flush()
+      act(() => buttonByLabel('The well').click())
+      await settleCast()
+      await waitFor(
+        () => pulseCalls().filter(([v, s]) => v === 'aria' && s === 1).length >= 2,
+      )
+      const calls = pulseCalls()
+      expect(calls[0]).toEqual(['aria', 1])
+      expect(calls[1]).toEqual(['aria', 1])
+      // Nothing but Aria, and nothing but the contracted strengths.
+      for (const [v, s] of calls) {
+        expect(v).toBe('aria')
+        expect([1, 0.5]).toContain(s)
+      }
+
+      // A seat responding in the conversation answers again.
+      const before = pulseCalls().filter(([v, s]) => v === 'aria' && s === 1).length
+      act(() => lastChat().onTurnSent?.())
+      await flush()
+      await flush()
+      await waitFor(
+        () => pulseCalls().filter(([v, s]) => v === 'aria' && s === 1).length > before,
+      )
+    })
+
+    it('the fill wash-in completing answers at half strength, once — the milestone', async () => {
+      await renderGarden()
+      await castFirstStone()
+      // Aria's replay runs ~3s, then her fill washes in over ~2s;
+      // its completion is the one rendering-milestone response.
+      await waitFor(
+        () => pulseCalls().some(([v, s]) => v === 'aria' && s === 0.5),
+        16000,
+      )
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 600))
+      })
+      expect(pulseCalls().filter(([, s]) => s === 0.5)).toEqual([['aria', 0.5]])
+    }, 25000)
+
+    it('buoyancy rides the layers; the twin stands beneath Lucian’s ink and hides on error', async () => {
+      await renderGarden()
+      await castFirstStone()
+      const layerOf = (v: string) =>
+        container.querySelector(`[data-layer="${v}"]`) as HTMLElement
+      await waitFor(() => layerOf('aria').style.transform.includes('translate'))
+      // Phase reads 0 on the unavailable field: the front layer
+      // (Aria just responded) rides at its full downward drift.
+      expect(layerOf('aria').style.transform).toContain('translate(0px, 0.9px)')
+      expect(layerOf('aria').style.transform).toContain('scale(1.0030)')
+      // The one twin: beneath Lucian's ink, at its phase offset,
+      // and nowhere else.
+      const twin = layerOf('lucian').querySelector('img.ink-twin') as HTMLImageElement
+      expect(twin).not.toBeNull()
+      expect(twin.src).toContain('stage-lucian-6-refr')
+      expect(twin.style.transform).toBe('translate(0px, 1.2px)')
+      for (const v of ['rumi', 'valen', 'maeve', 'aria', 'severine', 'jynx']) {
+        expect(layerOf(v).querySelector('img.ink-twin')).toBeNull()
+      }
+      // A twin that fails to load hides itself — no glyph, ever.
+      act(() => {
+        twin.dispatchEvent(new window.Event('error', { bubbles: true }))
+      })
+      expect(twin.style.display).toBe('none')
+    })
+
+    it('the still comparison (?still=1) writes no dynamism transform at all', async () => {
+      window.history.replaceState(null, '', '?still=1')
+      try {
+        await renderGarden()
+        await castFirstStone()
+        await act(async () => {
+          await new Promise((r) => setTimeout(r, 500))
+        })
+        await flush()
+        for (const layer of container.querySelectorAll('[data-layer]')) {
+          expect((layer as HTMLElement).style.transform).toBe('')
+        }
+        // The twin still stands (it is §2.3's asset) — at zero
+        // offset, unwritten like everything else dynamism adds.
+        const twin = container.querySelector(
+          '[data-layer="lucian"] img.ink-twin',
+        ) as HTMLImageElement
+        expect(twin).not.toBeNull()
+        expect(twin.style.transform).toBe('')
+      } finally {
+        window.history.replaceState(null, '', '/')
+      }
+    })
   })
 })

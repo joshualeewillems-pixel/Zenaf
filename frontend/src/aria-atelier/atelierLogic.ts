@@ -1072,3 +1072,79 @@ export const REPLAY_HOLD_MS = 650
 /** Duration of the completion beat (ms): the drawing runs from
  *  its held depth to the completed formation. */
 export const REPLAY_COMPLETE_MS = 400
+
+/* ------------------------------------------------------------------ */
+/* Dynamism — buoyancy, and the refraction twin's offset               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * BUOYANCY (dynamism spec §2.1 — EXPERIMENTAL, founder review
+ * 2026-11-25): a voice's ink and fill layers ride that voice's
+ * own phase in the water field. The transform is pure arithmetic
+ * on the phase: translation follows the phase within a drift
+ * amplitude set by the layer's recency rank, and the scale
+ * breathes inside [1.000, 1.006] — it never shrinks the formation
+ * below its canonical size. No rotation: the formations are
+ * centred and symmetrical by ruling, and rotation would fight
+ * the symmetry. The founder's governing gate is perceptual (the
+ * on-device still comparison — see stillComparisonIn), not this
+ * arithmetic; these bounds are the numerical half of the gate.
+ */
+
+/** Drift amplitude (px) for a layer `rankFromFront` steps behind
+ *  the front of the stack: 1.5px at the front, halving per layer
+ *  back, floored at 0.3px. */
+export function buoyancyDrift(rankFromFront: number): number {
+  const rank = Math.max(0, Math.floor(rankFromFront))
+  return Math.max(0.3, 1.5 * Math.pow(0.5, rank))
+}
+
+export interface BuoyancyTransform {
+  dx: number
+  dy: number
+  scale: number
+}
+
+/** The layer transform for a voice at field phase `phase`,
+ *  `rankFromFront` steps behind the front. Translation values are
+ *  rounded to 0.1px, as the spec requires before they are written
+ *  to style. */
+export function buoyancyTransform(phase: number, rankFromFront: number): BuoyancyTransform {
+  const d = buoyancyDrift(rankFromFront)
+  const round1 = (x: number) => Math.round(x * 10) / 10
+  return {
+    dx: round1(Math.sin(phase) * d),
+    dy: round1(Math.cos(phase * 0.9) * d * 0.6),
+    scale: 1 + 0.003 * (1 + Math.sin(phase * 0.5)),
+  }
+}
+
+/** The refraction twin's offset (dynamism spec §2.3): the twin
+ *  rides beneath its ink, displaced by the water's phase for its
+ *  voice — at most 2px across, 1.2px down. Rounded to 0.1px like
+ *  every dynamism style write. */
+export function twinOffset(phase: number): { dx: number; dy: number } {
+  const round1 = (x: number) => Math.round(x * 10) / 10
+  return {
+    dx: round1(Math.sin(phase) * 2),
+    dy: round1(Math.cos(phase) * 1.2),
+  }
+}
+
+/**
+ * The still comparison (dynamism spec §2.1, perceptual gate): a
+ * `?still=1` query parameter, read once at mount by the view,
+ * stills every dynamism rendering the pass adds — buoyancy
+ * transforms stay identity and the twin sits at zero offset — so
+ * the same cast can be compared against a completely stationary
+ * formation on device. Acceptance tooling only: it is never a
+ * visible control, never persisted, and the water's own motion
+ * (which predates this pass) is untouched by it.
+ */
+export function stillComparisonIn(search: string): boolean {
+  try {
+    return new URLSearchParams(search).get('still') === '1'
+  } catch {
+    return false
+  }
+}

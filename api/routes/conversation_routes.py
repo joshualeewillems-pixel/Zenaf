@@ -75,6 +75,7 @@ from local_ai.narrative.context import (
     weaver_context_provider,
 )
 from local_ai.narrative.noting import default_noting_writer
+from local_ai.narrative.obligation_gate import default_obligation_gate
 
 router = APIRouter(prefix="/conversation", tags=["conversation"])
 
@@ -134,6 +135,13 @@ def _service() -> ConversationService:
         # capture-off deployment never calls it and never touches
         # the narrative DB through this path.
         noting_writer=default_noting_writer(),
+        # V4 obligation-block gate: the gate object is consulted only
+        # on champion turns where the slice is live (ZENAF_OBLIGATION_GATE
+        # on, or noting capture live for champion), and its
+        # NarrativeStore builds lazily on first determination — so a
+        # slice-dark deployment never touches the narrative DB
+        # through this path.
+        obligation_gate=default_obligation_gate(),
     )
 
 

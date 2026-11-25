@@ -814,6 +814,7 @@ def build_voice_prompt(
     invitation_context: str | None = None,
     execution_context: str | None = None,
     round_context: str | None = None,
+    subject_context: str | None = None,
     # Canonical instruction tier (Level 1, 2026-11-10): the four
     # standing instruction lines, carried once as a single uncapped
     # section immediately before extra_instructions. Meetings only
@@ -1320,6 +1321,18 @@ def build_voice_prompt(
         # section absent, so non-guardian turns and meetings are
         # byte-identical to before.
         prompt += ["", evidence_context.strip()]
+    if subject_context:
+        # Selected subject (interface carriage): Talk only, passed
+        # only when the turn's LiveContext names a selected subject
+        # on one of the four interface surfaces and the record
+        # resolved as the caller's own (see
+        # local_ai/conversation/subject_context.py). Its own section,
+        # after the evidence section and before the round section.
+        # The block delimits the record's fields as user data inside
+        # explicit fences. Absent (None) = section absent, so every
+        # conversation without a selection — and every meeting — is
+        # byte-identical to before.
+        prompt += ["", subject_context.strip()]
     if round_context:
         # Firebrand lightning round (S1): champion-only, Talk only.
         # Its own section, after the evidence section and before
@@ -1411,6 +1424,7 @@ def generate_voice_reply(
     invitation_context: str | None = None,
     execution_context: str | None = None,
     round_context: str | None = None,
+    subject_context: str | None = None,
     conversation_id: str | None = None,
     # Canonical instruction tier (Level 1, 2026-11-10): passed
     # through to build_voice_prompt. Meetings only; Talk and demo
@@ -1441,6 +1455,7 @@ def generate_voice_reply(
         invitation_context=invitation_context,
         execution_context=execution_context,
         round_context=round_context,
+        subject_context=subject_context,
         conversation_id=conversation_id,
         canonical_tier=canonical_tier,
     )

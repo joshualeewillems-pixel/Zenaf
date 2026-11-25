@@ -55,6 +55,16 @@
 }
 
 @layer base {
+  /* iOS Safari's automatic text autosizing inflates text blocks
+     unevenly, per paragraph, without adjusting the fixed line-heights
+     Tailwind sets — inflated glyphs outgrow their line boxes and
+     lines render on top of each other (worst in the Campaign Board's
+     waypoint cards). Opt the app out: text renders at designed sizes. */
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
   body {
     margin: 0;
     overflow-x: clip;

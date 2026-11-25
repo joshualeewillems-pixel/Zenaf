@@ -12,16 +12,22 @@ import {
   deriveCapacityPicture,
   deriveObstacles,
   deriveSignalMarkers,
+  estimateLabelWidth,
   fractionForDate,
   groupOverviewByInitiative,
+  layoutBoardLabels,
   moveHold,
   projectSpan,
   removeHold,
   riverBand,
   setRiverWindow,
+  shortDate,
   signalsForProject,
+  stripWaypointLabels,
   withdrawRiver,
+  type BoardLabelItem,
   type BoardSignal,
+  type BoardWaypoint,
 } from './boardLogic'
 
 const NOW = new Date('2026-06-15T12:00:00').getTime()
@@ -499,5 +505,233 @@ describe('groupOverviewByInitiative', () => {
 
   it('returns no groups for an empty board', () => {
     expect(groupOverviewByInitiative([], initiatives)).toEqual([])
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* Label layout + timeline strip (diagnosis 2026-11-25)                */
+/* ------------------------------------------------------------------ */
+
+// The focus board's geometry, mirrored from CampaignBoardView so the
+// fixture's label items are built exactly as the view builds them.
+const MAP_W = 800
+const FOCUS_H = 500
+const X0 = 64
+const X1 = 736
+const MID_Y = 252
+const ROUTE_A_Y = 148
+const ROUTE_B_Y = 356
+const LABEL_BOUNDS = { minX: 8, maxX: MAP_W - 8, minY: 8, maxY: FOCUS_H - 8 }
+
+function xForFraction(f: number): number {
+  return X0 + f * (X1 - X0)
+}
+function waypointY(bandY: number, index: number): number {
+  return bandY + ((index % 3) - 1) * 12
+}
+
+/** A project shaped like the founder's "Meet the Bear" board: a
+ *  3-day span whose Route A ends in a pile-up at fraction 0.98 — two
+ *  open waypoints due on the last day, an undated done task appended
+ *  at 0.98, and a Gate Keeper obstacle standing at 0.98 under the
+ *  finish banner. */
+function bearFixture() {
+  const proj = project({
+    id: 'bear',
+    title: 'Meet the Bear',
+    start_date: '2026-12-01T09:00:00',
+    end_date: '2026-12-04T09:00:00',
+  })
+  const tasks = [
+    task({ id: 'strengths', title: 'Strengths', due_date: '2026-12-01T09:00:00' }),
+    task({ id: 'echo', title: 'The echo', due_date: '2026-12-02T09:00:00' }),
+    task({
+      id: 'threshold',
+      title: 'The threshold',
+      due_date: '2026-12-04T09:00:00',
+      completion_criteria: 'The Bear has been met face to face.',
+    }),
+    task({
+      id: 'weaknesses',
+      title: 'Weaknesses',
+      due_date: '2026-12-04T09:00:00',
+      dependency_ids: ['threshold'],
+    }),
+    task({ id: 'first-meeting', title: 'First meeting', status: 'Done', due_date: null }),
+  ]
+  const span = projectSpan(proj, tasks, NOW)
+  const routes = buildRoutes(tasks, span)
+  const obstacles = deriveObstacles(proj, tasks, tasks, span, NOW)
+  return { proj, tasks, span, routes, obstacles }
+}
+
+/** Label items for the fixture, built with FocusBoard's formulas. */
+function bearLabelItems(): BoardLabelItem[] {
+  const { span, routes, obstacles } = bearFixture()
+  const allWaypoints: { w: BoardWaypoint; bandY: number; index: number }[] = [
+    ...routes.a.map((w, index) => ({ w, bandY: ROUTE_A_Y, index })),
+    ...routes.b.map((w, index) => ({ w, bandY: ROUTE_B_Y, index })),
+  ]
+  const title = (w: BoardWaypoint) =>
+    w.task.title.length > 26 ? `${w.task.title.slice(0, 25)}…` : w.task.title
+  return [
+    {
+      id: 'banner:start',
+      anchorX: X0,
+      top: MID_Y + 28 - 11,
+      width: estimateLabelWidth(`Start · ${shortDate(new Date(span.startMs))}`, 11),
+      height: 14,
+    },
+    {
+      id: 'banner:finish',
+      anchorX: X1,
+      top: MID_Y + 30 - 11,
+      width: estimateLabelWidth(`Finish · ${shortDate(new Date(span.endMs))}`, 11),
+      height: 14,
+    },
+    ...obstacles.map((ob) => ({
+      id: `obstacle:${ob.id}`,
+      anchorX: xForFraction(ob.fraction),
+      top: MID_Y + (ob.kind === 'gate' ? 30 : ob.kind === 'crossing' ? 32 : 26) - 11,
+      width: estimateLabelWidth(
+        ob.kind === 'gate' ? 'Gate Keeper' : ob.kind === 'crossing' ? 'Crossing' : ob.kindLabel,
+        10.5,
+      ),
+      height: 14,
+    })),
+    ...allWaypoints.map(({ w, bandY, index }) => {
+      const tier = index % 2 === 0 ? 30 : 46
+      const sub = w.done ? 'done' : shortDate(dateAtFraction(span, w.fraction))
+      return {
+        id: `waypoint:${bandY}:${w.task.id}`,
+        anchorX: xForFraction(w.fraction),
+        top: waypointY(bandY, index) + tier - 11,
+        width: Math.max(estimateLabelWidth(title(w), 11), estimateLabelWidth(sub, 10)),
+        height: 27,
+      }
+    }),
+  ]
+}
+
+function boxesOverlap(
+  a: { x: number; top: number; width: number; height: number },
+  b: { x: number; top: number; width: number; height: number },
+): boolean {
+  const ox =
+    Math.min(a.x + a.width / 2, b.x + b.width / 2) - Math.max(a.x - a.width / 2, b.x - b.width / 2)
+  const oy = Math.min(a.top + a.height, b.top + b.height) - Math.max(a.top, b.top)
+  // A hair of tolerance for floating-point dust; a real collision is
+  // units deep, not thousandths.
+  return ox > 0.01 && oy > 0.01
+}
+
+describe('layoutBoardLabels', () => {
+  it('places the founder-shaped finish pile-up with no two label boxes overlapping', () => {
+    const { routes, obstacles } = bearFixture()
+    // The fixture really is the pile-up the diagnosis described.
+    expect(routes.a.filter((w) => w.fraction >= 0.97)).toHaveLength(3)
+    expect(routes.a.some((w) => w.done && w.fraction === 0.98)).toBe(true)
+    expect(obstacles.some((ob) => ob.kind === 'gate' && ob.fraction >= 0.97)).toBe(true)
+
+    const items = bearLabelItems()
+    const placed = layoutBoardLabels(items, LABEL_BOUNDS)
+    expect(placed).toHaveLength(items.length)
+    expect(placed.map((p) => p.id)).toEqual(items.map((i) => i.id))
+    for (const p of placed) {
+      expect(p.x - p.width / 2).toBeGreaterThanOrEqual(LABEL_BOUNDS.minX - 0.01)
+      expect(p.x + p.width / 2).toBeLessThanOrEqual(LABEL_BOUNDS.maxX + 0.01)
+      expect(p.top).toBeGreaterThanOrEqual(LABEL_BOUNDS.minY - 0.01)
+      expect(p.top + p.height).toBeLessThanOrEqual(LABEL_BOUNDS.maxY + 0.01)
+    }
+    for (let i = 0; i < placed.length; i++) {
+      for (let j = i + 1; j < placed.length; j++) {
+        expect(
+          boxesOverlap(placed[i], placed[j]),
+          `${placed[i].id} overlaps ${placed[j].id}`,
+        ).toBe(false)
+      }
+    }
+  })
+
+  it('is deterministic — the same items place the same way twice', () => {
+    const items = bearLabelItems()
+    expect(layoutBoardLabels(items, LABEL_BOUNDS)).toEqual(layoutBoardLabels(items, LABEL_BOUNDS))
+  })
+
+  it('separates six label pairs stacked on a single anchor', () => {
+    const items: BoardLabelItem[] = Array.from({ length: 6 }, (_, i) => ({
+      id: `pair-${i}`,
+      anchorX: xForFraction(0.98),
+      top: 160 + (i % 2) * 16,
+      width: 120,
+      height: 27,
+    }))
+    const placed = layoutBoardLabels(items, LABEL_BOUNDS)
+    for (let i = 0; i < placed.length; i++) {
+      for (let j = i + 1; j < placed.length; j++) {
+        expect(boxesOverlap(placed[i], placed[j]), `${placed[i].id} overlaps ${placed[j].id}`).toBe(
+          false,
+        )
+      }
+    }
+  })
+
+  it('returns no placements for no labels', () => {
+    expect(layoutBoardLabels([], LABEL_BOUNDS)).toEqual([])
+  })
+})
+
+describe('stripWaypointLabels', () => {
+  it('never duplicates a span bound and never stacks two labels on one anchor', () => {
+    const { span, routes } = bearFixture()
+    const labels = stripWaypointLabels(routes.a, span)
+    // The start-bound waypoint's date repeats the bound above the
+    // line, so it is not printed again below it.
+    expect(labels.some((l) => l.text.includes(shortDate(new Date(span.startMs))))).toBe(false)
+    // One label per anchor, anchors distinct.
+    const fractions = labels.map((l) => l.fraction)
+    expect(new Set(fractions).size).toBe(fractions.length)
+    // The three waypoints sharing the finish anchor merge into ONE
+    // label: both dated waypoints' dates repeat the end bound (on a
+    // 3-day span the 0.98 fraction still lands on the final day), so
+    // only the done marker's text survives.
+    const atFinish = labels.filter((l) => l.fraction >= 0.97)
+    expect(atFinish).toHaveLength(1)
+    expect(atFinish[0].text).toBe('done')
+    expect(labels.some((l) => l.text.includes(shortDate(new Date(span.endMs))))).toBe(false)
+    // Every date string is emitted at most once across the strip's
+    // below-line labels.
+    const dateTexts = labels.flatMap((l) => l.text.split(' · ')).filter((t) => t !== 'done')
+    expect(new Set(dateTexts).size).toBe(dateTexts.length)
+  })
+
+  it('suppresses a waypoint whose date is the end bound it stands on', () => {
+    const proj = project({
+      id: 'short',
+      start_date: '2026-12-01T09:00:00',
+      end_date: '2026-12-02T09:00:00',
+    })
+    const tasks = [task({ id: 'only', title: 'Only step', due_date: '2026-12-02T09:00:00' })]
+    const span = projectSpan(proj, tasks, NOW)
+    const routes = buildRoutes(tasks, span)
+    expect(stripWaypointLabels(routes.a, span)).toEqual([])
+  })
+
+  it('merges a done and an open waypoint sharing a mid-span date into one label', () => {
+    const proj = project({
+      id: 'long',
+      start_date: '2026-12-01T09:00:00',
+      end_date: '2026-12-11T09:00:00',
+    })
+    const tasks = [
+      task({ id: 'open', title: 'Open step', due_date: '2026-12-06T09:00:00' }),
+      task({ id: 'done', title: 'Done step', status: 'Done', due_date: '2026-12-06T09:00:00' }),
+    ]
+    const span = projectSpan(proj, tasks, NOW)
+    const routes = buildRoutes(tasks, span)
+    const labels = stripWaypointLabels(routes.a, span)
+    expect(labels).toHaveLength(1)
+    expect(labels[0].fraction).toBeCloseTo(0.5)
+    expect(labels[0].text).toBe('Dec 6 · done')
   })
 })

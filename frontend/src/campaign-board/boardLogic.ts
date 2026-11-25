@@ -855,3 +855,221 @@ export function moveHold(holds: HoldDeclaration[], id: string, fraction: number)
 export function removeHold(holds: HoldDeclaration[], id: string): HoldDeclaration[] {
   return holds.filter((h) => h.id !== id)
 }
+
+/* ------------------------------------------------------------------ */
+/* Label layout — de-overlap for the focus board's lettering           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The focus board's labels (waypoint title/date pairs, the start and
+ * finish banner labels, obstacle labels) used to be placed by pure
+ * functions of fraction and index — nothing ever looked at another
+ * label, so wherever dates cluster (above all at the finish, where
+ * both routes converge and done tasks are appended at fraction 0.98)
+ * the lettering printed on top of itself. This pass is the board's
+ * equivalent of the Atelier Well's gardenLayout: a pure, deterministic
+ * de-overlap over label boxes. It moves lettering only — routes,
+ * fractions, and derivations are untouched.
+ */
+
+export interface BoardLabelItem {
+  /** Stable identity, echoed back in the placement. */
+  id: string
+  /** Desired center x of the label box (board units). */
+  anchorX: number
+  /** Desired top y of the label box (board units). */
+  top: number
+  /** Estimated box width (board units). */
+  width: number
+  /** Box height (board units). */
+  height: number
+}
+
+export interface BoardLabelPlacement {
+  id: string
+  /** Placed center x — the box lies inside the bounds. */
+  x: number
+  /** Placed top y — the box lies inside the bounds. */
+  top: number
+  width: number
+  height: number
+}
+
+export interface BoardLabelBounds {
+  minX: number
+  maxX: number
+  minY: number
+  maxY: number
+}
+
+/** Estimated rendered width of a line of SVG text. Deliberately a
+ *  touch generous (the diagnosis measured ≈5.6 units per character
+ *  at fontSize 11): an over-estimate costs a little air, an
+ *  under-estimate costs a collision. */
+export function estimateLabelWidth(text: string, fontSize: number): number {
+  return text.length * fontSize * 0.55 + 4
+}
+
+interface LabelBox {
+  id: string
+  cx: number
+  top: number
+  w: number
+  h: number
+}
+
+function labelOverlap(a: LabelBox, b: LabelBox, gap: number): { ox: number; oy: number } | null {
+  const ox =
+    Math.min(a.cx + a.w / 2 + gap, b.cx + b.w / 2 + gap) - Math.max(a.cx - a.w / 2, b.cx - b.w / 2)
+  const oy = Math.min(a.top + a.h + gap, b.top + b.h + gap) - Math.max(a.top, b.top)
+  return ox > 0 && oy > 0 ? { ox, oy } : null
+}
+
+function clampLabelBox(box: LabelBox, bounds: BoardLabelBounds): void {
+  if (box.w >= bounds.maxX - bounds.minX) {
+    box.cx = (bounds.minX + bounds.maxX) / 2
+  } else {
+    box.cx = Math.min(bounds.maxX - box.w / 2, Math.max(bounds.minX + box.w / 2, box.cx))
+  }
+  if (box.h >= bounds.maxY - bounds.minY) {
+    box.top = bounds.minY
+  } else {
+    box.top = Math.min(bounds.maxY - box.h, Math.max(bounds.minY, box.top))
+  }
+}
+
+/**
+ * Place label boxes so they do not overlap. Deterministic: fixed
+ * iteration order, no randomness — the same items always place the
+ * same way, and placements come back in input order.
+ *
+ * Method (the Well's pattern): start every box at its anchor, clamped
+ * into the bounds; relax by pushing each overlapping pair apart along
+ * their smaller overlap axis, half and half, re-clamping as we go;
+ * if any pair still overlaps after the relaxation budget, finish with
+ * a deterministic vertical stack sweep (the lower box moves below the
+ * upper, in reading order) until no pair overlaps or the sweep budget
+ * runs out.
+ *
+ * The promise: every returned box lies entirely inside the bounds
+ * (any box that itself fits the bounds), and no label is ever dropped.
+ * Pairwise non-overlap holds whenever the labels can be stacked
+ * within the field in their anchor columns — the sweep enforces it
+ * unless a single column's labels are together taller than the field
+ * itself, in which case the boxes stay clamped in-bounds in their
+ * least-overlapping deterministic arrangement.
+ */
+export function layoutBoardLabels(
+  items: BoardLabelItem[],
+  bounds: BoardLabelBounds,
+  gap = 2,
+): BoardLabelPlacement[] {
+  if (items.length === 0) return []
+  const placed: LabelBox[] = items.map((it) => {
+    const box: LabelBox = { id: it.id, cx: it.anchorX, top: it.top, w: it.width, h: it.height }
+    clampLabelBox(box, bounds)
+    return box
+  })
+
+  // Relaxation — push overlapping pairs apart along the smaller axis.
+  for (let iter = 0; iter < 240; iter++) {
+    let moved = false
+    for (let i = 0; i < placed.length; i++) {
+      for (let j = i + 1; j < placed.length; j++) {
+        const o = labelOverlap(placed[i], placed[j], gap)
+        if (!o) continue
+        moved = true
+        const a = placed[i]
+        const b = placed[j]
+        if (o.ox < o.oy) {
+          const dir = b.cx >= a.cx ? 1 : -1
+          a.cx -= (dir * o.ox) / 2
+          b.cx += (dir * o.ox) / 2
+        } else {
+          const dir = b.top >= a.top ? 1 : -1
+          a.top -= (dir * o.oy) / 2
+          b.top += (dir * o.oy) / 2
+        }
+        clampLabelBox(a, bounds)
+        clampLabelBox(b, bounds)
+      }
+    }
+    if (!moved) break
+  }
+
+  // Stack sweep — the guarantee's backstop: any pair still
+  // overlapping is separated vertically, the lower box (later in
+  // reading order on a tie) moving below the upper one.
+  for (let pass = 0; pass < 60; pass++) {
+    let moved = false
+    for (let i = 0; i < placed.length; i++) {
+      for (let j = i + 1; j < placed.length; j++) {
+        if (!labelOverlap(placed[i], placed[j], gap)) continue
+        const upper = placed[i].top <= placed[j].top ? placed[i] : placed[j]
+        const lower = upper === placed[i] ? placed[j] : placed[i]
+        lower.top = upper.top + upper.h + gap
+        clampLabelBox(lower, bounds)
+        moved = true
+      }
+    }
+    if (!moved) break
+  }
+
+  return placed.map((p) => ({ id: p.id, x: p.cx, top: p.top, width: p.w, height: p.h }))
+}
+
+/* ------------------------------------------------------------------ */
+/* Timeline strip — one label per anchor, no bound printed twice       */
+/* ------------------------------------------------------------------ */
+
+export interface StripLabel {
+  /** The anchor the label (and its tick) stands at. */
+  fraction: number
+  /** The single label printed at that anchor. */
+  text: string
+}
+
+/** Two waypoints stand at the same anchor when their fractions are
+ *  this close — on any realistic span that means the same recorded
+ *  moment (identical dates produce identical fractions, and the
+ *  fraction clamps pile the ends onto 0.02 / 0.98 exactly). */
+const STRIP_ANCHOR_EPSILON = 0.005
+/** A waypoint coincides with a span bound when its (clamped)
+ *  fraction sits this close to the corresponding end. */
+const STRIP_BOUND_EPSILON = 0.03
+
+/**
+ * The timeline strip's below-line labels, derived from Route A.
+ *
+ * The strip used to print the span's start and end dates above the
+ * line AND every waypoint's date below it — so each bound date
+ * appeared twice by construction, and two waypoints sharing the
+ * finish anchor printed glyph-on-glyph. Here: waypoints are grouped
+ * by anchor; within a group, a date that merely repeats the span
+ * bound the group coincides with is dropped (the bound above the
+ * line already says it); the group's surviving texts are merged into
+ * ONE label. Each date is therefore printed at most once per anchor,
+ * bounds are never duplicated, and no anchor carries two labels.
+ */
+export function stripWaypointLabels(waypoints: BoardWaypoint[], span: BoardSpan): StripLabel[] {
+  const startText = shortDate(new Date(span.startMs))
+  const endText = shortDate(new Date(span.endMs))
+  const groups: { fraction: number; texts: string[] }[] = []
+  const sorted = [...waypoints].sort((a, b) => a.fraction - b.fraction)
+  for (const w of sorted) {
+    const text = w.done ? 'done' : shortDate(dateAtFraction(span, w.fraction))
+    // A date that duplicates the bound this anchor coincides with is
+    // already printed above the line — do not print it again.
+    if (w.fraction <= STRIP_BOUND_EPSILON && text === startText) continue
+    if (w.fraction >= 1 - STRIP_BOUND_EPSILON && text === endText) continue
+    let group = groups[groups.length - 1]
+    if (!group || Math.abs(w.fraction - group.fraction) > STRIP_ANCHOR_EPSILON) {
+      group = { fraction: w.fraction, texts: [] }
+      groups.push(group)
+    }
+    if (!group.texts.includes(text)) group.texts.push(text)
+  }
+  return groups
+    .filter((g) => g.texts.length > 0)
+    .map((g) => ({ fraction: g.fraction, text: g.texts.join(' · ') }))
+}

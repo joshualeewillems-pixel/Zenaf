@@ -23,6 +23,7 @@ import type {
   RoomModel,
 } from './palaceLogic'
 import { councilFlameColors, isDoneStatus } from './palaceLogic'
+import { SEAT_COLORS, type SeatId } from '../council/colors'
 
 /* The prototype's material palette. */
 export const PAL = {
@@ -638,11 +639,17 @@ export function FloorScene({
   onOpenRoom,
   onThreshold,
   onScales,
+  guests = [],
+  onGuest,
 }: {
   model: FloorModel
   onOpenRoom: (taskId: string) => void
   onThreshold: () => void
   onScales: () => void
+  /** Seats the attributed read shows attending this floor's subject
+   *  — their marks stand in the hall, and only theirs. */
+  guests?: SeatId[]
+  onGuest?: (seat: SeatId) => void
 }) {
   const W = 640
   const pad = 14
@@ -796,6 +803,26 @@ export function FloorScene({
       </g>
       {/* the drawing table stands on every floor */}
       <DrawingTable x={(hallL + hallR) / 2} y={top + planH + 30} w={120} />
+      {/* guest marks in the hall — a seat's token stands here only
+          where the attributed read shows that seat attending this
+          floor's subject (Guests-1) */}
+      {onGuest &&
+        guests.map((seat, i) => {
+          const cx = (hallL + hallR) / 2 + (i - (guests.length - 1) / 2) * 30
+          const cy = top + planH + 84
+          return (
+            <g
+              key={seat}
+              data-testid={`palace-floor-guest-${seat}`}
+              onClick={() => onGuest(seat)}
+              style={{ cursor: 'pointer' }}
+            >
+              <title>A guest attends this floor</title>
+              <circle cx={cx} cy={cy} r={12} fill={SEAT_COLORS[seat]} stroke="#fffaf0" strokeWidth={2} />
+              <circle cx={cx} cy={cy} r={12} fill="none" stroke={PAL.stoneDark} strokeWidth={0.8} />
+            </g>
+          )
+        })}
       {/* the entrance — a threshold, and an affordance */}
       <g
         data-testid="palace-floor-threshold"
@@ -850,6 +877,9 @@ export function RoomScene({
   onOpenWaitedOn,
   onFurniture,
   onOpenSubtask,
+  vesselGold = false,
+  guests = [],
+  onGuest,
 }: {
   model: RoomModel
   lit: boolean
@@ -858,6 +888,13 @@ export function RoomScene({
   onOpenWaitedOn: (taskId: string) => void
   onFurniture: (kind: 'scales' | 'vessel' | 'chest' | 'table' | 'mandala' | 'plant') => void
   onOpenSubtask: (taskId: string) => void
+  /** The vessel's gold seam, as the attributed read derives it:
+   *  an interpretation reconsidered, its correction accepted. */
+  vesselGold?: boolean
+  /** Seats the attributed read shows attending this room's subject —
+   *  their guest objects stand here, and only theirs (Guests-1). */
+  guests?: SeatId[]
+  onGuest?: (seat: SeatId) => void
 }) {
   const W = 640
   const H = 430
@@ -950,9 +987,14 @@ export function RoomScene({
         )
       })}
 
-      {/* the mandala, where recorded edges converge */}
-      {model.mandala && (
-        <g data-testid="palace-room-mandala" onClick={() => onFurniture('mandala')} style={{ cursor: 'pointer' }}>
+      {/* the mandala — earned where recorded edges converge, or
+          standing as Aria's guest object where she attends */}
+      {(model.mandala || guests.includes('conductor')) && (
+        <g
+          data-testid="palace-room-mandala"
+          onClick={() => (guests.includes('conductor') && onGuest ? onGuest('conductor') : onFurniture('mandala'))}
+          style={{ cursor: 'pointer' }}
+        >
           <g transform="translate(320 366)" opacity={0.9}>
             <circle r={24} fill="none" stroke={PAL.maeve} strokeWidth={2.2} />
             <circle r={15} fill="none" stroke={PAL.maeve} strokeWidth={1.5} />
@@ -1028,9 +1070,65 @@ export function RoomScene({
             strokeWidth={1.8}
           />
           <ellipse cx={0} cy={-20} rx={7} ry={2.6} fill="#d9cbaa" stroke={PAL.stoneDark} />
-          {model.vesselGold && <path d="M -8 -18 C -2 -6, 2 4, -3 16" stroke="#d4af37" strokeWidth={2.2} fill="none" />}
+          {(model.vesselGold || vesselGold) && (
+            <path d="M -8 -18 C -2 -6, 2 4, -3 16" stroke="#d4af37" strokeWidth={2.2} fill="none" />
+          )}
         </g>
       </g>
+
+      {/* guest objects — each stands ONLY where the attributed read
+          shows its seat attending this room's subject (Guests-1);
+          each keeps its own form, as a guest here */}
+      {onGuest && guests.includes('champion') && (
+        <g data-testid="palace-room-guest-champion" onClick={() => onGuest('champion')} style={{ cursor: 'pointer' }}>
+          <title>Valen's battle plan</title>
+          <g transform="translate(452 108)">
+            <rect x={-31} y={-23} width={62} height={46} rx={2} fill={PAL.paper} stroke={PAL.stoneDark} strokeWidth={1.6} />
+            <polyline points="-21,13 -7,-5 7,7 21,-13" fill="none" stroke={SEAT_COLORS.champion} strokeWidth={2.2} />
+            <circle cx={-21} cy={13} r={3.2} fill={SEAT_COLORS.champion} />
+            <circle cx={21} cy={-13} r={3.2} fill={SEAT_COLORS.champion} />
+          </g>
+        </g>
+      )}
+      {onGuest && guests.includes('skeptic') && (
+        <g data-testid="palace-room-guest-skeptic" onClick={() => onGuest('skeptic')} style={{ cursor: 'pointer' }}>
+          <title>Severine's lens</title>
+          <g transform="translate(140 205)">
+            <circle r={15} fill="#eef2f7" opacity={0.6} stroke={PAL.stoneDark} strokeWidth={3} />
+            <line x1={10} y1={10} x2={25} y2={25} stroke={PAL.woodDark} strokeWidth={5} strokeLinecap="round" />
+          </g>
+        </g>
+      )}
+      {onGuest && guests.includes('ambassador') && (
+        <g data-testid="palace-room-guest-ambassador" onClick={() => onGuest('ambassador')} style={{ cursor: 'pointer' }}>
+          <title>Lucian's cup</title>
+          <g transform="translate(200 340)">
+            <ellipse cx={0} cy={11} rx={15} ry={3.4} fill={PAL.stone} stroke={PAL.stoneDark} />
+            <path d="M -11 -3 L 11 -3 L 8 9 L -8 9 Z" fill="#eef2f7" stroke={SEAT_COLORS.ambassador} strokeWidth={1.8} />
+            <path d="M 11 -1 A 5.5 4.5 0 1 1 11 6" fill="none" stroke={SEAT_COLORS.ambassador} strokeWidth={1.8} />
+          </g>
+        </g>
+      )}
+      {onGuest && guests.includes('maverick') && (
+        <g data-testid="palace-room-guest-maverick" onClick={() => onGuest('maverick')} style={{ cursor: 'pointer' }}>
+          <title>Jynx's scroll</title>
+          <g transform="translate(202 398)">
+            <rect x={-25} y={-7} width={45} height={14} rx={7} fill={PAL.paper} stroke={SEAT_COLORS.maverick} strokeWidth={1.8} />
+            <circle cx={20} cy={0} r={7} fill="#e6dcc4" stroke={SEAT_COLORS.maverick} strokeWidth={1.8} />
+            <circle cx={20} cy={0} r={2.8} fill="none" stroke={SEAT_COLORS.maverick} strokeWidth={1.4} />
+          </g>
+        </g>
+      )}
+      {onGuest && guests.includes('mentor') && (
+        <g data-testid="palace-room-guest-mentor" onClick={() => onGuest('mentor')} style={{ cursor: 'pointer' }}>
+          <title>Rumi's cairn</title>
+          <g transform="translate(448 396)">
+            <ellipse cx={0} cy={6} rx={16} ry={5} fill={PAL.stone} stroke={PAL.stoneDark} />
+            <ellipse cx={0} cy={-1} rx={11.5} ry={4.4} fill="#c4b494" stroke={PAL.stoneDark} />
+            <ellipse cx={0} cy={-7.5} rx={7.5} ry={3.8} fill={SEAT_COLORS.mentor} stroke={PAL.stoneDark} />
+          </g>
+        </g>
+      )}
 
       {/* the name plate */}
       <g pointerEvents="none">

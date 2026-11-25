@@ -24,7 +24,7 @@ import {
 import { fetchVisionMapEntities } from '../vision-map/veMapApi'
 import { apiBase } from '../apiBase'
 import { fetchPermissionHome } from '../settings/api'
-import type { PalaceData, StrandBoundarySet } from './palaceLogic'
+import type { AttributedRead, PalaceData, StrandBoundarySet } from './palaceLogic'
 
 export interface PalaceEntities extends PalaceData {
   /** The canonical core profile (its declared non-negotiables are
@@ -121,4 +121,29 @@ export async function fetchBoundaryMaterial(): Promise<BoundaryMaterial> {
     permissionGroups = []
   }
   return { strandBoundaries, permissionGroups }
+}
+
+/** The shared attributed subject read (Thresholds-1 / Kintsugi-1 /
+ *  Guests-1): boundary states, Kintsugi material, and attending
+ *  seats for ONE subject. Fetched per subject as the visitor walks —
+ *  on entering a floor or room — never for the whole Palace at once.
+ *  Degrades to null on any failure: the world then stands exactly
+ *  as it did without the read (plain vessel, no guest objects, the
+ *  general boundaries panel unchanged). */
+export async function fetchAttributedRead(
+  entityType: 'project' | 'task',
+  entityId: string,
+): Promise<AttributedRead | null> {
+  try {
+    const res = await fetch(
+      `${VISION_EXECUTION_API}/attributed-read/${entityType}/${entityId}`,
+      { credentials: 'include' },
+    )
+    if (!res.ok) return null
+    const data: unknown = await res.json()
+    if (!data || typeof data !== 'object') return null
+    return data as AttributedRead
+  } catch {
+    return null
+  }
 }

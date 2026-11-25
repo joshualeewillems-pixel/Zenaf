@@ -16,23 +16,38 @@
  * panel composes only from records that exist today (core-profile
  * declarations, strand topic boundaries, permission state), fetched
  * lazily when a doorway is tapped.
+ *
+ * The shared attributed subject read (founder ruling 2026-11-25)
+ * composes this world's three further expressions per subject,
+ * fetched as the visitor enters a floor or room: Thresholds-1 (the
+ * boundaries panel's per-subject states — proposed interpretations
+ * in pencil, established decisions/commitments), Kintsugi-1 (the
+ * vessel's held questions and its gold seam, earned only by an
+ * accepted supersession), and Guests-1 (a seat's object stands only
+ * where the read shows that seat attending the subject, with two
+ * doors: explore here with Maeve, or follow into the seat's world).
  */
 import * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CouncilChat from '../chat/CouncilChat'
 import SplitShell from '../components/SplitShell'
-import { SEAT_COLORS } from '../council/colors'
+import { SEAT_COLORS, type SeatId } from '../council/colors'
 import type { Idea } from '../vision-execution/types'
 import {
+  attendingGuests,
   buildBuilding,
   buildCompound,
   buildFloor,
   buildRoom,
   composeBoundaryPanel,
+  composeSubjectThresholds,
+  composeVesselHeld,
+  GUEST_OBJECTS,
+  type AttributedRead,
   type BoundaryPanelModel,
   type PalaceData,
 } from './palaceLogic'
-import { fetchBoundaryMaterial, fetchPalaceEntities } from './palaceApi'
+import { fetchAttributedRead, fetchBoundaryMaterial, fetchPalaceEntities } from './palaceApi'
 import { BuildingScene, CompoundScene, FloorScene, RoomScene } from './palaceCanvas'
 import './palace.css'
 
@@ -46,11 +61,20 @@ type Panel =
   | { kind: 'boundaries' }
   | { kind: 'held'; taskId: string }
   | { kind: 'idea'; ideaId: string }
+  | { kind: 'vessel' }
+  | { kind: 'guest'; seat: SeatId }
   | null
 
 const GUARDIAN = SEAT_COLORS.guardian
 
-export default function LivingPalaceView() {
+export default function LivingPalaceView({
+  onFollowGuest,
+}: {
+  /** Guests-1's second door: follow a guest object into its seat's
+   *  own world (the App routes it through SEAT_HOME_NAV). Absent in
+   *  surfaces that mount the Palace without navigation. */
+  onFollowGuest?: (seat: SeatId) => void
+} = {}) {
   const [data, setData] = useState<PalaceData | null>(null)
   const [coreNonNegotiables, setCoreNonNegotiables] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -90,6 +114,40 @@ export default function LivingPalaceView() {
     setToast({ id: Date.now(), text })
     toastTimer.current = window.setTimeout(() => setToast(null), 5600)
   }, [])
+
+  /* ---------------- the attributed subject read ---------------- */
+
+  /** The subject the read is fetched for on this layer: a floor's
+   *  project, a room's task. Compound and building layers have no
+   *  per-subject read in these expressions. */
+  const subjectKey =
+    current.layer === 'floor'
+      ? `project:${current.projectId}`
+      : current.layer === 'room'
+        ? `task:${current.taskId}`
+        : null
+  const [attributed, setAttributed] = useState<{ key: string; read: AttributedRead | null } | null>(null)
+
+  useEffect(() => {
+    if (!subjectKey) return
+    let cancelled = false
+    const [entityType, entityId] = subjectKey.split(':') as ['project' | 'task', string]
+    fetchAttributedRead(entityType, entityId).then((read) => {
+      if (!cancelled) setAttributed({ key: subjectKey, read })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [subjectKey])
+
+  /** The read for the CURRENT subject only — a stale read for a
+   *  previous room never paints this one. Null while loading or
+   *  when the read failed: the world then stands unadorned. */
+  const subjectRead = attributed && attributed.key === subjectKey ? attributed.read : null
+  const subjectReadLoading = subjectKey !== null && (!attributed || attributed.key !== subjectKey)
+  const subjectGuests = useMemo(() => attendingGuests(subjectRead), [subjectRead])
+  const subjectGuestSeats = useMemo(() => subjectGuests.map((g) => g.seat), [subjectGuests])
+  const layerNoun = current.layer === 'room' ? 'room' : 'floor'
 
   const push = useCallback((next: PalaceLayer) => {
     setTrail((t) => [...t, next])
@@ -199,9 +257,15 @@ export default function LivingPalaceView() {
           'The scales stand in every room, ready to weigh what a piece of work asks of you. Their pans are empty: weighing is not a built record, so nothing placed here is recorded — an unweighed undertaking, not a claim of balance.',
         )
       } else if (kind === 'vessel') {
-        say(
-          'The Kintsugi vessel stands whole and empty. You may bring something here that needs repair before the system ever recognises it — Maeve keeps the vessel for that. Gold seams appear only where a repair is recorded, and no repair record reaches this room yet, so it stands plain.',
-        )
+        if (composeVesselHeld(subjectRead).hasMaterial) {
+          setPanel({ kind: 'vessel' })
+        } else if (subjectReadLoading) {
+          say('The vessel stands whole and empty — Maeve is still gathering what this room holds.')
+        } else {
+          say(
+            'The Kintsugi vessel stands whole and empty. You may bring something here that needs repair before the system ever recognises it — Maeve keeps the vessel for that. Its gold appears only where a reading of a room was reconsidered and the correction accepted, and no such lineage reaches this room, so it stands plain.',
+          )
+        }
       } else if (kind === 'chest') {
         if (room.held) setPanel({ kind: 'held', taskId: room.task.id })
         else say('The chest stands empty — this piece of work holds no recorded words of its own yet.')
@@ -227,7 +291,7 @@ export default function LivingPalaceView() {
         )
       }
     },
-    [room, say],
+    [room, say, subjectRead, subjectReadLoading],
   )
 
   /* ---------------- chat subject ---------------- */
@@ -279,6 +343,10 @@ export default function LivingPalaceView() {
   }, [trail, data])
 
   /* ---------------- render ---------------- */
+
+  const thresholds = composeSubjectThresholds(subjectRead)
+  const vesselHeld = composeVesselHeld(subjectRead)
+  const guestPanelSeat = panel?.kind === 'guest' ? subjectGuests.find((g) => g.seat === panel.seat) : undefined
 
   const left = (
     <div className="flex h-full flex-col bg-[#f7f1e3]">
@@ -378,6 +446,8 @@ export default function LivingPalaceView() {
         {data && floor && current.layer === 'floor' && (
           <FloorScene
             model={floor}
+            guests={subjectGuestSeats}
+            onGuest={(seat) => setPanel({ kind: 'guest', seat })}
             onOpenRoom={openTask}
             onThreshold={() => void openBoundaries()}
             onScales={() =>
@@ -402,6 +472,9 @@ export default function LivingPalaceView() {
             onOpenWaitedOn={openTask}
             onFurniture={onRoomFurniture}
             onOpenSubtask={openTask}
+            vesselGold={subjectRead?.kintsugi?.restoration_of_understanding ?? false}
+            guests={subjectGuestSeats}
+            onGuest={(seat) => setPanel({ kind: 'guest', seat })}
           />
         )}
         {toast && (
@@ -424,8 +497,50 @@ export default function LivingPalaceView() {
             </button>
           </div>
           {boundaryLoading && <p className="mt-2 text-[#6b5b45]">Gathering what is recorded…</p>}
+          {thresholds.hasSubjectMaterial && (
+            <div className="mt-2 space-y-3 border-b border-[#e3d5b8] pb-3 leading-relaxed">
+              <p className="font-medium">At this {layerNoun}'s own threshold</p>
+              {thresholds.proposed.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#8a7a5c]">
+                    Proposed — readings, in pencil
+                  </p>
+                  <ul className="mt-1 space-y-1.5">
+                    {thresholds.proposed.map((item) => (
+                      <li key={item.reading_id} className="italic text-[#8a7a5c]">
+                        {item.author_name}
+                        {item.status === 'accepted' ? ' (a reading you accepted)' : ''}:{' '}
+                        {[...item.tensions, ...item.open_questions].join(' · ')}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1 text-xs not-italic text-[#6b5b45]">
+                    A reading is an interpretation offered, not a boundary established. Placement at this door is
+                    offered only this way — in pencil — until you settle it yourself.
+                  </p>
+                </div>
+              )}
+              {thresholds.established.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#8a7a5c]">Established</p>
+                  <ul className="mt-1 list-inside list-disc text-[#6b5b45]">
+                    {thresholds.established.map((item, i) =>
+                      item.source === 'decision' ? (
+                        <li key={i}>A decision stands recorded here — {item.decision_type?.replace(/_/g, ' ')}</li>
+                      ) : (
+                        <li key={i}>A commitment you made: {item.text}</li>
+                      ),
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
           {boundaryModel && (
             <div className="mt-2 space-y-3 leading-relaxed">
+              {(boundaryModel.nonNegotiables || boundaryModel.strandBoundaries.length > 0) && (
+                <p className="text-xs font-semibold uppercase tracking-wide text-[#8a7a5c]">Expressed</p>
+              )}
               {boundaryModel.nonNegotiables && (
                 <div>
                   <p className="font-medium">Declared in your core profile</p>
@@ -448,6 +563,7 @@ export default function LivingPalaceView() {
               ))}
               {boundaryModel.permissionGroups.length > 0 && (
                 <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#8a7a5c]">Enforceable</p>
                   <p className="font-medium">Your permission state</p>
                   <ul className="list-inside list-disc text-[#6b5b45]">
                     {boundaryModel.permissionGroups.map((g) => (
@@ -503,6 +619,116 @@ export default function LivingPalaceView() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {panel?.kind === 'vessel' && room && (
+        <div data-testid="palace-vessel-panel" className="max-h-[46%] overflow-y-auto border-t border-[#e3d5b8] bg-[#fffaf0] px-4 py-3 text-sm text-[#4a3f30]">
+          <div className="flex items-baseline justify-between">
+            <h3 className="font-semibold">The Kintsugi vessel — {room.task.title}</h3>
+            <button type="button" className="text-xs underline decoration-dotted" onClick={() => setPanel(null)}>
+              Close
+            </button>
+          </div>
+          <div className="mt-2 space-y-3 leading-relaxed">
+            {vesselHeld.restorationOfUnderstanding && (
+              <p className="border-l-2 border-[#d4af37] pl-3" data-testid="palace-vessel-seam-note">
+                The gold seam: a reading of this room was reconsidered, and the correction stands accepted. The
+                gold marks the corrected reading — an understanding restored. It does not claim the thing itself
+                is mended.
+              </p>
+            )}
+            {vesselHeld.openQuestions.length > 0 && (
+              <div>
+                <p className="font-medium">Open questions Maeve holds for this room</p>
+                <ul className="mt-1 space-y-1 italic text-[#8a7a5c]">
+                  {vesselHeld.openQuestions.map((q, i) => (
+                    <li key={i}>{q.text}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {vesselHeld.tensions.length > 0 && (
+              <div>
+                <p className="font-medium">Tensions she holds open</p>
+                <ul className="mt-1 space-y-1 italic text-[#8a7a5c]">
+                  {vesselHeld.tensions.map((t, i) => (
+                    <li key={i}>{t.text}</li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-xs text-[#6b5b45]">
+                  A tension held is not damage done — it is a question that has not finished. The vessel does not
+                  crack for it.
+                </p>
+              </div>
+            )}
+            {vesselHeld.openReconsiderations.length > 0 && (
+              <div>
+                <p className="font-medium">Up for reconsideration</p>
+                <ul className="mt-1 space-y-1 italic text-[#8a7a5c]">
+                  {vesselHeld.openReconsiderations.map((r, i) => (
+                    <li key={i}>A reading of this room is up for reconsideration{r.reason ? ` — ${r.reason}` : ''}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {panel?.kind === 'guest' && guestPanelSeat && (
+        <div data-testid="palace-guest-panel" className="max-h-[46%] overflow-y-auto border-t border-[#e3d5b8] bg-[#fffaf0] px-4 py-3 text-sm text-[#4a3f30]">
+          <div className="flex items-baseline justify-between">
+            <h3 className="font-semibold">{GUEST_OBJECTS[guestPanelSeat.seat]?.label}</h3>
+            <button type="button" className="text-xs underline decoration-dotted" onClick={() => setPanel(null)}>
+              Close
+            </button>
+          </div>
+          <div className="mt-2 space-y-2 leading-relaxed">
+            {guestPanelSeat.via.includes('reading') && (
+              <p>
+                {guestPanelSeat.seat_name} has a reading on this {layerNoun}.
+              </p>
+            )}
+            {guestPanelSeat.via.includes('conversation') && (
+              <p>
+                {guestPanelSeat.seat_name} has spoken of this {layerNoun} in conversation.
+              </p>
+            )}
+            <p className="text-[#6b5b45]">
+              The material itself stays in {guestPanelSeat.seat_name}'s keeping — none of it is copied into the
+              Palace. It stands here by attribution, and there are two doors.
+            </p>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                type="button"
+                data-testid="palace-guest-explore"
+                className="rounded-full border border-[#c9b995] bg-white/60 px-3 py-1.5 text-xs text-[#4a3f30]"
+                onClick={() => {
+                  setPanel(null)
+                  say(
+                    `This ${layerNoun} is Maeve's subject here — ask her about ${guestPanelSeat.seat_name}'s part in it, and it rides into her conversation from where you stand.`,
+                  )
+                }}
+              >
+                Explore it here with Maeve
+              </button>
+              {guestPanelSeat.seat === 'ambassador' ? (
+                <span className="text-xs text-[#6b5b45]">
+                  Lucian has no world of his own yet — his cup is explored here, with Maeve.
+                </span>
+              ) : onFollowGuest ? (
+                <button
+                  type="button"
+                  data-testid="palace-guest-follow"
+                  className="rounded-full border border-[#c9b995] bg-white/60 px-3 py-1.5 text-xs text-[#4a3f30]"
+                  onClick={() => onFollowGuest(guestPanelSeat.seat)}
+                >
+                  Follow it into {guestPanelSeat.seat_name}'s world
+                </button>
+              ) : null}
+            </div>
+          </div>
         </div>
       )}
 

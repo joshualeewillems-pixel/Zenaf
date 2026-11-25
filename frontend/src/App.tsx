@@ -32,6 +32,7 @@ import {
   LivingTreeView,
   OPEN_SEAT_REVIEW_EVENT,
   OPEN_YOU_SHEET_EVENT,
+  SEAT_HOME_NAV,
   type NodeMenuItemId,
   type NodeSheetContentProvider,
   type TreeNodeRef,
@@ -5529,7 +5530,17 @@ function App() {
         ) : mainView === 'aria_atelier' ? (
           <AriaAtelierView />
         ) : mainView === 'living_palace' ? (
-          <LivingPalaceView />
+          <LivingPalaceView
+            onFollowGuest={(seat) => {
+              // Guests-1's second door, through the existing
+              // seat-landing mechanism. SEAT_HOME_NAV has no mentor
+              // entry (his landing is the map, per SEAT_NAV_ITEMS)
+              // and no ambassador entry — Lucian has no world yet,
+              // and the Palace offers him no follow door.
+              const target = seat === 'mentor' ? 'vision_map' : SEAT_HOME_NAV[seat]
+              if (target) setMainView(target)
+            }}
+          />
         ) : mainView === 'vision_execution' ? (
           <div className="flex-1 flex flex-col min-h-0 overflow-auto">
             <VisionExecutionView

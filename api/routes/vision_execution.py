@@ -1748,6 +1748,34 @@ def bench_foliage_by_parent(
     }
 
 
+@router.get("/attributed-read/{entity_type}/{entity_id}")
+def attributed_read_for_route(
+    entity_type: str,
+    entity_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """The shared attributed subject read (Palace capability
+    directions, founder ruling 2026-11-25): for one caller-owned
+    subject (initiative, project, task, or idea), the boundary
+    material attributable to it labelled by state (expressed /
+    proposed / established / enforceable), its steward Kintsugi
+    material (live readings' tensions and open questions, currency,
+    reconsideration lineage, and whether an interpretation was
+    reconsidered with its correction accepted), and the seats
+    attending it. Read-only — the read writes nothing, anywhere.
+    The steward-gated parts mirror the pencil gates fail-closed
+    (ZENAF_STEWARD_PENCIL + both steward consent flags + standing
+    threads only); a foreign or unknown subject reads as the empty
+    shape, never an error, never a leak. The capability is shared —
+    the Living Palace is its first consumer, not its owner. See
+    local_ai/conversation/attributed_read.py."""
+    from local_ai.conversation import attributed_read
+
+    return attributed_read.attributed_read_for_subject(
+        current_user["id"], entity_type, entity_id
+    )
+
+
 @router.get("/task-proposals/{proposal_id}")
 def get_task_proposal(proposal_id: str, current_user: dict = Depends(get_current_user)):
     """One task proposal, owner-scoped (Firebrand S1).

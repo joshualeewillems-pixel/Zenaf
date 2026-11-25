@@ -9,8 +9,9 @@
  * EARNED (a dependency makes the window, recorded figures make the
  * floor scales, recorded words fill the chest) and the affordance
  * instruments stand unpopulated (empty room scales by construction,
- * the Kintsugi vessel plain — no repair material is served to the
- * frontend, so gold is always false here and the suite says so).
+ * the Kintsugi vessel plain in this VE-only model — its gold is
+ * earned by the attributed read's accepted-supersession lineage and
+ * applied by the view, pinned in the read's own describe below).
  */
 import { describe, expect, it } from 'vitest'
 import type {
@@ -23,13 +24,17 @@ import type {
 } from '../vision-execution/types'
 import { SEAT_COLORS } from '../council/colors'
 import {
+  attendingGuests,
   buildBuilding,
   buildCompound,
   buildFloor,
   buildRoom,
   composeBoundaryPanel,
+  composeSubjectThresholds,
+  composeVesselHeld,
   councilFlameColors,
   growthOf,
+  type AttributedRead,
   type PalaceData,
 } from './palaceLogic'
 
@@ -351,5 +356,118 @@ describe('boundaries panel composition', () => {
     })
     expect(model.nonNegotiables).toBeNull()
     expect(model.hasAnyRecord).toBe(false)
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* the attributed read — Thresholds-1 / Kintsugi-1 / Guests-1          */
+/* ------------------------------------------------------------------ */
+
+const READ: AttributedRead = {
+  resolved: true,
+  subject: { entity_type: 'task', entity_id: 'tc', title: 'Gamma' },
+  steward_gate_open: true,
+  boundaries: {
+    expressed: [],
+    proposed: [
+      {
+        thread_id: 'th1',
+        thread_title: 'The boundary thread',
+        reading_id: 'r1',
+        author: 'skeptic',
+        author_name: 'Severine',
+        status: 'proposed',
+        placement: 'current',
+        currency_labels: [],
+        tensions: ['Sundays keep colliding with deliveries'],
+        open_questions: ['Where does the weekend actually sit?'],
+      },
+    ],
+    established: [
+      { source: 'commitment', text: 'No Sunday deliveries, ever.', status: 'open', created_at: '2026-11-01T00:00:00Z' },
+    ],
+    enforceable: {
+      permission_home_enabled: false,
+      permission_consent_given: false,
+      steward_derivation: true,
+      steward_coordination: true,
+    },
+  },
+  kintsugi: {
+    threads: [
+      {
+        thread_id: 'th1',
+        thread_title: 'The boundary thread',
+        readings: [
+          {
+            reading_id: 'r1',
+            author: 'skeptic',
+            status: 'proposed',
+            placement: 'current',
+            currency_labels: [],
+            tensions: ['Sundays keep colliding with deliveries'],
+            open_questions: ['Where does the weekend actually sit?'],
+          },
+          {
+            reading_id: 'r0',
+            author: 'skeptic',
+            status: 'proposed',
+            placement: 'history',
+            currency_labels: ['superseded'],
+            tensions: ['A displaced tension is history, not held open'],
+            open_questions: [],
+          },
+        ],
+        reconsiderations: [{ reading_id: 'r1', status: 'proposed', reason: 'The delivery facts changed.' }],
+      },
+    ],
+    restoration_of_understanding: true,
+  },
+  guests: {
+    attending: [
+      { seat: 'guardian', seat_name: 'Maeve', via: ['reading'] },
+      { seat: 'ambassador', seat_name: 'Lucian', via: ['reading'] },
+      { seat: 'champion', seat_name: 'Valen', via: ['conversation'] },
+    ],
+  },
+}
+
+describe('attributed read composition', () => {
+  it('guests exclude the host and keep their attribution', () => {
+    const guests = attendingGuests(READ)
+    expect(guests.map((g) => g.seat)).toEqual(['ambassador', 'champion'])
+    expect(guests[0].via).toEqual(['reading'])
+    expect(attendingGuests(null)).toEqual([])
+    expect(attendingGuests({ ...READ, resolved: false })).toEqual([])
+  })
+
+  it('thresholds carry proposed and established, labelled apart', () => {
+    const model = composeSubjectThresholds(READ)
+    expect(model.hasSubjectMaterial).toBe(true)
+    expect(model.proposed).toHaveLength(1)
+    expect(model.proposed[0].author_name).toBe('Severine')
+    expect(model.established).toHaveLength(1)
+    expect(model.established[0].source).toBe('commitment')
+    expect(composeSubjectThresholds(null).hasSubjectMaterial).toBe(false)
+  })
+
+  it('the vessel holds only CURRENT questions — history is not held open', () => {
+    const held = composeVesselHeld(READ)
+    expect(held.openQuestions).toEqual([
+      { author: 'skeptic', text: 'Where does the weekend actually sit?' },
+    ])
+    expect(held.tensions).toEqual([
+      { author: 'skeptic', text: 'Sundays keep colliding with deliveries' },
+    ])
+    expect(held.openReconsiderations).toEqual([{ reason: 'The delivery facts changed.' }])
+    expect(held.hasMaterial).toBe(true)
+  })
+
+  it('the seam flag passes through untouched — and a gate-closed read holds nothing', () => {
+    expect(composeVesselHeld(READ).restorationOfUnderstanding).toBe(true)
+    const closed: AttributedRead = { ...READ, kintsugi: null }
+    const held = composeVesselHeld(closed)
+    expect(held.hasMaterial).toBe(false)
+    expect(held.restorationOfUnderstanding).toBe(false)
   })
 })

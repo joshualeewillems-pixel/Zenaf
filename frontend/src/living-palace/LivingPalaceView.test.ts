@@ -95,6 +95,28 @@ function jsonResponse(body: unknown): Response {
   } as Response
 }
 
+/** The attributed read the stub serves for any subject — a resolved,
+ *  empty read by default; the attributed-read describe replaces it. */
+const EMPTY_READ = {
+  resolved: true,
+  subject: { entity_type: 'task', entity_id: 'tc', title: 'Gamma' },
+  steward_gate_open: false,
+  boundaries: {
+    expressed: [],
+    proposed: [],
+    established: [],
+    enforceable: {
+      permission_home_enabled: false,
+      permission_consent_given: false,
+      steward_derivation: false,
+      steward_coordination: false,
+    },
+  },
+  kintsugi: null,
+  guests: { attending: [] },
+}
+let attributedPayload: unknown = EMPTY_READ
+
 function installFetchStub() {
   const routes: Record<string, unknown> = {
     '/vision-execution/ideas': [
@@ -131,6 +153,7 @@ function installFetchStub() {
     'fetch',
     vi.fn(async (input: unknown) => {
       const url = String(input)
+      if (url.includes('/attributed-read/')) return jsonResponse(attributedPayload)
       for (const [path, body] of Object.entries(routes)) {
         if (url.endsWith(path)) return jsonResponse(body)
       }
@@ -151,12 +174,12 @@ function installFetchStub() {
 let container: HTMLDivElement
 let root: Root
 
-async function render() {
+async function render(props: Record<string, unknown> = {}) {
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
   await act(async () => {
-    root.render(React.createElement(LivingPalaceView))
+    root.render(React.createElement(LivingPalaceView, props))
   })
   // Let the entity fetch land.
   await act(async () => {
@@ -181,6 +204,7 @@ function lastChat() {
 
 beforeEach(() => {
   chatProps.length = 0
+  attributedPayload = EMPTY_READ
   installFetchStub()
 })
 
@@ -288,5 +312,148 @@ describe('Living Palace view', () => {
       entity_type: 'idea',
       entity_id: 'id1',
     })
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* the attributed read — Thresholds-1 / Kintsugi-1 / Guests-1          */
+/* ------------------------------------------------------------------ */
+
+const READ_WITH_MATERIAL = {
+  ...EMPTY_READ,
+  steward_gate_open: true,
+  boundaries: {
+    ...EMPTY_READ.boundaries,
+    proposed: [
+      {
+        thread_id: 'th1',
+        thread_title: 'The boundary thread',
+        reading_id: 'r1',
+        author: 'skeptic',
+        author_name: 'Severine',
+        status: 'proposed',
+        placement: 'current',
+        currency_labels: [],
+        tensions: ['Sundays keep colliding with deliveries'],
+        open_questions: ['Where does the weekend actually sit?'],
+      },
+    ],
+    established: [
+      { source: 'commitment', text: 'No Sunday deliveries, ever.', status: 'open', created_at: '2026-11-01T00:00:00Z' },
+    ],
+  },
+  kintsugi: {
+    threads: [
+      {
+        thread_id: 'th1',
+        thread_title: 'The boundary thread',
+        readings: [
+          {
+            reading_id: 'r1',
+            author: 'skeptic',
+            status: 'proposed',
+            placement: 'current',
+            currency_labels: [],
+            tensions: ['Sundays keep colliding with deliveries'],
+            open_questions: ['Where does the weekend actually sit?'],
+          },
+        ],
+        reconsiderations: [],
+      },
+    ],
+    restoration_of_understanding: true,
+  },
+  guests: {
+    attending: [
+      { seat: 'ambassador', seat_name: 'Lucian', via: ['reading'] },
+      { seat: 'champion', seat_name: 'Valen', via: ['conversation'] },
+    ],
+  },
+}
+
+async function descendToGamma() {
+  await click('palace-building-i1')
+  await click('palace-floor-p1')
+  await click('palace-room-tc')
+}
+
+describe('Living Palace — the attributed read', () => {
+  it('an empty read leaves the room exactly as it stood: plain vessel, no guests', async () => {
+    await render()
+    await descendToGamma()
+    const vessel = container.querySelector('[data-testid="palace-room-vessel"]')
+    expect(vessel!.innerHTML).not.toContain('#d4af37')
+    expect(container.querySelector('[data-testid="palace-room-guest-ambassador"]')).toBeNull()
+    expect(container.querySelector('[data-testid="palace-room-guest-champion"]')).toBeNull()
+  })
+
+  it('Kintsugi-1: accepted supersession gilds the seam; the vessel opens the held questions', async () => {
+    attributedPayload = READ_WITH_MATERIAL
+    await render()
+    await descendToGamma()
+    const vessel = container.querySelector('[data-testid="palace-room-vessel"]')
+    expect(vessel!.innerHTML).toContain('#d4af37')
+    await click('palace-room-vessel')
+    const panel = container.querySelector('[data-testid="palace-vessel-panel"]')
+    expect(panel).not.toBeNull()
+    // The seam marks a corrected INTERPRETATION — and says so.
+    expect(panel!.textContent).toContain('an understanding restored')
+    expect(panel!.textContent).toContain('It does not claim the thing itself is mended')
+    // The tension is held as an open question, never as damage.
+    expect(panel!.textContent).toContain('Sundays keep colliding with deliveries')
+    expect(panel!.textContent).toContain('A tension held is not damage done')
+    expect(panel!.textContent).toContain('The vessel does not crack for it')
+  })
+
+  it('Guests-1: attending seats stand as guest objects; the cup opens its two doors', async () => {
+    attributedPayload = READ_WITH_MATERIAL
+    await render()
+    await descendToGamma()
+    expect(container.querySelector('[data-testid="palace-room-guest-ambassador"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="palace-room-guest-champion"]')).not.toBeNull()
+    // A seat that does not attend does not stand.
+    expect(container.querySelector('[data-testid="palace-room-guest-skeptic"]')).toBeNull()
+    await click('palace-room-guest-ambassador')
+    const panel = container.querySelector('[data-testid="palace-guest-panel"]')
+    expect(panel).not.toBeNull()
+    expect(panel!.textContent).toContain("Lucian's cup")
+    expect(panel!.textContent).toContain('Lucian has a reading on this room')
+    expect(panel!.textContent).toContain('none of it is copied into the Palace')
+    // Door (i) stands; Lucian has no world, so door (ii) is honestly absent.
+    expect(container.querySelector('[data-testid="palace-guest-explore"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="palace-guest-follow"]')).toBeNull()
+    expect(panel!.textContent).toContain('Lucian has no world of his own yet')
+  })
+
+  it('Guests-1: the follow door hands the seat to the seat-landing navigation', async () => {
+    attributedPayload = READ_WITH_MATERIAL
+    const followed: string[] = []
+    await render({ onFollowGuest: (seat: string) => followed.push(seat) })
+    await descendToGamma()
+    await click('palace-room-guest-champion')
+    const panel = container.querySelector('[data-testid="palace-guest-panel"]')
+    expect(panel!.textContent).toContain('Valen has spoken of this room in conversation')
+    await click('palace-guest-follow')
+    expect(followed).toEqual(['champion'])
+  })
+
+  it('Thresholds-1: the boundaries panel gains the subject’s states, proposed in pencil', async () => {
+    attributedPayload = READ_WITH_MATERIAL
+    await render()
+    await click('palace-building-i1')
+    await click('palace-floor-p1')
+    await click('palace-room-tc')
+    await click('palace-boundaries-button')
+    const panel = container.querySelector('[data-testid="palace-boundaries-panel"]')
+    expect(panel).not.toBeNull()
+    expect(panel!.textContent).toContain("At this room's own threshold")
+    expect(panel!.textContent).toContain('Proposed — readings, in pencil')
+    expect(panel!.textContent).toContain('Severine')
+    expect(panel!.textContent).toContain('Sundays keep colliding with deliveries')
+    expect(panel!.textContent).toContain('not a boundary established')
+    expect(panel!.textContent).toContain('Established')
+    expect(panel!.textContent).toContain('No Sunday deliveries, ever.')
+    // The standing honesty remains: no per-subject boundary record exists.
+    expect(panel!.textContent).toContain('No boundary is recorded against this room itself')
   })
 })

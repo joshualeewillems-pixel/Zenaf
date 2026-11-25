@@ -20,15 +20,16 @@
  * REPRESENTATIONAL object stands only on recorded grounds served by
  * an existing endpoint; an AFFORDANCE instrument stands unpopulated
  * (empty scales = unweighed, never an invented figure; the Kintsugi
- * vessel plain — gold only where recorded repair material is served,
- * and no endpoint serves repair material to the frontend today, so
- * the vessel stands plain everywhere and this file says so).
- * Guest objects (scroll, cup, mandala, lens, battle plan) stand only
- * where an existing endpoint serves the earning material: the mandala
- * earns from recorded dependency edges (served); the scroll, cup,
- * lens and battle plan earn from conversation linkage / steward
- * readings, which no endpoint serves to the frontend today — they do
- * not stand, and the implementation report names the missing paths.
+ * vessel plain — gold only on the attributed read's
+ * accepted-supersession lineage, below).
+ * Guest objects (scroll, cup, mandala, lens, battle plan, cairn)
+ * stand only where an endpoint serves the earning material: the
+ * mandala also earns from recorded dependency edges; the rest earn
+ * from the shared attributed subject read (conversation linkage and
+ * seat-authored readings naming the subject), which the view fetches
+ * per subject and composes through the model section at this file's
+ * end. Where the read shows no attending seat, no guest object
+ * stands.
  *
  * No fetching, no rendering — the view consumes these models, and the
  * tests pin them.
@@ -409,11 +410,14 @@ export interface RoomModel {
    *  (an affordance, never invented company). */
   people: Person[]
   subtasks: Task[]
-  /** The Kintsugi vessel stands in every room as an affordance. Gold
-   *  seams are representation and require recorded repair material;
-   *  no endpoint serves repair material to the frontend today, so
-   *  this is always false in this increment — stated, not hidden. */
-  vesselGold: false
+  /** The Kintsugi vessel stands in every room as an affordance. A
+   *  gold seam is representation: it is earned ONLY by the attributed
+   *  read's accepted-supersession lineage (an interpretation
+   *  reconsidered, its correction accepted — restored UNDERSTANDING,
+   *  never repaired circumstances). The VE-only model built here
+   *  never earns it alone; the view applies the read's verdict over
+   *  this field. */
+  vesselGold: boolean
 }
 
 export function buildRoom(data: PalaceData, task: Task): RoomModel {
@@ -498,5 +502,167 @@ export function composeBoundaryPanel(input: {
     hasAnyRecord: Boolean(
       input.nonNegotiables?.trim() || strandBoundaries.length > 0 || input.permissionGroups.length > 0,
     ),
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* the attributed subject read — Thresholds-1, Kintsugi-1, Guests-1    */
+/*                                                                     */
+/* The wire shape of GET /vision-execution/attributed-read/{type}/     */
+/* {id} (local_ai/conversation/attributed_read.py): one shared read,   */
+/* not Palace-owned. The Palace composes three expressions from it:    */
+/* the threshold's per-subject boundary states, the vessel's Kintsugi  */
+/* material and seam, and the guest objects' standing.                 */
+/* ------------------------------------------------------------------ */
+
+export interface AttributedProposedItem {
+  thread_id: string
+  thread_title: string
+  reading_id: string
+  author: string
+  author_name: string
+  status: string
+  placement: string | null
+  currency_labels: string[]
+  tensions: string[]
+  open_questions: string[]
+}
+
+export interface AttributedEstablishedItem {
+  source: 'decision' | 'commitment'
+  decision_type?: string
+  text?: string
+  status?: string
+  created_at: string
+}
+
+export interface KintsugiReadingView {
+  reading_id: string
+  author: string
+  status: string
+  placement: string | null
+  currency_labels: string[]
+  tensions: string[]
+  open_questions: string[]
+}
+
+export interface KintsugiThreadView {
+  thread_id: string
+  thread_title: string
+  readings: KintsugiReadingView[]
+  reconsiderations: { reading_id: string; status: string; reason: string }[]
+}
+
+export interface AttendingSeat {
+  seat: SeatId
+  seat_name: string
+  via: Array<'conversation' | 'reading'>
+}
+
+export interface AttributedRead {
+  resolved: boolean
+  subject: { entity_type: string; entity_id: string; title: string } | null
+  steward_gate_open: boolean
+  boundaries: {
+    expressed: unknown[]
+    proposed: AttributedProposedItem[]
+    established: AttributedEstablishedItem[]
+    enforceable: {
+      permission_home_enabled: boolean
+      permission_consent_given: boolean
+      steward_derivation: boolean
+      steward_coordination: boolean
+    }
+  }
+  kintsugi: {
+    threads: KintsugiThreadView[]
+    /** The seam: an interpretation was reconsidered and its
+     *  correction accepted. Restored UNDERSTANDING only — never a
+     *  claim that the circumstances understood are repaired. */
+    restoration_of_understanding: boolean
+  } | null
+  guests: { attending: AttendingSeat[] }
+}
+
+/** The guest objects of the vocabulary, by seat. Maeve is the host —
+ *  she has no guest object in her own house. */
+export const GUEST_OBJECTS: Partial<Record<SeatId, { object: string; label: string }>> = {
+  mentor: { object: 'cairn', label: "Rumi's cairn" },
+  champion: { object: 'battle plan', label: "Valen's battle plan" },
+  ambassador: { object: 'cup', label: "Lucian's cup" },
+  conductor: { object: 'mandala', label: "Aria's mandala" },
+  skeptic: { object: 'lens', label: "Severine's lens" },
+  maverick: { object: 'scroll', label: "Jynx's scroll" },
+}
+
+/** The seats attending this subject, host excluded — the guest
+ *  objects that may stand here, and only here. */
+export function attendingGuests(read: AttributedRead | null): AttendingSeat[] {
+  if (!read || !read.resolved) return []
+  return read.guests.attending.filter((g) => g.seat !== 'guardian' && GUEST_OBJECTS[g.seat])
+}
+
+export interface SubjectThresholdsModel {
+  /** Interpretations naming this subject — proposed, in pencil.
+   *  Never established: a reading is not a boundary record. */
+  proposed: AttributedProposedItem[]
+  /** What the visitor has actually settled about this subject. */
+  established: AttributedEstablishedItem[]
+  hasSubjectMaterial: boolean
+}
+
+export function composeSubjectThresholds(read: AttributedRead | null): SubjectThresholdsModel {
+  if (!read || !read.resolved) return { proposed: [], established: [], hasSubjectMaterial: false }
+  const proposed = read.boundaries.proposed
+  const established = read.boundaries.established
+  return { proposed, established, hasSubjectMaterial: proposed.length > 0 || established.length > 0 }
+}
+
+/** The vessel's held material: the subject's CURRENT readings'
+ *  tensions and open questions (history is not held open), plus
+ *  whether a reconsideration stands open over any of them. A tension
+ *  here is an open question Maeve holds — the model carries no
+ *  damage state, because there is none to carry. */
+export interface VesselHeldModel {
+  openQuestions: { author: string; text: string }[]
+  tensions: { author: string; text: string }[]
+  openReconsiderations: { reason: string }[]
+  restorationOfUnderstanding: boolean
+  hasMaterial: boolean
+}
+
+export function composeVesselHeld(read: AttributedRead | null): VesselHeldModel {
+  const empty: VesselHeldModel = {
+    openQuestions: [],
+    tensions: [],
+    openReconsiderations: [],
+    restorationOfUnderstanding: false,
+    hasMaterial: false,
+  }
+  if (!read || !read.resolved || !read.kintsugi) return empty
+  const openQuestions: VesselHeldModel['openQuestions'] = []
+  const tensions: VesselHeldModel['tensions'] = []
+  const openReconsiderations: VesselHeldModel['openReconsiderations'] = []
+  for (const thread of read.kintsugi.threads) {
+    for (const reading of thread.readings) {
+      if (reading.placement !== 'current') continue
+      for (const text of reading.open_questions) openQuestions.push({ author: reading.author, text })
+      for (const text of reading.tensions) tensions.push({ author: reading.author, text })
+    }
+    for (const rec of thread.reconsiderations) {
+      if (rec.status === 'proposed') openReconsiderations.push({ reason: rec.reason })
+    }
+  }
+  const restorationOfUnderstanding = read.kintsugi.restoration_of_understanding
+  return {
+    openQuestions,
+    tensions,
+    openReconsiderations,
+    restorationOfUnderstanding,
+    hasMaterial:
+      openQuestions.length > 0 ||
+      tensions.length > 0 ||
+      openReconsiderations.length > 0 ||
+      restorationOfUnderstanding,
   }
 }

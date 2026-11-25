@@ -1,0 +1,823 @@
+/**
+ * Severine's Bench — derivations from the user's real Vision
+ * Execution records. Every visual fact on the Bench is derived here
+ * from the record, with the rule stated beside it (the Campaign
+ * Board's honesty pattern): nothing is drawn from a hash, a default,
+ * or an invention.
+ *
+ * The governing definitions are
+ * zenaf-bench-feature-visual-language-definitions-2026-11-21.md:
+ * §0 the Shelf, §0b registers (VE-attached → wood; Steward terrain →
+ * sumi ink), §2 wire, §4 footing, §5 jin, §7 foliage, §9 strand
+ * weight.
+ */
+import type { Idea, Initiative, Project, Task } from '../vision-execution/types'
+import {
+  growTree,
+  type BenchElement,
+  type GeometryRegister,
+  type GrownTree,
+} from './growth'
+
+/* ------------------------------------------------------------------ */
+/* Seats                                                               */
+/* ------------------------------------------------------------------ */
+
+/** Archetype id -> the seat's name. Severine (skeptic) is the
+ *  examiner: her colour is deliberately absent from the foliage
+ *  palette (growth.SEAT_COLOURS), and discussion with her alone
+ *  never foliates a branch (§7). */
+export const SEAT_NAME_BY_ARCHETYPE: Record<string, string> = {
+  mentor: 'Rumi',
+  champion: 'Valen',
+  guardian: 'Maeve',
+  ambassador: 'Lucian',
+  conductor: 'Aria',
+  skeptic: 'Severine',
+  maverick: 'Jynx',
+}
+
+export const SEAT_COLOUR_BY_ARCHETYPE: Record<string, string> = {
+  mentor: '#92b692',
+  champion: '#e24e4e',
+  guardian: '#ac7c5b',
+  ambassador: '#5c9cea',
+  conductor: '#8892c3',
+  maverick: '#a55cce',
+}
+
+/* ------------------------------------------------------------------ */
+/* Proposals (wire)                                                    */
+/* ------------------------------------------------------------------ */
+
+/** A recorded task proposal (GET /vision-execution/task-proposals).
+ *  §2: wire IS a recorded proposal awaiting a verdict — never a
+ *  merely spoken suggestion. The proposing seat is the record's own
+ *  `seat` (the archetype whose conversation produced it, verified
+ *  server-side by C1 provenance when the proposal was recorded). */
+export interface BenchProposal {
+  id: string
+  seat: string
+  title: string
+  parent_task_id: string | null
+  state: string
+  notes: string
+  evidence_quote: string
+  conversation_id: string
+  created_at: string
+}
+
+/* ------------------------------------------------------------------ */
+/* Foliage evidence (§7)                                               */
+/* ------------------------------------------------------------------ */
+
+export interface DiscussionEvidence {
+  seatId: string
+  seatName: string
+  conversationId: string
+}
+
+/**
+ * The one product record that evidences cross-seat discussion of a
+ * task: its origin provenance. A task created by approving a seat's
+ * proposal carries `origin_seat` (the proposing seat) and
+ * `origin_conversation_id` (the recorded conversation the proposal
+ * was discussed in, with a verbatim evidence quote kept on the
+ * proposal row). That is a discussion of this very item with that
+ * seat, in the record — so the branch foliates in that seat's
+ * colour. `seat_ref` is NOT used: it is keystone ownership, not
+ * discussion. `responsible_seat` is NOT used: it is user-assigned
+ * stewardship, not discussion. Severine's own colour never foliates
+ * her tree (she is the examiner).
+ */
+export function discussionForTask(task: Task): DiscussionEvidence | null {
+  const seat = (task.origin_seat ?? '').trim()
+  const conversationId = (task.origin_conversation_id ?? '').trim()
+  if (!seat || !conversationId) return null
+  if (seat === 'skeptic') return null
+  const seatName = SEAT_NAME_BY_ARCHETYPE[seat]
+  if (!seatName) return null
+  return { seatId: seat, seatName, conversationId }
+}
+
+/* ------------------------------------------------------------------ */
+/* Strand weight (§9)                                                  */
+/* ------------------------------------------------------------------ */
+
+export function strandWeightForTask(
+  task: Task,
+  subtaskCount: number,
+): { weight: number; rule: string } {
+  const p = (task.priority ?? '').trim()
+  let weight: number
+  let rule: string
+  const numeric = /^[1-5]$/.test(p) ? Number(p) : null
+  if (numeric !== null) {
+    weight = numeric * 2
+    rule = `priority ${p} on the record, on the 1–10 dial`
+  } else if (/^high$/i.test(p)) {
+    weight = 8
+    rule = 'priority High on the record, on the 1–10 dial'
+  } else if (/^medium$/i.test(p)) {
+    weight = 5
+    rule = 'priority Medium on the record, on the 1–10 dial'
+  } else if (/^low$/i.test(p)) {
+    weight = 3
+    rule = 'priority Low on the record, on the 1–10 dial'
+  } else {
+    weight = 4
+    rule = 'no priority on the record — the dealing weight 4'
+    if (subtaskCount > 0) weight += 1
+    if ((task.estimated_hours ?? 0) >= 20) weight += 2
+    else if ((task.estimated_hours ?? 0) >= 8) weight += 1
+    if (subtaskCount > 0 || (task.estimated_hours ?? 0) >= 8) {
+      rule = 'no priority on the record — weight from recorded substance (nested tasks, estimated hours)'
+    }
+  }
+  if (task.status === 'Done') weight = Math.max(weight, 8)
+  else if (task.status === 'In Progress') weight = Math.max(weight, 6)
+  return { weight: Math.max(2, Math.min(10, weight)), rule }
+}
+
+/* ------------------------------------------------------------------ */
+/* Branches                                                            */
+/* ------------------------------------------------------------------ */
+
+export interface BenchBranch {
+  id: string
+  name: string
+  state: string
+  /** The record this branch is: a task under a project, a project
+   *  under an initiative, or the root itself for a branchless root. */
+  sourceKind: 'task' | 'project' | 'root'
+  task: Task | null
+  subtaskCount: number
+  /** §5: a dropped reading stays visible as pale deadwood. */
+  jin: boolean
+  weight: number
+  weightRule: string
+  geometryRegister: GeometryRegister
+  geometryRule: string
+  /** §7 foliage evidence, or null — null means bare, honestly. */
+  discussion: DiscussionEvidence | null
+  /** §2 wire: pending recorded proposals attached under this branch. */
+  proposals: BenchProposal[]
+  element: BenchElement
+}
+
+const DONE_LIKE = new Set(['Done', 'In Progress'])
+
+/** Geometry register per branch — the artifact dealing, which is the
+ *  growth grammar's own per-element register: wire where a recorded
+ *  proposal hangs on the branch, ink for done / in-hand work, pencil
+ *  for work not yet taken up. */
+export function geometryRegisterFor(
+  state: string,
+  hasProposal: boolean,
+): { register: GeometryRegister; rule: string } {
+  if (hasProposal)
+    return { register: 'wire', rule: 'a recorded proposal hangs on this branch (§2)' }
+  if (DONE_LIKE.has(state))
+    return { register: 'ink', rule: 'done or in hand in the record — established growth' }
+  return { register: 'pencil', rule: 'not yet taken up in the record — provisional growth' }
+}
+
+/**
+ * Deal branches into growth elements: the dealing the equivalence
+ * harness proves against the Python machinery. Sides alternate in
+ * record order starting left; stations spread evenly per side;
+ * elevation and length come from the strand weight; nested records
+ * lengthen the branch they hang under.
+ */
+export function dealElements(
+  branches: Array<{
+    id: string
+    geometryRegister: GeometryRegister
+    weight: number
+    subtaskCount: number
+  }>,
+): Map<string, BenchElement> {
+  const bySide = new Map<number, number>()
+  const counts = new Map<number, number>()
+  branches.forEach((b, i) => {
+    const side = i % 2 === 0 ? -1 : 1
+    bySide.set(i, side)
+    counts.set(side, (counts.get(side) ?? 0) + 1)
+  })
+  const seen = new Map<number, number>()
+  const out = new Map<string, BenchElement>()
+  branches.forEach((b, i) => {
+    const side = (bySide.get(i) ?? -1) as 1 | -1
+    const m = counts.get(side) ?? 1
+    const j = seen.get(side) ?? 0
+    seen.set(side, j + 1)
+    const tGrow = m === 1 ? 0.5 : 0.16 + 0.72 * (j / (m - 1))
+    out.set(b.id, {
+      handle: b.id,
+      register: b.geometryRegister,
+      side,
+      tGrow,
+      elev: 16 + b.weight * 2.2,
+      lenOld: 46 + b.weight * 15 + Math.min(30, b.subtaskCount * 6),
+      sprite: 1,
+    })
+  })
+  return out
+}
+
+/* ------------------------------------------------------------------ */
+/* Tree register (§0b)                                                 */
+/* ------------------------------------------------------------------ */
+
+export type BenchRegister = 'wood' | 'sumi'
+export type RootKind = 'initiative' | 'project' | 'idea' | 'task'
+
+export function treeRegisterFor(
+  rootKind: RootKind,
+  attached: boolean,
+): { register: BenchRegister; rule: string } {
+  if (attached)
+    return {
+      register: 'wood',
+      rule: 'attached to Vision Execution structure — the wood register (§0b)',
+    }
+  return {
+    register: 'sumi',
+    rule: 'no Vision Execution structure attached — Steward terrain, the sumi register (§0b)',
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Footing (§4)                                                        */
+/* ------------------------------------------------------------------ */
+
+export type FootingKind = 'documented' | 'reported' | 'assumed'
+
+export interface Footing {
+  kind: FootingKind
+  proseChars: number
+  /** 0..1 — the triangle's size within its small limit (§4). */
+  proseScale: number
+  rule: string
+}
+
+/**
+ * Footing kind from the record's own evidence: documented when a
+ * verbatim-linked record stands under the tree (a branch whose
+ * origin provenance names the recorded conversation it came from);
+ * reported when the record carries the user's own prose but no
+ * verbatim link; assumed when the record is a name and a state only.
+ */
+export function footingFor(args: {
+  proseChars: number
+  hasVerbatim: boolean
+}): Footing {
+  const { proseChars, hasVerbatim } = args
+  const proseScale = Math.max(0.15, Math.min(1, proseChars / 1200))
+  if (hasVerbatim)
+    return {
+      kind: 'documented',
+      proseChars,
+      proseScale,
+      rule: 'a verbatim-linked record stands under this tree (origin provenance to a recorded conversation)',
+    }
+  if (proseChars > 0)
+    return {
+      kind: 'reported',
+      proseChars,
+      proseScale,
+      rule: "the record carries the user's own prose and no verbatim link — as you've told it",
+    }
+  return {
+    kind: 'assumed',
+    proseChars,
+    proseScale: 0,
+    rule: 'the record cites nothing beneath this tree — no triangle stands under it',
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Notebook (§4 / §11)                                                 */
+/* ------------------------------------------------------------------ */
+
+export interface NotebookEntry {
+  kind: 'Documented' | "As you've told it" | 'Record'
+  title: string
+  body: string
+  custody: string
+  date: string
+}
+
+/* ------------------------------------------------------------------ */
+/* The tree model                                                      */
+/* ------------------------------------------------------------------ */
+
+export interface BenchTreeModel {
+  rootId: string
+  rootKind: RootKind
+  title: string
+  state: string
+  register: BenchRegister
+  registerRule: string
+  branches: BenchBranch[]
+  crosses: Array<[string, string]>
+  grown: GrownTree
+  /** handle -> discussing seat names (growth.padStyleFor input). */
+  discussion: Map<string, string[]>
+  elementsByHandle: Map<string, BenchElement>
+  footing: Footing
+  notebook: NotebookEntry[]
+}
+
+export interface BenchEntities {
+  ideas: Idea[]
+  initiatives: Initiative[]
+  projects: Project[]
+  tasks: Task[]
+}
+
+function proseOf(...fields: Array<string | null | undefined>): number {
+  return fields.reduce((n, f) => n + (f ? f.trim().length : 0), 0)
+}
+
+function buildTree(args: {
+  rootId: string
+  rootKind: RootKind
+  title: string
+  state: string
+  attached: boolean
+  branchDrafts: Array<{
+    id: string
+    name: string
+    state: string
+    sourceKind: BenchBranch['sourceKind']
+    task: Task | null
+    subtaskCount: number
+    proposals: BenchProposal[]
+  }>
+  crosses: Array<[string, string]>
+  rootProse: number
+  hasVerbatim: boolean
+  notebook: NotebookEntry[]
+}): BenchTreeModel {
+  const { register, rule: registerRule } = treeRegisterFor(args.rootKind, args.attached)
+  const drafts = args.branchDrafts.map((d) => {
+    const { weight, rule: weightRule } = d.task
+      ? strandWeightForTask(d.task, d.subtaskCount)
+      : { weight: Math.max(2, Math.min(10, 2 + d.subtaskCount)), rule: 'weight from the records nested under it' }
+    const { register: geometryRegister, rule: geometryRule } = geometryRegisterFor(
+      d.state,
+      d.proposals.length > 0,
+    )
+    return { ...d, weight, weightRule, geometryRegister, geometryRule }
+  })
+  const elements = dealElements(drafts)
+  const branches: BenchBranch[] = drafts.map((d) => ({
+    id: d.id,
+    name: d.name,
+    state: d.state,
+    sourceKind: d.sourceKind,
+    task: d.task,
+    subtaskCount: d.subtaskCount,
+    jin: d.state === 'Dropped',
+    weight: d.weight,
+    weightRule: d.weightRule,
+    geometryRegister: d.geometryRegister,
+    geometryRule: d.geometryRule,
+    discussion: d.task ? discussionForTask(d.task) : null,
+    proposals: d.proposals,
+    element: elements.get(d.id)!,
+  }))
+  const discussion = new Map<string, string[]>()
+  for (const b of branches) {
+    if (b.discussion) discussion.set(b.id, [b.discussion.seatName])
+  }
+  const grown = growTree(
+    branches.map((b) => b.element),
+    args.crosses,
+  )
+  const footing = footingFor({ proseChars: args.rootProse, hasVerbatim: args.hasVerbatim })
+  const notebook = [...args.notebook].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+  return {
+    rootId: args.rootId,
+    rootKind: args.rootKind,
+    title: args.title,
+    state: args.state,
+    register,
+    registerRule,
+    branches,
+    crosses: args.crosses,
+    grown,
+    discussion,
+    elementsByHandle: elements,
+    footing,
+    notebook,
+  }
+}
+
+function branchNotebookEntries(branch: {
+  name: string
+  task: Task | null
+  discussion: DiscussionEvidence | null
+  proposals: BenchProposal[]
+}): NotebookEntry[] {
+  const out: NotebookEntry[] = []
+  const t = branch.task
+  if (t) {
+    if (branch.discussion) {
+      out.push({
+        kind: 'Documented',
+        title: `Discussed with ${branch.discussion.seatName} — ${branch.name}`,
+        body: `This branch came out of a recorded conversation with ${branch.discussion.seatName}. The proposal that created it is kept on the record with a verbatim evidence quote from that conversation.`,
+        custody: `Task record · origin_seat ${t.origin_seat} · origin_conversation_id ${branch.discussion.conversationId} · origin_message_id ${t.origin_message_id ?? '—'}.`,
+        date: t.created_at,
+      })
+    }
+    if (t.completion_criteria?.trim()) {
+      out.push({
+        kind: "As you've told it",
+        title: `Completion criteria — ${branch.name}`,
+        body: t.completion_criteria.trim(),
+        custody: `Task record for ${t.id} · completion_criteria.`,
+        date: t.updated_at,
+      })
+    }
+    if (t.description?.trim()) {
+      out.push({
+        kind: "As you've told it",
+        title: `Description — ${branch.name}`,
+        body: t.description.trim(),
+        custody: `Task record for ${t.id} · description.`,
+        date: t.updated_at,
+      })
+    }
+    if (t.notes?.trim()) {
+      out.push({
+        kind: "As you've told it",
+        title: `Note — ${branch.name}`,
+        body: t.notes.trim(),
+        custody: `Task record for ${t.id} · notes.`,
+        date: t.updated_at,
+      })
+    }
+  }
+  for (const p of branch.proposals) {
+    const seatName = SEAT_NAME_BY_ARCHETYPE[p.seat] ?? p.seat
+    out.push({
+      kind: 'Record',
+      title: `Proposal awaiting your verdict — ${p.title}`,
+      body: p.evidence_quote ? `“${p.evidence_quote}”` : p.title,
+      custody: `Task proposal ${p.id} · proposed by ${seatName} in conversation ${p.conversation_id} · state: pending.`,
+      date: p.created_at,
+    })
+  }
+  return out
+}
+
+/* ------------------------------------------------------------------ */
+/* Tree builders per root kind                                         */
+/* ------------------------------------------------------------------ */
+
+export function buildProjectTree(
+  project: Project,
+  entities: BenchEntities,
+  proposalsByParent: ReadonlyMap<string, BenchProposal[]>,
+): BenchTreeModel {
+  const tasks = entities.tasks.filter((t) => t.project_id === project.id)
+  const top = tasks.filter((t) => !t.parent_task_id)
+  const subtaskCount = (id: string) => tasks.filter((t) => t.parent_task_id === id).length
+  const drafts = top.map((t) => ({
+    id: t.id,
+    name: t.title,
+    state: t.status,
+    sourceKind: 'task' as const,
+    task: t,
+    subtaskCount: subtaskCount(t.id),
+    proposals: proposalsByParent.get(t.id) ?? [],
+  }))
+  const topIds = new Set(top.map((t) => t.id))
+  const crosses: Array<[string, string]> = []
+  for (const t of top) {
+    for (const dep of t.dependency_ids ?? []) {
+      if (topIds.has(dep)) crosses.push([t.id, dep])
+    }
+  }
+  const notebook: NotebookEntry[] = []
+  if (project.brief?.trim()) {
+    notebook.push({
+      kind: "As you've told it",
+      title: `Brief — ${project.title}`,
+      body: project.brief.trim(),
+      custody: `Project record for ${project.id} · brief.`,
+      date: project.created_at,
+    })
+  }
+  if (project.notes?.trim()) {
+    notebook.push({
+      kind: "As you've told it",
+      title: `Notes — ${project.title}`,
+      body: project.notes.trim(),
+      custody: `Project record for ${project.id} · notes.`,
+      date: project.updated_at,
+    })
+  }
+  for (const d of drafts) {
+    notebook.push(
+      ...branchNotebookEntries({
+        name: d.name,
+        task: d.task,
+        discussion: discussionForTask(d.task),
+        proposals: d.proposals,
+      }),
+    )
+  }
+  if (crosses.length) {
+    notebook.push({
+      kind: 'Record',
+      title: 'Dependencies inside this project',
+      body: crosses
+        .map(([a, b]) => {
+          const an = top.find((t) => t.id === a)?.title ?? a
+          const bn = top.find((t) => t.id === b)?.title ?? b
+          return `“${an}” depends on “${bn}”.`
+        })
+        .join(' '),
+      custody: 'Task records · dependency_ids.',
+      date: project.updated_at,
+    })
+  }
+  const rootProse =
+    proseOf(project.brief, project.notes, project.next_step_ai) +
+    drafts.reduce(
+      (n, d) => n + proseOf(d.task?.description, d.task?.notes, d.task?.completion_criteria),
+      0,
+    )
+  const hasVerbatim = drafts.some((d) => discussionForTask(d.task) !== null)
+  const attached =
+    project.initiative_id !== null ||
+    top.length > 0 ||
+    project.start_date !== null ||
+    project.end_date !== null ||
+    (project.brief ?? '').trim().length > 0
+  return buildTree({
+    rootId: project.id,
+    rootKind: 'project',
+    title: project.title,
+    state: project.status,
+    attached,
+    branchDrafts: drafts,
+    crosses,
+    rootProse,
+    hasVerbatim,
+    notebook,
+  })
+}
+
+export function buildInitiativeTree(
+  initiative: Initiative,
+  entities: BenchEntities,
+  proposalsByParent: ReadonlyMap<string, BenchProposal[]>,
+): BenchTreeModel {
+  const projects = entities.projects.filter((p) => p.initiative_id === initiative.id)
+  const drafts = projects.map((p) => ({
+    id: p.id,
+    name: p.title,
+    state: p.status,
+    sourceKind: 'project' as const,
+    task: null,
+    subtaskCount: entities.tasks.filter((t) => t.project_id === p.id).length,
+    proposals: [] as BenchProposal[],
+  }))
+  void proposalsByParent
+  const notebook: NotebookEntry[] = []
+  if (initiative.brief?.trim()) {
+    notebook.push({
+      kind: "As you've told it",
+      title: `Brief — ${initiative.title}`,
+      body: initiative.brief.trim(),
+      custody: `Initiative record for ${initiative.id} · brief.`,
+      date: initiative.created_at,
+    })
+  }
+  if (initiative.notes?.trim()) {
+    notebook.push({
+      kind: "As you've told it",
+      title: `Notes — ${initiative.title}`,
+      body: initiative.notes.trim(),
+      custody: `Initiative record for ${initiative.id} · notes.`,
+      date: initiative.updated_at,
+    })
+  }
+  if (projects.length) {
+    notebook.push({
+      kind: 'Record',
+      title: 'Projects under this initiative',
+      body: projects.map((p) => `“${p.title}” (${p.status}).`).join(' '),
+      custody: 'Project records · initiative_id.',
+      date: initiative.updated_at,
+    })
+  }
+  return buildTree({
+    rootId: initiative.id,
+    rootKind: 'initiative',
+    title: initiative.title,
+    state: initiative.status,
+    attached: true,
+    branchDrafts: drafts,
+    crosses: [],
+    rootProse: proseOf(initiative.brief, initiative.notes, initiative.next_step_ai),
+    hasVerbatim: false,
+    notebook,
+  })
+}
+
+export function buildIdeaTree(
+  idea: Idea,
+  entities: BenchEntities,
+): BenchTreeModel {
+  const originated = entities.initiatives.some((i) => i.source_idea_id === idea.id)
+  const notebook: NotebookEntry[] = []
+  const prose = idea.description?.trim() || idea.summary?.trim() || idea.notes?.trim() || ''
+  if (prose) {
+    notebook.push({
+      kind: "As you've told it",
+      title: `On the record — ${idea.title}`,
+      body: prose,
+      custody: `Idea record for ${idea.id}.`,
+      date: idea.created_at,
+    })
+  }
+  if (originated) {
+    const ini = entities.initiatives.find((i) => i.source_idea_id === idea.id)!
+    notebook.push({
+      kind: 'Record',
+      title: 'Origin edge',
+      body: `This idea is the recorded origin of the initiative “${ini.title}”.`,
+      custody: 'Initiative record · source_idea_id.',
+      date: ini.created_at,
+    })
+  }
+  return buildTree({
+    rootId: idea.id,
+    rootKind: 'idea',
+    title: idea.title,
+    state: idea.status,
+    attached: originated,
+    branchDrafts: [
+      {
+        id: idea.id,
+        name: idea.title,
+        state: idea.status,
+        sourceKind: 'root' as const,
+        task: null,
+        subtaskCount: idea.checklist_progress?.total ?? 0,
+        proposals: [],
+      },
+    ],
+    crosses: [],
+    rootProse: proseOf(idea.description, idea.summary, idea.notes, idea.desired_outcome),
+    hasVerbatim: false,
+    notebook,
+  })
+}
+
+export function buildLooseTaskTree(task: Task): BenchTreeModel {
+  const notebook = branchNotebookEntries({
+    name: task.title,
+    task,
+    discussion: discussionForTask(task),
+    proposals: [],
+  })
+  return buildTree({
+    rootId: task.id,
+    rootKind: 'task',
+    title: task.title,
+    state: task.status,
+    attached: false,
+    branchDrafts: [
+      {
+        id: task.id,
+        name: task.title,
+        state: task.status,
+        sourceKind: 'root' as const,
+        task,
+        subtaskCount: 0,
+        proposals: [],
+      },
+    ],
+    crosses: [],
+    rootProse: proseOf(task.description, task.notes, task.completion_criteria),
+    hasVerbatim: discussionForTask(task) !== null,
+    notebook,
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* The Shelf (§0)                                                      */
+/* ------------------------------------------------------------------ */
+
+export interface ShelfItem {
+  id: string
+  kind: RootKind
+  kindLabel: string
+  title: string
+  state: string
+  register: BenchRegister
+  registerRule: string
+}
+
+const KIND_LABEL: Record<RootKind, string> = {
+  initiative: 'Initiative',
+  project: 'Project',
+  idea: 'Idea',
+  task: 'Task',
+}
+
+/** The shelf holds every root the record holds — initiatives,
+ *  projects, ideas, and loose tasks — each captioned with its TRUE
+ *  kind, never flattened to "projects". */
+export function buildShelf(entities: BenchEntities): ShelfItem[] {
+  const items: ShelfItem[] = []
+  const noProposals = new Map<string, BenchProposal[]>()
+  for (const ini of entities.initiatives) {
+    const t = buildInitiativeTree(ini, entities, noProposals)
+    items.push({
+      id: ini.id,
+      kind: 'initiative',
+      kindLabel: KIND_LABEL.initiative,
+      title: ini.title,
+      state: ini.status,
+      register: t.register,
+      registerRule: t.registerRule,
+    })
+  }
+  for (const p of entities.projects) {
+    const t = buildProjectTree(p, entities, noProposals)
+    items.push({
+      id: p.id,
+      kind: 'project',
+      kindLabel: KIND_LABEL.project,
+      title: p.title,
+      state: p.status,
+      register: t.register,
+      registerRule: t.registerRule,
+    })
+  }
+  for (const idea of entities.ideas) {
+    const t = buildIdeaTree(idea, entities)
+    items.push({
+      id: idea.id,
+      kind: 'idea',
+      kindLabel: KIND_LABEL.idea,
+      title: idea.title,
+      state: idea.status,
+      register: t.register,
+      registerRule: t.registerRule,
+    })
+  }
+  for (const task of entities.tasks) {
+    if (task.project_id || task.parent_task_id) continue
+    const t = buildLooseTaskTree(task)
+    items.push({
+      id: task.id,
+      kind: 'task',
+      kindLabel: KIND_LABEL.task,
+      title: task.title,
+      state: task.status,
+      register: t.register,
+      registerRule: t.registerRule,
+    })
+  }
+  return items
+}
+
+/* ------------------------------------------------------------------ */
+/* Verdicts (§2 / §11)                                                 */
+/* ------------------------------------------------------------------ */
+
+export interface VerdictLogEntry {
+  proposalId: string
+  branchId: string
+  kind: 'stand' | 'cut'
+  text: string
+  when: string
+}
+
+/** The session verdict log line — the durable verdict itself is the
+ *  proposal row's state, written by the governed approve/decline
+ *  endpoints; this log is the session's notebook view of it (§11). */
+export function verdictLogEntry(args: {
+  proposal: BenchProposal
+  branchName: string
+  rootTitle: string
+  kind: 'stand' | 'cut'
+  when: string
+}): VerdictLogEntry {
+  return {
+    proposalId: args.proposal.id,
+    branchId: args.proposal.parent_task_id ?? '',
+    kind: args.kind,
+    text: `${args.kind === 'stand' ? 'Let stand' : 'Cut back'} — “${args.proposal.title}” on “${args.branchName}” (${args.rootTitle})`,
+    when: args.when,
+  }
+}

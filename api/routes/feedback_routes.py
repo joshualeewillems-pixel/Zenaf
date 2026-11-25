@@ -63,6 +63,11 @@ class FeedbackBody(BaseModel):
     slider: int = Field(ge=1, le=7)
     checks: list[str] = Field(default_factory=list)
     note: str = Field(default="", max_length=_NOTE_MAX)
+    # N1 (item 5): the submitter's intended developmental reach for
+    # this row — a designation, not a reception preset; validated
+    # against the developmental store's REACHES, never the checks
+    # vocabulary. Absent = unmarked (visitor-side reach).
+    reach: str | None = Field(default=None, max_length=64)
 
 
 @router.post("")
@@ -81,6 +86,13 @@ def submit_feedback(
     for check in body.checks:
         if check not in FEEDBACK_PRESETS:
             raise HTTPException(status_code=422, detail=f"Unknown feedback option: {check!r}")
+    if body.reach is not None:
+        from local_ai.development.store import REACHES
+
+        if body.reach not in REACHES:
+            raise HTTPException(
+                status_code=422, detail=f"Unknown reach: {body.reach!r}"
+            )
     return _store().add_feedback(
         user_id,
         response_ref,
@@ -89,6 +101,7 @@ def submit_feedback(
         body.slider,
         list(body.checks),
         body.note,
+        reach=body.reach,
     )
 
 

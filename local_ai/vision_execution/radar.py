@@ -168,8 +168,14 @@ def get_radar(user_id: str) -> dict[str, list[dict[str, Any]]]:
                 "status": status,
             })
 
-    # Signals from canonical Layer 1 entity (exclude resolved/dismissed)
-    raw_signals = SigS.list_signals(status_not_in=["resolved", "dismissed"])
+    # Signals from canonical Layer 1 entity (exclude resolved/dismissed).
+    # Owner-scoped (Track C): Radar consumes only the caller's signals.
+    # Fail-closed rollback: if signals are disabled, the bucket is empty
+    # — never the shared pool.
+    try:
+        raw_signals = SigS.list_signals(user_id, status_not_in=["resolved", "dismissed"])
+    except SigS.SignalsDisabledError:
+        raw_signals = []
     signals = [_signal_to_radar_item(s) for s in raw_signals]
 
     return {

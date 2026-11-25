@@ -17,6 +17,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from local_ai.council import capabilities as CAP
@@ -30,6 +31,8 @@ from local_ai.strand_interviews.keys import validate_strand_key
 from local_ai.agent_intake.store import AgentStore
 from local_ai.vision_execution import execution_context as _execution_context
 from local_ai.vision_execution import obligations as _obligations
+
+from local_ai.development import native_development_enabled
 
 from .encounter import _WEAVER_NATURAL_INTENTION
 from .firebrand_round import ROUND_KIND, firebrand_round_enabled, plan_round_turn
@@ -432,6 +435,12 @@ class ConversationService:
         # influences no other code path in this service — in
         # particular not the obligation block below.
         self._champion_pencil_context_provider = champion_pencil_context_provider
+        # Native character development (N1): the developmental
+        # service is created lazily on first flag-on use, so with
+        # ZENAF_NATIVE_DEVELOPMENT off (the default everywhere) this
+        # service is byte-identical to before — no store is opened,
+        # nothing is consulted.
+        self._dev_service: Any = None
         # Phase 2 (Narrative Steward, Weaver-first): an optional
         # provider of prepared steward context, called ONLY for the
         # Weaver (archetype "conductor"). Every other seat's path is
@@ -442,6 +451,22 @@ class ConversationService:
         # generations. Any provider failure degrades to no context,
         # never a broken turn.
         self._steward_context_provider = steward_context_provider
+
+    def _development_service(self) -> Any:
+        """The N1 developmental service, lazily constructed.
+
+        Returns None when construction fails — developmental
+        machinery is bookkeeping and must never break a turn.
+        """
+        if self._dev_service is None:
+            try:
+                from local_ai.development.service import DevelopmentService
+
+                self._dev_service = DevelopmentService()
+            except Exception:
+                logger.exception("native development: service unavailable")
+                return None
+        return self._dev_service
 
     # -- the turn loop ----------------------------------------------------------
 
@@ -507,6 +532,11 @@ class ConversationService:
         history_turns = [
             {"role": m["role"], "content": m["body"], "archetype_id": m.get("archetype_id")}
             for m in recent[:-1]
+        ][-_HISTORY_FOR_REPLY:]
+        # P-1 (N1): the history window's message-id range, stamped
+        # on the manifest as a component reference (ids only).
+        history_message_ids = [
+            m.get("id") for m in recent[:-1]
         ][-_HISTORY_FOR_REPLY:]
 
         thread = self.store.get_thread_state(user_id, conversation_id, arch_id)
@@ -808,6 +838,41 @@ class ConversationService:
                 weaver_plan = None
                 round_context = None
 
+        # Hoisted so the manifest's P-1 references and the N1
+        # preservation record can name exactly what this turn used.
+        visitor_state = CAP.resolve_visitor_state(user_id)
+        capability_context = CAP.continuation_block(arch_id, visitor_state)
+        context_hint = context_hint_for(context, sketch_summary=sketch_summary)
+
+        # Native character development (N1) — carriage: for an
+        # AUTHOR's own turn with a character they author, carried
+        # revisable-standing perspective material rides the same
+        # extra_instructions channel as the steward/pencil blocks.
+        # Flag-gated (default OFF everywhere): with the flag off this
+        # block is never computed and the prompt is byte-identical.
+        # Guarded: a carriage failure degrades to no block.
+        dev_block = None
+        dev_material_ids: list[str] = []
+        dev_state_id: str | None = None
+        if native_development_enabled():
+            try:
+                _dev = self._development_service()
+                if _dev is not None and _dev.is_author(
+                    user_id=user_id, character_id=arch_id
+                ):
+                    dev_block, dev_material_ids, dev_state_id = (
+                        _dev.carriage_block(
+                            character_id=arch_id, author_id=user_id
+                        )
+                    )
+            except Exception:
+                logger.exception(
+                    "native development: carriage failed; continuing without it"
+                )
+                dev_block = None
+                dev_material_ids = []
+                dev_state_id = None
+
         voice_reply = generate_voice_reply(
             user_id,
             arch_id,
@@ -815,7 +880,7 @@ class ConversationService:
             history_turns,
             mode=mode,
             question=question,
-            context_hint=context_hint_for(context, sketch_summary=sketch_summary),
+            context_hint=context_hint,
             obligation_context=obligation_context,
             evidence_context=evidence_context,
             invitation_context=invitation_context,
@@ -840,6 +905,7 @@ class ConversationService:
                 for block in (
                     steward_block,
                     pencil_block,
+                    dev_block,
                     strand_block,
                     _WEAVER_NATURAL_INTENTION
                     if arch_id == "conductor"
@@ -867,8 +933,7 @@ class ConversationService:
             # Continuation background knowledge (demonstration spec
             # §6): this seat's slice, resolved from the visitor's
             # actual state — no intention line, no offer instruction.
-            capability_context=CAP.continuation_block(
-                arch_id, CAP.resolve_visitor_state(user_id)),
+            capability_context=capability_context,
         )
 
         # Bonsai Bench Stage 1B — THE SEAM (Shape A §4.1, scope
@@ -1138,6 +1203,47 @@ class ConversationService:
                     sources["pencil_reading_ids"] = list(pencil_reading_ids)
                 if sources:
                     manifest["sources"] = sources
+                # P-1 component-reference completion (N1): the
+                # references only this layer knows — the character
+                # state in force (when developmental carriage
+                # served), the capability slice identity, the
+                # visitor-state inputs' names, the history window's
+                # message ids, and the service blocks present with
+                # their as-of timestamp. Ids and names only — never
+                # component text (the fingerprint discipline stands).
+                refs: dict[str, Any] = {
+                    "capability_slice_id": arch_id,
+                    "visitor_state_refs": (
+                        sorted(str(k) for k in visitor_state.keys())
+                        if isinstance(visitor_state, dict)
+                        else []
+                    ),
+                    "history_message_ids": [
+                        i for i in history_message_ids if i
+                    ],
+                }
+                if dev_state_id:
+                    refs["character_state_id"] = dev_state_id
+                if dev_material_ids:
+                    refs["carried_material_ids"] = list(dev_material_ids)
+                _blocks_present = [
+                    name
+                    for name, blk in (
+                        ("obligation", obligation_context),
+                        ("evidence", evidence_context),
+                        ("invitation", invitation_context),
+                        ("execution", execution_context),
+                        ("round", round_context),
+                    )
+                    if blk
+                ]
+                if _blocks_present:
+                    refs["service_blocks"] = {
+                        "present": _blocks_present,
+                        "record_ids": {},
+                        "as_of": datetime.now(timezone.utc).isoformat(),
+                    }
+                manifest["refs"] = refs
                 context[GENERATION_MANIFEST_KEY] = manifest
         except Exception:
             logger.exception(
@@ -1153,6 +1259,55 @@ class ConversationService:
             mode=voice_reply.mode_used,
             context=context,
         )
+
+        # Native character development (N1) — Tier-1 preservation
+        # from the outset: for an AUTHOR's interaction with their
+        # own character, preserve the bounded, otherwise-
+        # unrecoverable components of this turn AS RENDERED, keyed
+        # to the assistant message and its manifest fingerprint.
+        # Developmental significance is retrospective — no prediction
+        # of which turns will matter is attempted. Visitor
+        # interactions are never swept in (the gate is authorship).
+        # Flag-gated and guarded: bookkeeping never breaks a turn.
+        if native_development_enabled():
+            try:
+                _dev = self._development_service()
+                if _dev is not None and _dev.is_author_interaction(
+                    user_id=user_id, character_id=arch_id
+                ):
+                    _components: dict[str, Any] = {}
+                    if thread_summary:
+                        _components["thread_summary"] = thread_summary
+                    if context_hint:
+                        _components["context_hint"] = context_hint
+                    if capability_context:
+                        _components["capability_slice"] = capability_context
+                    for _name, _blk in (
+                        ("obligation", obligation_context),
+                        ("evidence", evidence_context),
+                        ("invitation", invitation_context),
+                        ("execution", execution_context),
+                        ("round", round_context),
+                    ):
+                        if _blk:
+                            _components[_name] = _blk
+                    _stored_manifest = context.get(
+                        GENERATION_MANIFEST_KEY
+                    ) or {}
+                    _dev.store.preserve_components(
+                        user_id=user_id,
+                        conversation_id=conversation_id,
+                        archetype_id=arch_id,
+                        assistant_message_id=assistant_msg["id"],
+                        manifest_prompt_sha256=_stored_manifest.get(
+                            "prompt_sha256"
+                        ),
+                        components=_components,
+                    )
+            except Exception:
+                logger.exception(
+                    "native development: preservation failed; turn stands"
+                )
 
         self._touch_thread(user_id, conversation_id, arch_id, voice_reply.display_name)
 
@@ -1580,6 +1735,26 @@ class ConversationService:
                 operation="conversation-thread-summary", timeout=60,
             ).strip()
             if summary:
+                # Q4.3 leg (N1): preserve the summary state being
+                # replaced BEFORE the overwrite, for author
+                # interactions only — thread_state itself keeps its
+                # standing overwrite behavior for everyone.
+                if native_development_enabled() and state.get("summary"):
+                    try:
+                        _dev = self._development_service()
+                        if _dev is not None and _dev.is_author_interaction(
+                            user_id=user_id, character_id=archetype_id
+                        ):
+                            _dev.store.preserve_summary(
+                                user_id=user_id,
+                                conversation_id=conversation_id,
+                                archetype_id=archetype_id,
+                                summary=state["summary"],
+                            )
+                    except Exception:
+                        logger.exception(
+                            "native development: summary preservation failed"
+                        )
                 self.store.update_thread_state(
                     user_id, conversation_id, archetype_id,
                     summary=summary, reset_counter=True,

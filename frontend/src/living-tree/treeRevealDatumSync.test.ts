@@ -31,6 +31,15 @@
  * sheet below keeps ??? and this test fails — see the mutation check
  * recorded in the Increment 1 verification report.)
  *
+ * RE-SCOPED for the seat home surfaces (founder, 2026-11-24): the
+ * conductor and the champion no longer open their sheets from their
+ * nodes — they land on their built interfaces (the Atelier, the
+ * Campaign Board). Their sheet-identity checks therefore leave the
+ * loop below; their hit groups still prove the datum reached their
+ * nodes. The datum sync itself is seat-agnostic — the same flow
+ * the other five sheets guard — and their reveals now live on
+ * their landings and the painted scene.
+ *
  * No JSX (vitest includes *.test.ts only): createElement throughout.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -59,6 +68,7 @@ const SEATS = [
 
 let container: HTMLDivElement
 let root: Root
+let navigations: string[]
 
 function installFetch() {
   const fetchMock = vi.fn((url: string) => {
@@ -99,7 +109,9 @@ function renderTree() {
   act(() => {
     root.render(
       React.createElement(LivingTreeView, {
-        onNavigate: () => {},
+        onNavigate: (view: string) => {
+          navigations.push(view)
+        },
         currentUserId: 'user-1',
       } as never),
     )
@@ -137,6 +149,7 @@ function head(): Element | null {
 }
 
 beforeEach(() => {
+  navigations = []
   installFetch()
   ;(window.Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView =
     () => {}
@@ -158,7 +171,27 @@ describe('tree datum sync on a data-only status update', () => {
     // Every seat's sheet identity carries its logo — the reveal in the
     // data-only payload reached the sheets. Under the fallback datum
     // each identity circle would keep the ??? placeholder instead.
-    for (const seat of SEATS) {
+    // The Champion, the Conductor, the Maverick, and the Skeptic are excluded
+    // from the sheet loop since 2026-11-24: their taps land on
+    // their home surfaces (the Campaign Board, the Atelier, the
+    // Scroll, the Bench), so their sheets no longer open from the tree —
+    // their hit groups below still prove the datum reached their
+    // nodes.
+    expect(hitGroup('arch-champion')).toBeTruthy()
+    expect(hitGroup('arch-conductor')).toBeTruthy()
+    expect(hitGroup('arch-maverick')).toBeTruthy()
+    // The skeptic's tap lands on the Bench — no sheet opens for her.
+    clickHitGroup('arch-skeptic')
+    await flush()
+    expect(navigations).toContain('bench')
+    expect(dialog()).toBeNull()
+    for (const seat of SEATS.filter(
+      (s) =>
+        s.id !== 'champion' &&
+        s.id !== 'conductor' &&
+        s.id !== 'maverick' &&
+        s.id !== 'skeptic',
+    )) {
       clickHitGroup(seat.nodeId)
       await flush()
       const row = head()?.querySelector('.lavatar-head')

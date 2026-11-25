@@ -4,13 +4,18 @@
  * tests for buildYouDirectory — no rendering.
  *
  * The directory is navigation only: a universal section (5 working
- * destinations + 2 info rows), then seven seat groups in the accepted
- * map's order, each with its distinctive rows; every group's scoped
- * strip (Today / Review / Upload through the seat) is structural and
- * never appears as rows. 44 working actions in total for an admin
- * (5 universal + 18 distinctive + 7 strips × 3 chips). No planned
- * doorway (Commitments, growth, takeout/delete, mirror, steward
- * verdicts, disputes, twigs, convened sessions) appears anywhere.
+ * destinations + 1 info row + the Log in / out action row), then
+ * seven seat groups in the accepted map's order, each with its
+ * distinctive rows; every group's scoped strip (Today / Review /
+ * Upload through the seat) is structural and never appears as rows.
+ * 47 working actions in total for an admin (5 universal + 21
+ * distinctive + 7 strips × 3 chips). No planned doorway
+ * (Commitments, growth, takeout/delete, mirror, steward verdicts,
+ * disputes, twigs, convened sessions) appears anywhere.
+ *
+ * The Log in / out row became an action row on 2026-11-24 (founder
+ * bug report): as an info row it only expanded "You are signed in
+ * on this device." and never signed out.
  */
 import { describe, it, expect } from 'vitest'
 import { buildYouDirectory, type YouDirectoryRow } from './LivingTree'
@@ -33,6 +38,9 @@ const SHEET_NAV_VIEWS = [
   'agent_intake',
   'signal_review',
   'workspace',
+  'campaign_board',
+  'bench',
+  'aria_atelier',
 ]
 
 function allRows(isAdmin: boolean): YouDirectoryRow[] {
@@ -45,7 +53,7 @@ function titles(rows: YouDirectoryRow[]): string[] {
 }
 
 describe('buildYouDirectory', () => {
-  it('the universal section holds the five universal destinations and two info rows — no seat-group rows leak up', () => {
+  it('the universal section holds the five universal destinations, one info row and the Log in / out action row — no seat-group rows leak up', () => {
     const { universal } = buildYouDirectory({ isAdmin: true })
     expect(titles(universal)).toEqual([
       'Today',
@@ -58,7 +66,13 @@ describe('buildYouDirectory', () => {
     ])
     const destinations = universal.filter((r) => r.kind === 'sheet' || r.kind === 'nav')
     expect(destinations).toHaveLength(5)
-    expect(universal.filter((r) => r.kind === 'info')).toHaveLength(2)
+    expect(universal.filter((r) => r.kind === 'info')).toHaveLength(1)
+    // Log in / out must ACT (call the shell's logout), not just
+    // expand a description — the 2026-11-24 founder bug.
+    expect(universal.find((r) => r.title === 'Log in / out')).toMatchObject({
+      kind: 'action',
+      id: 'login',
+    })
     // Projects, Content, Foundation and Stats live in their seat
     // groups now — never in the universal section.
     for (const absent of ['Projects', 'Content', 'Foundation (actors)', 'Stats']) {
@@ -103,15 +117,16 @@ describe('buildYouDirectory', () => {
     expect(homes('Provenance')).toEqual(['guardian'])
     expect(homes('Signal review')).toEqual(['skeptic'])
     expect(homes('Mint')).toEqual(['maverick'])
+    expect(homes('The Atelier')).toEqual(['conductor'])
   })
 
-  it('totals 44 working actions for an admin: 5 universal + 18 distinctive + 21 strip chips', () => {
+  it('totals 47 working actions for an admin: 5 universal + 21 distinctive + 21 strip chips', () => {
     const { universal, groups } = buildYouDirectory({ isAdmin: true })
     const universalActions = universal.filter((r) => r.kind === 'sheet' || r.kind === 'nav').length
     const distinctive = groups.reduce((n, g) => n + g.rows.length, 0)
     expect(universalActions).toBe(5)
-    expect(distinctive).toBe(18)
-    expect(universalActions + distinctive + groups.length * 3).toBe(44)
+    expect(distinctive).toBe(21)
+    expect(universalActions + distinctive + groups.length * 3).toBe(47)
   })
 
   it('the scoped strip never appears as distinctive rows', () => {

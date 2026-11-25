@@ -79,14 +79,18 @@ function installFallbackFetch() {
   vi.stubGlobal('fetch', fetchMock)
 }
 
-/** Live payload: the Champion is met (face_revealed); nobody else is. */
+/** Live payload: the Mentor is met (face_revealed); nobody else is.
+ *  (The Champion served as the example until 2026-11-24, when his tap
+ *  started landing on the Campaign Board — his home surface — so his
+ *  sheet no longer opens from the tree; the Mentor carries the
+ *  generic revealed-seat sheet behaviour now.) */
 function installRevealedFetch() {
   const fetchMock = vi.fn((url: string) => {
     if (url.includes('/council/archetypes/status')) {
       return Promise.resolve(
         ok({
           archetypes: STOCK_ARCHETYPE_FALLBACK.map((a) =>
-            a.id === 'champion' ? { ...a, face_revealed: true } : { ...a },
+            a.id === 'mentor' ? { ...a, face_revealed: true } : { ...a },
           ),
         }),
       )
@@ -143,7 +147,7 @@ const NODE_ID_BY_INITIALS: Record<string, string> = {
 }
 
 const NODE_ID_BY_LOGO_MARK: Record<string, string> = {
-  'champion-logo': 'arch-champion',
+  'mentor-logo': 'arch-mentor',
 }
 
 function nodeByInitials(initials: string): Element {
@@ -301,12 +305,12 @@ describe('seat talk sheet header cleanup (founder, 2026-11-12)', () => {
     installRevealedFetch()
     renderTree()
     await flush()
-    clickNodeByLogo('champion-logo')
+    clickNodeByLogo('mentor-logo')
     await flush()
     const row = head()?.querySelector('.lavatar-head')
     const img = row?.querySelector('img.lavatar-img')
     expect(img).toBeTruthy()
-    expect(img?.getAttribute('src') ?? '').toContain('champion-logo')
+    expect(img?.getAttribute('src') ?? '').toContain('mentor-logo')
     expect(row?.querySelector('.lavatar-qqq')).toBeNull()
   })
 
@@ -326,7 +330,7 @@ describe('seat talk sheet header cleanup (founder, 2026-11-12)', () => {
     installRevealedFetch()
     renderTree()
     await flush()
-    clickNodeByLogo('champion-logo')
+    clickNodeByLogo('mentor-logo')
     await flush()
     const labels = Array.from(dialog()?.querySelectorAll('button') ?? []).map((b) =>
       (b.textContent ?? '').trim(),

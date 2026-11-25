@@ -30,6 +30,7 @@ class Signal(BaseModel):
     linked_task_id: str | None = Field(None, alias="linkedTaskId")
     linked_asset_ids: list[str] = Field(default_factory=list, alias="linkedAssetIds")
     status: SIGNAL_STATUS = "new"
+    user_id: str | None = None  # server-set; parity only — no production code constructs Signal today
     created_at: datetime
     updated_at: datetime
 

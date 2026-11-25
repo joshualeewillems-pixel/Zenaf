@@ -1435,9 +1435,17 @@ def coordination_execution_flow_readings(
 
 # --- Signals (Layer 1 canonical entity; Radar is a view over these) ---
 @router.post("/signals")
-def create_signals(body: list[SignalCreate]):
+def create_signals(body: list[SignalCreate], current_user: dict = Depends(get_current_user)):
     """Bulk create signals (e.g. from meeting extraction, inbox triage)."""
-    return SigS.create_signals(body)
+    try:
+        return SigS.create_signals(body, current_user["id"])
+    except SigS.SignalsDisabledError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except ValueError:
+        # A supplied linked reference is foreign or nonexistent: reject
+        # without mutation. 404 (not 400) so the failure reveals nothing
+        # about which reference or whether it exists.
+        raise HTTPException(status_code=404, detail="Linked reference invalid or not owned") from None
 
 
 @router.get("/signals")
@@ -1445,17 +1453,29 @@ def list_signals(
     status: str | None = Query(None, description="Comma-separated: only these statuses (e.g. new,acknowledged,linked)"),
     status_not: str | None = Query(None, description="Comma-separated: exclude these (e.g. resolved,dismissed)"),
     source: str | None = Query(None, description="Filter by source"),
+    current_user: dict = Depends(get_current_user),
 ):
     """List signals with optional filters. Radar uses status_not=resolved,dismissed."""
     status_in = status.split(",") if status else None
     status_not_in = status_not.split(",") if status_not else None
-    return SigS.list_signals(status_in=status_in, status_not_in=status_not_in, source=source)
+    try:
+        return SigS.list_signals(current_user["id"], status_in=status_in, status_not_in=status_not_in, source=source)
+    except SigS.SignalsDisabledError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
 
 
 @router.patch("/signals/{signal_id}")
-def patch_signal(signal_id: str, body: SignalUpdate):
+def patch_signal(signal_id: str, body: SignalUpdate, current_user: dict = Depends(get_current_user)):
     """Update signal status and/or linked initiative/project/task."""
-    out = SigS.update_signal(signal_id, body)
+    try:
+        out = SigS.update_signal(signal_id, body, current_user["id"])
+    except SigS.SignalsDisabledError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except ValueError:
+        # A supplied linked reference is foreign or nonexistent. Same
+        # 404 as a missing/foreign id: the failure must not distinguish
+        # which case occurred.
+        raise HTTPException(status_code=404, detail="Signal not found") from None
     if out is None:
         raise HTTPException(status_code=404, detail="Signal not found")
     return out
@@ -1469,8 +1489,15 @@ def get_radar(current_user: dict = Depends(get_current_user)):
 
 
 @router.post("/radar/items")
-def create_radar_item(body: M.RadarFeedCreate):
-    """Deprecated: prefer POST /signals. Add a radar feed item (e.g. meeting-extraction signal)."""
+def create_radar_item(body: M.RadarFeedCreate, current_user: dict = Depends(get_current_user)):
+    """Deprecated: prefer POST /signals. Add a radar feed item (e.g. meeting-extraction signal).
+
+    Auth-contained identically to the signals endpoints (Track A §4.1):
+    anonymous requests return 401 before any service/storage access.
+    radar_feed itself carries no owner column and its rows are never
+    read back (list_radar_feed has no callers); ownership scoping for
+    that dead table is out of scope here.
+    """
     return S.create_radar_item(body)
 
 
@@ -1669,6 +1696,27 @@ def list_task_proposals(
     try:
         return {"proposals": VEStorage.list_task_proposals(
             current_user["id"], conversation_id, state=state, limit=limit
+        )}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/task-proposals/by-parent/{parent_task_id}")
+def list_task_proposals_by_parent(
+    parent_task_id: str,
+    state: str | None = "pending",
+    limit: int = 100,
+    current_user: dict = Depends(get_current_user),
+):
+    """Pending (or otherwise-stated) proposals attached under one parent
+    task, oldest first — the Bench's wire read. Read-only: it wraps the
+    existing owner-scoped storage query
+    (VEStorage.list_task_proposals_by_parent, S3) and writes nothing.
+    Exact parent match only; conversation membership establishes no
+    relevance here."""
+    try:
+        return {"proposals": VEStorage.list_task_proposals_by_parent(
+            current_user["id"], parent_task_id, state=state, limit=limit
         )}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

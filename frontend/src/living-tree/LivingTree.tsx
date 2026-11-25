@@ -95,6 +95,10 @@ export type SheetNavView =
   | 'agent_intake'
   | 'signal_review'
   | 'workspace'
+  | 'campaign_board'
+  | 'bench'
+  | 'jynx_scroll'
+  | 'aria_atelier'
 
 /**
  * Cross-component ask: jump the open seat sheet to that seat's review
@@ -103,6 +107,15 @@ export type SheetNavView =
  * execution focus/insert-text event).
  */
 export const OPEN_SEAT_REVIEW_EVENT = 'zenaf:open-seat-review'
+
+/**
+ * Cross-component ask: open the YOU sheet (the you-node's directory —
+ * the account home where Log in / out lives). Dispatched by the app
+ * header's profile picture (through App, which first routes to the
+ * tree), so the picture reaches the same YOU sheet the trunk photo
+ * opens. Same window-CustomEvent pattern as the review event above.
+ */
+export const OPEN_YOU_SHEET_EVENT = 'zenaf:open-you-sheet'
 
 /**
  * Phase-1 composition seam: the app shell provides the mounted view for a
@@ -327,14 +340,25 @@ const SEAT_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
 /** Seat-owned destinations (the distributed menu, 2026-10-22): a full-screen
     surface belongs to the seat whose slice of the system it is, and its
     sheet carries the door. The Mentor owns the execution surface (the
-    vision map and its tables); the Bear owns provenance (where your material came from
+    vision map and its tables); the Firebrand owns the Campaign Board
+    (projects as campaigns — routes, terrain, obstacles); the Bear owns
+    provenance (where your material came from
     and where it went); the Raven owns signal review (distilled signals
     from imports, awaiting your verdict); the Conductor owns the Workspace
-    Organizer (preview-only planning). Everything else left the global menu the same way:
+    Organizer (preview-only planning) and the Atelier (the well in the
+    rock garden); the Fox owns the Scroll (the shelf of scrolls — the
+    whole hierarchy, and what they draw of it).
+    Everything else left the global menu the same way:
     Today lives in every seat's menu above and in YOU's, Review is already
     per-seat, Settings and Content live with YOU, and Connect is gone —
     its intake remains reachable from the you-sheet's upload entry. */
 const SEAT_NAV_ITEMS: Record<string, Array<{ id: string; title: string; desc: string; nav: SheetNavView }>> = {
+  champion: [
+    { id: 'campaign_board', title: 'Campaign Board', desc: 'Your projects as campaigns — routes, terrain, and what stands in the way.', nav: 'campaign_board' },
+  ],
+  maverick: [
+    { id: 'jynx_scroll', title: 'The Scroll', desc: 'Their shelf of scrolls — every initiative, project, and task, and what they draw of them.', nav: 'jynx_scroll' },
+  ],
   mentor: [
     { id: 'vision_map', title: 'Vision map', desc: 'The execution surface — initiatives, projects, and their stones.', nav: 'vision_map' },
     { id: 'vision_tables', title: 'Vision (tables)', desc: 'The same work, as tables.', nav: 'vision_execution' },
@@ -343,11 +367,31 @@ const SEAT_NAV_ITEMS: Record<string, Array<{ id: string; title: string; desc: st
     { id: 'provenance', title: 'Provenance', desc: 'Where your material came from — and where it went.', nav: 'provenance' },
   ],
   skeptic: [
+    { id: 'bench', title: 'The Bench', desc: 'Your work as bonsai — grown from the record, examined branch by branch.', nav: 'bench' },
     { id: 'signal_review', title: 'Signal review', desc: 'Distilled signals from your imports, awaiting your verdict.', nav: 'signal_review' },
   ],
   conductor: [
     { id: 'workspace', title: 'Workspace Organizer', desc: 'Plan and preview a folder tidy-up — the moves stay yours to make.', nav: 'workspace' },
+    { id: 'aria_atelier', title: 'The Atelier', desc: 'Cast a stone into the well.', nav: 'aria_atelier' },
   ],
+}
+
+/** Seat home surfaces (founder, 2026-11-24; standing direction since
+    2026-11-19): a seat with a built interface opens ON that interface
+    — tapping the seat lands on its split view (the world, with the
+    seat's conversation beside it) as the seat's home surface, not on
+    the talk sheet with the interface buried in its "Other actions"
+    menu. Seats without an entry here keep the talk-sheet opening.
+    The seat's sheet destinations above stay in the head menu for any
+    path that still opens the sheet, and the seat's Today/Review/
+    Upload remain reachable through the YOU directory's scoped strip.
+    Founder ruling (2026-11-24, voice): seats land ON the interface —
+    a pending first meeting does NOT preempt the landing. */
+export const SEAT_HOME_NAV: Record<string, SheetNavView> = {
+  champion: 'campaign_board',
+  maverick: 'jynx_scroll',
+  conductor: 'aria_atelier',
+  skeptic: 'bench',
 }
 
 /** Seat-owned sheet items (Maverick only, founder 2026-11-12): Mint —
@@ -418,7 +462,10 @@ export function buildSeatHeaderMenu(args: {
  * 2026-11-14): the you-sheet's menu is a compact capability
  * directory — a universal section, then seven seat groups in the
  * accepted map's order. Navigation only: every row opens a
- * destination that already exists, by its existing mechanism.
+ * destination that already exists, by its existing mechanism —
+ * with one exception: the Log in / out row is an action row, wired
+ * to the app shell's logout (founder bug report, 2026-11-24: as an
+ * info row it only expanded its description and never signed out).
  * Doorways link to the canonical surfaces; nothing is re-implemented
  * here, and no planned doorway (Commitments, mirror, takeout,
  * verdicts, disputes, twigs, convened sessions) appears.
@@ -435,7 +482,8 @@ export type YouDirectoryRow =
   | { kind: 'sheet'; id: NodeMenuItemId; title: string; desc: string; scopeSeat?: string }
   | { kind: 'nav'; nav: SheetNavView; title: string; desc: string }
   | { kind: 'inline'; id: 'stats'; title: string; desc: string }
-  | { kind: 'info'; id: 'snapshot' | 'login'; title: string; desc: string }
+  | { kind: 'info'; id: 'snapshot'; title: string; desc: string }
+  | { kind: 'action'; id: 'login'; title: string; desc: string }
 
 export type YouSeatGroup = {
   seatKey: string
@@ -470,7 +518,7 @@ export function buildYouDirectory(args: { isAdmin: boolean }): {
       title: 'Snapshot era',
       desc: 'Snapshots freeze your profile as a rentable era — automatic each year, plus after big training leaps. Eras begin once training does.',
     },
-    { kind: 'info', id: 'login', title: 'Log in / out', desc: 'You are signed in on this device.' },
+    { kind: 'action', id: 'login', title: 'Log in / out', desc: 'You are signed in on this device.' },
   ]
 
   const ambassadorRows: YouDirectoryRow[] = [
@@ -504,6 +552,7 @@ export function buildYouDirectory(args: { isAdmin: boolean }): {
       seatKey: 'champion',
       verb: 'Act',
       rows: [
+        ...SEAT_NAV_ITEMS.champion.map(directoryNavRow),
         { kind: 'sheet', id: 'projects', title: 'Projects', desc: 'Everything in flight — ideas through tasks.' },
         {
           kind: 'nav',
@@ -1072,6 +1121,7 @@ export function LivingTreeView({
   currentUserId,
   userAvatarUrl,
   isAdmin,
+  onLogout,
 }: {
   /** Navigate the app shell (e.g. onNavigate('agent_intake') to connect a conversation). */
   onNavigate: (view: SheetNavView) => void
@@ -1090,6 +1140,11 @@ export function LivingTreeView({
       only for admins — the same rule SettingsView applies to the
       Invites section itself. Defaults false (row hidden). */
   isAdmin?: boolean
+  /** The app shell's logout (App's handleLogout: POST /auth/logout,
+      then the signed-out state). The YOU directory's Log in / out row
+      calls it; absent, the row renders but performs nothing — App
+      always passes it. */
+  onLogout?: () => void | Promise<void>
 }) {
   const [sel, setSel] = useState<string | null>(null)
   /** The you-node photo failed to load — fall back to the "YOU" letters
@@ -1328,6 +1383,34 @@ export function LivingTreeView({
     })
   }
 
+  // The header profile picture asks (through App) for the YOU sheet —
+  // the same sheet the trunk photo opens (see onTap's 'you' branch).
+  useEffect(() => {
+    const onOpenYouSheet = () => {
+      setSel(null)
+      setStrandPanelKey(null)
+      openSheet({ kind: 'you' })
+    }
+    window.addEventListener(OPEN_YOU_SHEET_EVENT, onOpenYouSheet)
+    return () => window.removeEventListener(OPEN_YOU_SHEET_EVENT, onOpenYouSheet)
+    // openSheet only calls state setters; safe to register once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  /** YOU directory Log in / out: a logout is in flight (the row
+      disables; on success App unmounts the tree into the sign-in
+      gate, so the busy flag usually never clears visibly). */
+  const [logoutBusy, setLogoutBusy] = useState(false)
+  const handleDirectoryLogout = async () => {
+    if (!onLogout || logoutBusy) return
+    setLogoutBusy(true)
+    try {
+      await onLogout()
+    } finally {
+      setLogoutBusy(false)
+    }
+  }
+
   /** Opens a seat's first-meeting overlay: the sheet closes and
       MeetingView mounts — the one route into the meeting, shared by
       the compact head's Begin door and the chat list's meeting rows
@@ -1356,6 +1439,19 @@ export function LivingTreeView({
     const datum = live?.datum ?? findDatum(id, up)
     const arch = datum?.archetype
     if (arch) {
+      // Seat home surface (founder, 2026-11-24): a seat with a
+      // built interface lands on that interface's split view — the
+      // world first, its conversation beside it — not on the talk
+      // sheet. A pending first meeting does not preempt the landing
+      // (founder ruling, 2026-11-24, voice).
+      const homeNav = SEAT_HOME_NAV[arch.id]
+      if (homeNav) {
+        setSel(id)
+        setStrandPanelKey(null)
+        setTalkOverride(null)
+        onNavigate(homeNav)
+        return
+      }
       // Navigation correction: a seat tap opens the seat's ongoing
       // conversation directly — no menu interstitial. Any stale
       // invitation override is cleared so it can never resurrect.
@@ -1801,8 +1897,28 @@ export function LivingTreeView({
   /** One directory row (YOU directory): sheet rows mount in-sheet
       (scoped when the row carries a scopeSeat), nav rows navigate the
       shell, inline/info rows expand in place — the old tree-options
-      behavior, kept for Stats and the two info rows. */
+      behavior, kept for Stats and the Snapshot era row — and the one
+      action row (Log in / out) performs the shell's logout. */
   const renderDirectoryRow = (row: YouDirectoryRow) => {
+    if (row.kind === 'action') {
+      return (
+        <button
+          key={`action-${row.id}`}
+          type="button"
+          className="lrow"
+          disabled={logoutBusy}
+          onClick={() => {
+            void handleDirectoryLogout()
+          }}
+        >
+          <span>
+            <span className="lrow-t">{row.title}</span>
+            <span className="lrow-d">{logoutBusy ? 'Signing out…' : row.desc}</span>
+          </span>
+          <span className="lchev">›</span>
+        </button>
+      )
+    }
     if (row.kind === 'sheet') {
       return (
         <button

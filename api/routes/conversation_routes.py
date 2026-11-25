@@ -76,6 +76,8 @@ from local_ai.narrative.context import (
 )
 from local_ai.narrative.noting import default_noting_writer
 from local_ai.narrative.obligation_gate import default_obligation_gate
+from local_ai.narrative.context import jynx_context_provider, weaver_context_provider
+from local_ai.narrative.noting import default_noting_writer
 
 router = APIRouter(prefix="/conversation", tags=["conversation"])
 

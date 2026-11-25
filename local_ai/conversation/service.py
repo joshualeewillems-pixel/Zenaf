@@ -390,6 +390,7 @@ class ConversationService:
         steward_context_provider: Callable[..., Any] | None = None,
         pencil_context_provider: Callable[..., Any] | None = None,
         noting_writer: Any | None = None,
+        obligation_gate: Any | None = None,
     ) -> None:
         self.store = store
         self._generate_fn = generate_fn
@@ -402,6 +403,15 @@ class ConversationService:
         # everywhere); with capture off it is never called and no
         # noting code runs on the turn at all.
         self._noting_writer = noting_writer
+        # V4 obligation-block gate (governing §10): an optional gate
+        # object (local_ai/narrative/obligation_gate.py, wired by the
+        # routes like V1's noting writer — the service never imports
+        # the narrative package, per the Part XI turn-path pin) whose
+        # per-turn determination the gate call site below consults.
+        # It is consulted ONLY for champion turns where the slice is
+        # live (gate toggle on, or noting capture live for champion);
+        # otherwise no gate code runs on the turn at all.
+        self._obligation_gate = obligation_gate
         # Pencil-standing steward observations (founder ruling
         # 2026-11-21): an optional provider consulted ONLY for the
         # Jynx (archetype "maverick"), under its own master switch
@@ -565,9 +575,51 @@ class ConversationService:
         # block, never an empty list; other seats get no block.
         obligation_context = None
         if arch_id == "champion":
-            obligation_context, _obligation_status = (
-                _obligations.build_obligation_context(user_id)
+            # V4 obligation-block gate (governing §10, scoping §3.5):
+            # the per-turn relevance determination is composed once,
+            # independently of BOTH toggles, wherever the slice is
+            # live (gate toggle on, or noting capture live for
+            # champion) — and every determination, firing or not, is
+            # recorded through the assessment path. The gate toggle
+            # (ZENAF_OBLIGATION_GATE, default off) gates RENDERING
+            # only: off ⇒ the apparatus renders unconditionally,
+            # exactly as before; on ⇒ it renders only when the
+            # determination fires. The capability awareness slice
+            # (capability_context below) is a different channel and
+            # is never touched by the gate. A failed determination
+            # degrades to today's unconditional rendering, never a
+            # broken turn.
+            gate_on = (
+                self._obligation_gate.enabled()
+                if self._obligation_gate is not None
+                else False
             )
+            determination = None
+            if self._obligation_gate is not None and (gate_on or noting_on):
+                try:
+                    determination = self._obligation_gate.determine_and_record(
+                        user_id,
+                        conversation_id=conversation_id,
+                        archetype_id=arch_id,
+                        message=message,
+                        history_texts=tuple(
+                            t["content"]
+                            for t in history_turns
+                            if t.get("role") == "user"
+                        ),
+                    )
+                except Exception:
+                    logger.exception(
+                        "obligation gate: determination failed; "
+                        "rendering apparatus unconditionally"
+                    )
+                    determination = None
+            if gate_on and determination is not None and not determination.fires:
+                obligation_context = None
+            else:
+                obligation_context, _obligation_status = (
+                    _obligations.build_obligation_context(user_id)
+                )
 
         # Bear evidence (S3): guardian-only, server-side, from the
         # caller's own scoped records — the client cannot inject or

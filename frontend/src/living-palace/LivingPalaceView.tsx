@@ -11,100 +11,58 @@
  * extended to this sheet).
  *
  * The world reads the visitor's real Vision Execution records via
- * palaceApi. It writes in exactly one place: the scales' settle act
- * (Scales-1, below) — the visitor's own explicit confirmation,
- * through the VE routes that already exist. Boundaries: the
- * per-subject boundary store is NOT commissioned — the threshold is
- * an affordance whose panel composes only from records that exist
- * today (core-profile declarations, strand topic boundaries,
- * permission state), fetched lazily when a doorway is tapped.
+ * palaceApi. This surface writes NOTHING — the chat-is-the-work law
+ * (founder, 2026-11-25 13:44 PT): "For all interfaces. The chat is
+ * the work, the images are metaphors." The verdict buttons (#432)
+ * and the weighing panel (#433) that once lived here are superseded
+ * as forms; their semantics live in Maeve's conversation now — she
+ * carries the room's state into her prompt (the room-state block),
+ * rulings land through her verdict tail, and a weighing settles
+ * only through the visitor's own settle words in chat. What a tap
+ * does here is stage, never settle:
+ *
+ * Tentative population (founder ruling 2026-11-25 13:56 PT): a tap
+ * on the room's furniture — the scales, the vessel, the chest, the
+ * table, the threshold, the hearth, a guest object — stages that
+ * object in the chat tentatively (the turn context's palace_focus).
+ * It writes nothing to the ledger; clicking away discards it
+ * silently; it joins the ledger only via the per-message context
+ * snapshot when the visitor sends a turn while it is staged.
  *
  * The shared attributed subject read (founder ruling 2026-11-25)
- * composes this world's three further expressions per subject,
- * fetched as the visitor enters a floor or room: Thresholds-1 (the
- * boundaries panel's per-subject states — proposed interpretations
- * in pencil, established decisions/commitments), Kintsugi-1 (the
- * vessel's held questions and its gold seam, earned only by an
- * accepted supersession), and Guests-1 (a seat's object stands only
- * where the read shows that seat attending the subject, with two
- * doors: explore here with Maeve, or follow into the seat's world).
+ * still composes this world's drawn expressions per subject,
+ * fetched as the visitor enters a floor or room: the vessel's gold
+ * seam, earned only by an accepted supersession, and the guest
+ * objects — a seat's object stands only where the read shows that
+ * seat attending the subject, with two slim doors: explore here
+ * with Maeve (which stages the object), or follow into the seat's
+ * world. After a chat turn lands, the view re-reads the subject and
+ * the entities (the Scroll #431 precedent): conversation is where
+ * the record changes now, and the world reflects it.
  *
- * Verdict Slice 1 (founder ruling 2026-11-25 10:07 PT): the Palace
- * is the first DOOR into the one steward review mechanism. The
- * read's pending items — the Steward's undecided proposals naming
- * this subject — rest at its threshold and at the Kintsugi vessel,
- * in pencil, with their evidence in front of the visitor; the acts
- * (accept / reject / leave undecided / endorse / explore) post to
- * the existing review routes, and from a standing accepted reading
- * the visitor may ask for another look, his cause in his own words
- * opening a candidacy through the reconsideration-request route.
- * No counts, no badges, no queue: undecided material rests where
- * it lives, and resting is a legitimate state. Conversation stays
- * a natural entry into reconsideration — this door adds a place,
- * it formalizes nothing said in the chat beside it.
- *
- * Scales-1 (founder ruling 2026-11-25 09:51 PT, refinement 3):
- * exploration before establishment. Tapping a floor's scales — or
- * a room's, where the room's task carries a recorded estimate —
- * opens the weighing: hypothetical figures adjusted from their
- * recorded baselines, alternative arrangements kept side by side
- * for the session, and the derived consequences (the backend
- * capacity derivation, mirrored in palaceLogic) shown as the
- * balance moves. Exploration writes nothing and is discarded on
- * closing. Only the settle act writes: the settled figures through
- * the existing VE routes, and the weighing itself as a decision
- * carrying its provenance — the explored arrangement, the settled
- * figures, and the recorded figures they replaced.
+ * Boundaries: there is NO per-subject boundary store and this
+ * surface invents none — the threshold is an affordance, and its
+ * states ride to Maeve in her room-state block, where boundaries
+ * are discovered and examined with her; establishing them stays
+ * the visitor's alone.
  */
 import * as React from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import CouncilChat from '../chat/CouncilChat'
 import SplitShell from '../components/SplitShell'
 import { SEAT_COLORS, type SeatId } from '../council/colors'
-import type { Idea, Project, Task } from '../vision-execution/types'
+import type { Idea } from '../vision-execution/types'
 import {
   attendingGuests,
   buildBuilding,
   buildCompound,
   buildFloor,
   buildRoom,
-  buildWeighingDecision,
-  composeBoundaryPanel,
-  composeSubjectPending,
-  composeSubjectThresholds,
-  composeVesselHeld,
   GUEST_OBJECTS,
-  PENDING_KIND_LABELS,
-  pendingActs,
-  pendingEvidenceRefs,
-  pendingSummaryLines,
-  recordedCapacityFor,
-  vesselPending,
-  weighingBaseline,
-  weighingChanges,
-  weighingConsequences,
-  weighingWithKeeper,
   type AttributedRead,
-  type BoundaryPanelModel,
   type PalaceData,
-  type PendingReviewItem,
-  type WeighingBaseline,
-  type WeighingFigures,
-  type WeighingPicture,
 } from './palaceLogic'
-import {
-  acceptReviewItem,
-  endorseReviewReading,
-  exploreReviewItem,
-  fetchAttributedRead,
-  fetchBoundaryMaterial,
-  fetchPalaceEntities,
-  PALACE_STRAND_KEYS,
-  rejectReviewItem,
-  requestReconsideration,
-  settleWeighing,
-  unresolveReviewItem,
-} from './palaceApi'
+import { fetchAttributedRead, fetchPalaceEntities } from './palaceApi'
 import { BuildingScene, CompoundScene, FloorScene, RoomScene } from './palaceCanvas'
 import './palace.css'
 
@@ -114,259 +72,43 @@ type PalaceLayer =
   | { layer: 'floor'; projectId: string }
   | { layer: 'room'; taskId: string }
 
-type Panel =
-  | { kind: 'boundaries' }
-  | { kind: 'held'; taskId: string }
-  | { kind: 'idea'; ideaId: string }
-  | { kind: 'vessel' }
-  | { kind: 'guest'; seat: SeatId }
-  | { kind: 'weighing' }
-  | null
-
 const GUARDIAN = SEAT_COLORS.guardian
 
-const PANEL_BUTTON =
-  'rounded-full border border-[#c9b995] bg-white/60 px-2.5 py-1 text-xs text-[#4a3f30] disabled:opacity-50'
+const DOOR_BUTTON =
+  'rounded-full border border-[#c9b995] bg-white/60 px-3 py-1.5 text-xs text-[#4a3f30]'
 
-type ReviewActName = 'accept' | 'reject' | 'unresolve' | 'endorse'
+/** The staged focus a tap can carry — the room's own instruments,
+ *  plus a guest object staged as "guest:<seat>". These strings are
+ *  the turn context's palace_focus values; the server validates
+ *  them against the same closed set and scrubs anything else. */
+type StagedFocus =
+  | 'scales'
+  | 'vessel'
+  | 'chest'
+  | 'table'
+  | 'threshold'
+  | 'hearth'
+  | 'mandala'
+  | 'plant'
+  | `guest:${string}`
 
-/** The strand threads the Explore-with-Aria bridge can carry an
- *  item into, by their recorded names. */
-const STRAND_NAMES: Record<string, string> = {
-  voice: 'Voice',
-  logic: 'Logic',
-  eye: 'Eye',
-  ear: 'Ear',
-  hands: 'Hands',
-  heart: 'Heart',
-  compass: 'Compass',
+const FOCUS_LABELS: Record<string, string> = {
+  scales: 'the scales',
+  vessel: 'the Kintsugi vessel',
+  chest: 'the chest',
+  table: 'the gathering table',
+  threshold: 'the threshold',
+  hearth: 'the hearth',
+  mandala: "Aria's mandala",
+  plant: "Rumi's plant",
 }
 
-/** One pending review item at a Palace door: what it is, what it
- *  says, the evidence it stands on — and the visitor's acts, which
- *  post to the one review mechanism's routes. Pencil register
- *  throughout: nothing here is settled until he rules. */
-function PendingList({
-  items,
-  place,
-  busyId,
-  exploreOpenFor,
-  onToggleExplore,
-  onAct,
-  onExplore,
-}: {
-  items: PendingReviewItem[]
-  place: 'threshold' | 'vessel'
-  busyId: string | null
-  exploreOpenFor: string | null
-  onToggleExplore: (itemId: string | null) => void
-  onAct: (item: PendingReviewItem, act: ReviewActName) => void
-  onExplore: (item: PendingReviewItem, strandKey: string) => void
-}) {
-  return (
-    <ul className="mt-2 space-y-3">
-      {items.map((item) => {
-        const acts = pendingActs(item)
-        const refs = pendingEvidenceRefs(item)
-        const lines = pendingSummaryLines(item)
-        const currency = item.payload?.currency
-        const busy = busyId === item.item_id
-        return (
-          <li
-            key={item.item_id}
-            data-testid={`palace-pending-item-${place}-${item.item_id}`}
-            className="border-l-2 border-[#c9b995] pl-3"
-          >
-            <p className="text-xs font-semibold uppercase tracking-wide text-[#8a7a5c]">
-              {PENDING_KIND_LABELS[item.item_kind] ?? 'A proposal from the Steward'}
-            </p>
-            {item.title && <p className="font-medium">{item.title}</p>}
-            {lines.map((line, i) => (
-              <p key={i} className="italic text-[#8a7a5c]">
-                {line}
-              </p>
-            ))}
-            {currency && (
-              <p className="text-xs text-[#6b5b45]">
-                Currency: {currency.placement}
-                {currency.labels.length > 0 ? ` — ${currency.labels.join(', ')}` : ''}
-              </p>
-            )}
-            {refs.length > 0 && <p className="text-xs text-[#6b5b45]">Grounded in: {refs.join(' · ')}</p>}
-            <div className="mt-1.5 flex flex-wrap gap-2">
-              <button
-                type="button"
-                data-testid={`palace-review-accept-${item.item_id}`}
-                className={PANEL_BUTTON}
-                disabled={busy}
-                onClick={() => onAct(item, 'accept')}
-              >
-                Accept
-              </button>
-              <button
-                type="button"
-                data-testid={`palace-review-reject-${item.item_id}`}
-                className={PANEL_BUTTON}
-                disabled={busy}
-                onClick={() => onAct(item, 'reject')}
-              >
-                Reject
-              </button>
-              <button
-                type="button"
-                data-testid={`palace-review-unresolve-${item.item_id}`}
-                className={PANEL_BUTTON}
-                disabled={busy}
-                onClick={() => onAct(item, 'unresolve')}
-              >
-                Leave undecided
-              </button>
-              {acts.endorse && (
-                <button
-                  type="button"
-                  data-testid={`palace-review-endorse-${item.item_id}`}
-                  className={PANEL_BUTTON}
-                  disabled={busy}
-                  onClick={() => onAct(item, 'endorse')}
-                >
-                  Endorse
-                </button>
-              )}
-              {acts.explore && (
-                <button
-                  type="button"
-                  data-testid={`palace-review-explore-${item.item_id}`}
-                  className={PANEL_BUTTON}
-                  disabled={busy}
-                  onClick={() => onToggleExplore(exploreOpenFor === item.item_id ? null : item.item_id)}
-                >
-                  Explore with Aria
-                </button>
-              )}
-            </div>
-            {acts.explore && exploreOpenFor === item.item_id && (
-              <div data-testid={`palace-explore-strands-${item.item_id}`} className="mt-2">
-                <p className="text-xs text-[#6b5b45]">
-                  Carry it into a strand thread, where Aria can explore it with you. Exploring settles nothing —
-                  the proposal rests exactly as it rests here.
-                </p>
-                <div className="mt-1 flex flex-wrap gap-1.5">
-                  {PALACE_STRAND_KEYS.map((key) => (
-                    <button
-                      key={key}
-                      type="button"
-                      data-testid={`palace-explore-strand-${item.item_id}-${key}`}
-                      className={PANEL_BUTTON}
-                      disabled={busy}
-                      onClick={() => onExplore(item, key)}
-                    >
-                      {STRAND_NAMES[key] ?? key}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </li>
-        )
-      })}
-    </ul>
-  )
-}
-
-/** The reconsideration ask, on one standing accepted reading: the
- *  visitor gives his cause in his own words. Sending opens a
- *  candidacy — it does not un-accept the reading, and nothing is
- *  sent until he writes the cause himself. */
-function ReconsiderAsk({
-  readingId,
-  onSubmit,
-}: {
-  readingId: string
-  onSubmit: (readingId: string, cause: string) => Promise<boolean>
-}) {
-  const [open, setOpen] = useState(false)
-  const [text, setText] = useState('')
-  const [sending, setSending] = useState(false)
-  if (!open) {
-    return (
-      <button
-        type="button"
-        data-testid={`palace-reconsider-open-${readingId}`}
-        className={PANEL_BUTTON}
-        onClick={() => setOpen(true)}
-      >
-        Ask for another look
-      </button>
-    )
+function focusLabel(focus: StagedFocus): string {
+  if (focus.startsWith('guest:')) {
+    const seat = focus.slice('guest:'.length) as SeatId
+    return GUEST_OBJECTS[seat]?.label ?? 'a guest object'
   }
-  return (
-    <span className="mt-1 block" data-testid={`palace-reconsider-form-${readingId}`}>
-      <textarea
-        data-testid={`palace-reconsider-text-${readingId}`}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        rows={3}
-        placeholder="Your cause, in your own words — what changed, or where you disagree"
-        className="w-full rounded-lg border border-[#c9b995] bg-white/80 px-2 py-1.5 text-sm not-italic text-[#4a3f30]"
-      />
-      <span className="mt-1 flex flex-wrap gap-2">
-        <button
-          type="button"
-          data-testid={`palace-reconsider-send-${readingId}`}
-          className={PANEL_BUTTON}
-          disabled={sending || !text.trim()}
-          onClick={async () => {
-            setSending(true)
-            const ok = await onSubmit(readingId, text)
-            setSending(false)
-            if (ok) {
-              setOpen(false)
-              setText('')
-            }
-          }}
-        >
-          Set it down for another look
-        </button>
-        <button type="button" className={PANEL_BUTTON} onClick={() => setOpen(false)}>
-          Not now
-        </button>
-      </span>
-    </span>
-  )
-}
-
-/** One person's side of the scales, in words the house would use:
- *  the committed hours, and the balance against their recorded
- *  capacity — over, within, exactly at, or no judgement where no
- *  capacity is recorded. */
-function pictureLine(p: WeighingPicture): string {
-  const committed = `${p.name} — ${p.committedHours}h a week committed`
-  if (p.capacityHours == null) {
-    return `${committed}; no capacity is recorded for them, so the scales make no judgement.`
-  }
-  if (p.over) return `${committed} against a recorded capacity of ${p.capacityHours}h — over by ${p.capacityDelta}h.`
-  if (p.capacityDelta != null && p.capacityDelta < 0) {
-    return `${committed} against a recorded capacity of ${p.capacityHours}h — within it, with ${-p.capacityDelta}h to spare.`
-  }
-  return `${committed} against a recorded capacity of ${p.capacityHours}h — exactly at it.`
-}
-
-function samePicture(a: WeighingPicture, b: WeighingPicture): boolean {
-  return (
-    a.committedHours === b.committedHours &&
-    a.capacityHours === b.capacityHours &&
-    a.capacityDelta === b.capacityDelta &&
-    a.over === b.over
-  )
-}
-
-function sameFigures(a: WeighingFigures, b: WeighingFigures): boolean {
-  return (
-    a.projectHours === b.projectHours &&
-    a.taskHours === b.taskHours &&
-    a.keeperId === b.keeperId &&
-    a.keeperCapacity === b.keeperCapacity
-  )
+  return FOCUS_LABELS[focus] ?? 'an object in this room'
 }
 
 export default function LivingPalaceView({
@@ -378,7 +120,6 @@ export default function LivingPalaceView({
   onFollowGuest?: (seat: SeatId) => void
 } = {}) {
   const [data, setData] = useState<PalaceData | null>(null)
-  const [coreNonNegotiables, setCoreNonNegotiables] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [trail, setTrail] = useState<PalaceLayer[]>([{ layer: 'compound' }])
   const [attendedCompound, setAttendedCompound] = useState(false)
@@ -387,18 +128,18 @@ export default function LivingPalaceView({
   const [unnestedFloor, setUnnestedFloor] = useState(false)
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null)
   const [roomLit, setRoomLit] = useState(false)
-  const [toast, setToast] = useState<{ id: number; text: string } | null>(null)
-  const [panel, setPanel] = useState<Panel>(null)
-  const [boundaryModel, setBoundaryModel] = useState<BoundaryPanelModel | null>(null)
-  const [boundaryLoading, setBoundaryLoading] = useState(false)
-  const toastTimer = useRef<number | null>(null)
+  /** Tentative population: the object a tap staged in the chat.
+   *  Client-side only — it rides the chat context while staged and
+   *  is discarded silently by any navigation or by setting it down. */
+  const [stagedFocus, setStagedFocus] = useState<StagedFocus | null>(null)
+  /** The guest whose slim door strip stands open, if any. */
+  const [guestDoorSeat, setGuestDoorSeat] = useState<SeatId | null>(null)
 
   const current = trail[trail.length - 1]
 
   const loadEntities = useCallback(async () => {
     const entities = await fetchPalaceEntities()
     setData(entities)
-    setCoreNonNegotiables(entities.coreProfile?.non_negotiables ?? null)
   }, [])
 
   useEffect(() => {
@@ -410,12 +151,6 @@ export default function LivingPalaceView({
       cancelled = true
     }
   }, [loadEntities])
-
-  const say = useCallback((text: string) => {
-    if (toastTimer.current) window.clearTimeout(toastTimer.current)
-    setToast({ id: Date.now(), text })
-    toastTimer.current = window.setTimeout(() => setToast(null), 5600)
-  }, [])
 
   /* ---------------- the attributed subject read ---------------- */
 
@@ -446,15 +181,10 @@ export default function LivingPalaceView({
    *  previous room never paints this one. Null while loading or
    *  when the read failed: the world then stands unadorned. */
   const subjectRead = attributed && attributed.key === subjectKey ? attributed.read : null
-  const subjectReadLoading = subjectKey !== null && (!attributed || attributed.key !== subjectKey)
 
-  /* ---------------- the verdict door (Slice 1) ---------------- */
-
-  const [reviewBusyId, setReviewBusyId] = useState<string | null>(null)
-  const [exploreOpenFor, setExploreOpenFor] = useState<string | null>(null)
-
-  /** After a ruling act, re-read the subject: the door shows the
-   *  mechanism's new state, never a local guess at it. */
+  /** After a ruling or a weighing in chat, re-read the subject:
+   *  the world shows the mechanism's new state, never a local
+   *  guess at it. */
   const refreshSubjectRead = useCallback(async () => {
     if (!subjectKey) return
     const [entityType, entityId] = subjectKey.split(':') as ['project' | 'task', string]
@@ -462,152 +192,38 @@ export default function LivingPalaceView({
     setAttributed({ key: subjectKey, read })
   }, [subjectKey])
 
-  const runReviewAct = useCallback(
-    async (item: PendingReviewItem, act: ReviewActName) => {
-      setReviewBusyId(item.item_id)
-      const ok =
-        act === 'accept'
-          ? await acceptReviewItem(item.item_id)
-          : act === 'reject'
-            ? await rejectReviewItem(item.item_id)
-            : act === 'unresolve'
-              ? await unresolveReviewItem(item.item_id)
-              : await endorseReviewReading(item.item_id)
-      setReviewBusyId(null)
-      if (!ok) {
-        say('That did not reach the record — everything stands exactly as it was.')
-        return
-      }
-      say(
-        act === 'accept'
-          ? 'Taken into the house’s keeping — it stands as settled now.'
-          : act === 'reject'
-            ? 'Let go from her hands — the dismissal stands in the record.'
-            : act === 'unresolve'
-              ? 'Left resting in her keeping, undecided — that choice is recorded too.'
-              : 'Your endorsement rests on the reading, as it stands.',
-      )
-      void refreshSubjectRead()
-    },
-    [refreshSubjectRead, say],
-  )
-
-  const runExplore = useCallback(
-    async (item: PendingReviewItem, strandKey: string) => {
-      setReviewBusyId(item.item_id)
-      const ok = await exploreReviewItem(item.item_id, strandKey)
-      setReviewBusyId(null)
-      if (!ok) {
-        say('That did not reach the record — everything stands exactly as it was.')
-        return
-      }
-      setExploreOpenFor(null)
-      say(
-        `Carried into the ${STRAND_NAMES[strandKey] ?? strandKey} thread — Aria holds it there, for exploring together. Nothing here has settled.`,
-      )
-      void refreshSubjectRead()
-    },
-    [refreshSubjectRead, say],
-  )
-
-  const runReconsider = useCallback(
-    async (readingId: string, cause: string): Promise<boolean> => {
-      const ok = await requestReconsideration(readingId, cause)
-      if (!ok) {
-        say('That did not reach the record — the reading stands exactly as it was.')
-        return false
-      }
-      say(
-        'Set down for another look. The reading stands accepted until you rule on the asking itself — the asking rests at this threshold now.',
-      )
-      void refreshSubjectRead()
-      return true
-    },
-    [refreshSubjectRead, say],
-  )
-  /* ---------------- Scales-1: the weighing ---------------- */
-
-  /** The open weighing, if any: its recorded baseline, the
-   *  arrangement being explored, and the alternative arrangements
-   *  kept for comparison. Session-local in full — nothing here is
-   *  written anywhere until the settle act. */
-  const [weighing, setWeighing] = useState<{
-    baseline: WeighingBaseline
-    figures: WeighingFigures
-    alternatives: { label: string; figures: WeighingFigures }[]
-  } | null>(null)
-  const [settling, setSettling] = useState(false)
-
-  const openWeighing = useCallback(
-    (project: Project | null, task: Task | null) => {
-      if (!data) return
-      const baseline = weighingBaseline(data, project, task)
-      setWeighing({ baseline, figures: baseline.figures, alternatives: [] })
-      setPanel({ kind: 'weighing' })
-    },
-    [data],
-  )
-
-  const closeWeighing = useCallback(() => {
-    setPanel(null)
-    setWeighing(null)
-  }, [])
-
-  /** The settle act — the ONLY write the Palace makes. The figures
-   *  go through their existing routes; the weighing is kept as a
-   *  decision only when every figure landed. The toast says exactly
-   *  what the record now holds, including when the decision's
-   *  keeping was refused (it stands behind a permission the Palace
-   *  cannot open from here). */
-  const runSettle = useCallback(async () => {
-    if (!data || !weighing) return
-    const changes = weighingChanges(data, weighing.baseline, weighing.figures)
-    if (!changes.changed) return
-    const decision = buildWeighingDecision(data, weighing.baseline, weighing.figures, changes)
-    setSettling(true)
-    const outcome = await settleWeighing({
-      projectId: weighing.baseline.project?.id ?? null,
-      taskId: weighing.baseline.task?.id ?? null,
-      changes,
-      decision,
-    })
-    setSettling(false)
-    if (outcome.failed) {
-      if (outcome.landed.length > 0) {
-        say(
-          `The weighing only partly settled: ${outcome.landed.join(', ')} reached the record, but ${outcome.failed} did not — and the weighing was not kept as a decision, so the record claims no more than happened.`,
-        )
-        closeWeighing()
-        void loadEntities().catch(() => {})
-      } else {
-        say(`The weighing did not settle: ${outcome.failed} did not reach the record, and nothing was written.`)
-      }
-      return
-    }
-    closeWeighing()
+  /** A chat turn landed (the Scroll #431 precedent): the record
+   *  may have changed in conversation — re-read the subject and
+   *  the entities so the drawn world reflects it. */
+  const onTurnLanded = useCallback(() => {
+    void refreshSubjectRead()
     void loadEntities().catch(() => {})
-    say(
-      outcome.decisionRecorded
-        ? 'Settled into the record — and the weighing is kept as a decision, with the figures it replaced.'
-        : 'The figures stand settled in the record. The weighing itself could not be kept as a decision — that keeping stands behind a permission the Palace cannot open from here.',
-    )
-  }, [data, weighing, say, closeWeighing, loadEntities])
+  }, [refreshSubjectRead, loadEntities])
 
   const subjectGuests = useMemo(() => attendingGuests(subjectRead), [subjectRead])
   const subjectGuestSeats = useMemo(() => subjectGuests.map((g) => g.seat), [subjectGuests])
-  const layerNoun = current.layer === 'room' ? 'room' : 'floor'
+  const guestDoor = guestDoorSeat ? subjectGuests.find((g) => g.seat === guestDoorSeat) : undefined
 
+  /* ---------------- staging + navigation ---------------- */
+
+  const stage = useCallback((focus: StagedFocus) => {
+    setStagedFocus(focus)
+    setGuestDoorSeat(null)
+  }, [])
+
+  /** Every navigation discards a staged object silently — clicking
+   *  away is the discard (tentative population). */
   const push = useCallback((next: PalaceLayer) => {
     setTrail((t) => [...t, next])
-    setPanel(null)
-    setWeighing(null)
+    setStagedFocus(null)
+    setGuestDoorSeat(null)
     setRoomLit(false)
   }, [])
 
   const goToTrailIndex = useCallback((index: number) => {
     setTrail((t) => t.slice(0, index + 1))
-    setPanel(null)
-    setWeighing(null)
+    setStagedFocus(null)
+    setGuestDoorSeat(null)
     setRoomLit(false)
   }, [])
 
@@ -669,120 +285,56 @@ export default function LivingPalaceView({
     [push],
   )
 
-  /* ---------------- boundaries ---------------- */
-
-  const openBoundaries = useCallback(async () => {
-    setPanel({ kind: 'boundaries' })
-    if (boundaryModel) return
-    setBoundaryLoading(true)
-    try {
-      const material = await fetchBoundaryMaterial()
-      setBoundaryModel(
-        composeBoundaryPanel({
-          nonNegotiables: coreNonNegotiables,
-          strandBoundaries: material.strandBoundaries,
-          permissionGroups: material.permissionGroups,
-        }),
-      )
-    } catch {
-      setBoundaryModel(
-        composeBoundaryPanel({
-          nonNegotiables: coreNonNegotiables,
-          strandBoundaries: [],
-          permissionGroups: [],
-        }),
-      )
-    } finally {
-      setBoundaryLoading(false)
-    }
-  }, [boundaryModel, coreNonNegotiables])
-
-  /* ---------------- furniture ---------------- */
+  /* ---------------- furniture: taps stage, never settle ---------------- */
 
   const onRoomFurniture = useCallback(
     (kind: 'scales' | 'vessel' | 'chest' | 'table' | 'mandala' | 'plant') => {
-      if (!room) return
-      if (kind === 'scales') {
-        if (room.task.estimated_hours != null) {
-          openWeighing(room.project, room.task)
-        } else {
-          say(
-            'The scales stand in every room, ready to weigh what a piece of work asks of you. Their pans are empty for this room: no estimate is recorded for it, and a weighing begins from the record’s own figures — there is nothing here to place on them yet. An unweighed undertaking, not a claim of balance.',
-          )
-        }
-      } else if (kind === 'vessel') {
-        const heldNow = composeVesselHeld(subjectRead)
-        if (
-          heldNow.hasMaterial ||
-          heldNow.acceptedReadings.length > 0 ||
-          vesselPending(subjectRead).length > 0
-        ) {
-          setPanel({ kind: 'vessel' })
-        } else if (subjectReadLoading) {
-          say('The vessel stands whole and empty — Maeve is still gathering what this room holds.')
-        } else {
-          say(
-            'The Kintsugi vessel stands whole and empty. You may bring something here that needs repair before the system ever recognises it — Maeve keeps the vessel for that. Its gold appears only where a reading of a room was reconsidered and the correction accepted, and no such lineage reaches this room, so it stands plain.',
-          )
-        }
-      } else if (kind === 'chest') {
-        if (room.held) setPanel({ kind: 'held', taskId: room.task.id })
-        else say('The chest stands empty — this piece of work holds no recorded words of its own yet.')
-      } else if (kind === 'table') {
-        if (room.people.length > 0) {
-          say(
-            `Recorded at this table: ${room.people.map((p) => p.name).join(', ')}. The empty places are kept — room held for whoever this work may need.`,
-          )
-        } else {
-          say(
-            'No one is recorded at this table yet. The places stand empty on purpose — room held for whoever this work may need.',
-          )
-        }
-      } else if (kind === 'mandala') {
-        say(
-          `Aria's mandala, earned where recorded work converges: ${room.convergence} recorded edges meet at this room. It stands in the floor where the convergence happens — a guest here, in its own form.`,
-        )
-      } else if (kind === 'plant') {
-        say(
-          room.growth === 'fruiting'
-            ? "Rumi's plant, fruiting on the sill — the map's reading of a finished piece of work, standing here as a guest in its own form."
-            : "Rumi's plant, growing on the sill — the map's reading of work under way, standing here as a guest in its own form.",
-        )
-      }
+      stage(kind)
     },
-    [room, say, subjectRead, subjectReadLoading, openWeighing],
+    [stage],
   )
 
   /* ---------------- chat subject ---------------- */
 
   const chatSubject = useMemo(() => {
-    if (!data) return { conversationId: 'living-palace:compound', context: { sheet_type: 'living_palace' } as Record<string, string> }
+    const base = { sheet_type: 'living_palace' } as Record<string, string>
+    if (!data) return { conversationId: 'living-palace:compound', context: base }
     if (current.layer === 'room') {
       return {
         conversationId: `living-palace:task:${current.taskId}`,
-        context: { sheet_type: 'living_palace', entity_type: 'task', entity_id: current.taskId },
+        context: {
+          ...base,
+          entity_type: 'task',
+          entity_id: current.taskId,
+          ...(stagedFocus ? { palace_focus: stagedFocus } : {}),
+        },
       }
     }
     if (current.layer === 'floor') {
       return {
         conversationId: `living-palace:project:${current.projectId}`,
-        context: { sheet_type: 'living_palace', entity_type: 'project', entity_id: current.projectId },
+        context: {
+          ...base,
+          entity_type: 'project',
+          entity_id: current.projectId,
+          ...(stagedFocus ? { palace_focus: stagedFocus } : {}),
+        },
       }
     }
     if (current.layer === 'building') {
       return {
         conversationId: `living-palace:initiative:${current.initiativeId}`,
-        context: { sheet_type: 'living_palace', entity_type: 'initiative', entity_id: current.initiativeId },
+        context: { ...base, entity_type: 'initiative', entity_id: current.initiativeId },
       }
     }
     if (selectedIdea) {
       return {
         conversationId: `living-palace:idea:${selectedIdea.id}`,
-        context: { sheet_type: 'living_palace', entity_type: 'idea', entity_id: selectedIdea.id },
+        context: { ...base, entity_type: 'idea', entity_id: selectedIdea.id },
       }
     }
-    return { conversationId: 'living-palace:compound', context: { sheet_type: 'living_palace' } as Record<string, string> }
-  }, [data, current, selectedIdea])
+    return { conversationId: 'living-palace:compound', context: base }
+  }, [data, current, selectedIdea, stagedFocus])
 
   /* ---------------- crumbs ---------------- */
 
@@ -802,35 +354,6 @@ export default function LivingPalaceView({
   }, [trail, data])
 
   /* ---------------- render ---------------- */
-
-  const thresholds = composeSubjectThresholds(subjectRead)
-  const vesselHeld = composeVesselHeld(subjectRead)
-  const pendingItems = composeSubjectPending(subjectRead)
-  const vesselDoorItems = vesselPending(subjectRead)
-  const openCandidacyReadingIds = new Set(vesselHeld.openReconsiderations.map((r) => r.reading_id))
-  const guestPanelSeat = panel?.kind === 'guest' ? subjectGuests.find((g) => g.seat === panel.seat) : undefined
-  const weighingConsequencesNow = useMemo(
-    () => (data && weighing ? weighingConsequences(data, weighing.baseline, weighing.figures) : []),
-    [data, weighing],
-  )
-  const weighingChangesNow = useMemo(
-    () => (data && weighing ? weighingChanges(data, weighing.baseline, weighing.figures) : null),
-    [data, weighing],
-  )
-  const keeperNameOf = useCallback(
-    (id: string | null) => data?.persons.find((p) => p.id === id)?.name ?? 'The keeper of this floor',
-    [data],
-  )
-  const setWeighingFigure =
-    (key: 'projectHours' | 'taskHours' | 'keeperCapacity') =>
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const v = parseFloat(e.target.value)
-      setWeighing((w) =>
-        w
-          ? { ...w, figures: { ...w.figures, [key]: Number.isFinite(v) && v >= 0 ? v : w.figures[key] } }
-          : w,
-      )
-    }
 
   const left = (
     <div className="flex h-full flex-col bg-[#f7f1e3]">
@@ -874,26 +397,27 @@ export default function LivingPalaceView({
                 {unnestedFloor ? 'Nest the subtasks' : 'Un-nest the subtasks'}
               </button>
             )}
-            {(current.layer === 'floor' || current.layer === 'room') && (
-              <button
-                type="button"
-                data-testid="palace-boundaries-button"
-                className="rounded-full border border-[#c9b995] bg-white/60 px-2.5 py-1 text-xs text-[#4a3f30]"
-                onClick={() => void openBoundaries()}
-              >
-                Boundaries
-              </button>
-            )}
           </span>
         </div>
         {selectedIdea && current.layer === 'compound' && (
           <p className="mt-1 text-xs text-[#6b5b45]">
             On the drawing table: <span className="font-semibold text-[#4a3f30]">{selectedIdea.title}</span> — Maeve has
             it in view.{' '}
-            <button type="button" className="underline decoration-dotted" onClick={() => setPanel({ kind: 'idea', ideaId: selectedIdea.id })}>
-              Read it
-            </button>{' '}
             <button type="button" className="underline decoration-dotted" onClick={() => setSelectedIdeaId(null)}>
+              Set it down
+            </button>
+          </p>
+        )}
+        {stagedFocus && (
+          <p data-testid="palace-staged-line" className="mt-1 text-xs text-[#6b5b45]">
+            Staged with Maeve: <span className="font-semibold text-[#4a3f30]">{focusLabel(stagedFocus)}</span> — it
+            rides into her conversation while it stands here; a tap settles nothing.{' '}
+            <button
+              type="button"
+              data-testid="palace-staged-clear"
+              className="underline decoration-dotted"
+              onClick={() => setStagedFocus(null)}
+            >
               Set it down
             </button>
           </p>
@@ -915,7 +439,10 @@ export default function LivingPalaceView({
             onOpenBuilding={openBuilding}
             onOpenProject={openProject}
             onOpenTask={openTask}
-            onSelectIdea={(id) => setSelectedIdeaId(id)}
+            onSelectIdea={(id) => {
+              setSelectedIdeaId(id)
+              setStagedFocus(null)
+            }}
             selectedIdeaId={selectedIdeaId}
           />
         )}
@@ -931,12 +458,10 @@ export default function LivingPalaceView({
           <FloorScene
             model={floor}
             guests={subjectGuestSeats}
-            onGuest={(seat) => setPanel({ kind: 'guest', seat })}
+            onGuest={(seat) => setGuestDoorSeat(seat)}
             onOpenRoom={openTask}
-            onThreshold={() => void openBoundaries()}
-            onScales={() => {
-              if (floor.scalesFigures && floorProject) openWeighing(floorProject, null)
-            }}
+            onThreshold={() => stage('threshold')}
+            onScales={() => stage('scales')}
           />
         )}
         {data && room && current.layer === 'room' && (
@@ -945,581 +470,57 @@ export default function LivingPalaceView({
             lit={roomLit}
             onBringFire={() => {
               setRoomLit(true)
-              say(
-                'The fire is lit — in the colours of the council, as every fire here burns. Warmth here is presence, not a record: it marks that you are attending to this room, nothing more.',
-              )
+              stage('hearth')
             }}
-            onThreshold={() => void openBoundaries()}
+            onThreshold={() => stage('threshold')}
             onOpenWaitedOn={openTask}
             onFurniture={onRoomFurniture}
             onOpenSubtask={openTask}
             vesselGold={subjectRead?.kintsugi?.restoration_of_understanding ?? false}
             guests={subjectGuestSeats}
-            onGuest={(seat) => setPanel({ kind: 'guest', seat })}
+            onGuest={(seat) => setGuestDoorSeat(seat)}
           />
-        )}
-        {toast && (
-          <div
-            key={toast.id}
-            data-testid="palace-toast"
-            className="pointer-events-none absolute inset-x-6 bottom-5 rounded-xl bg-[#4a3f30]/92 px-4 py-3 text-center text-[13px] leading-relaxed text-[#f7f1e3] shadow-lg"
-          >
-            {toast.text}
-          </div>
         )}
       </div>
 
-      {panel?.kind === 'boundaries' && (
-        <div data-testid="palace-boundaries-panel" className="max-h-[46%] overflow-y-auto border-t border-[#e3d5b8] bg-[#fffaf0] px-4 py-3 text-sm text-[#4a3f30]">
-          <div className="flex items-baseline justify-between">
-            <h3 className="font-semibold">Boundaries — what the record holds</h3>
-            <button type="button" className="text-xs underline decoration-dotted" onClick={() => setPanel(null)}>
-              Close
-            </button>
-          </div>
-          {boundaryLoading && <p className="mt-2 text-[#6b5b45]">Gathering what is recorded…</p>}
-          {thresholds.hasSubjectMaterial && (
-            <div className="mt-2 space-y-3 border-b border-[#e3d5b8] pb-3 leading-relaxed">
-              <p className="font-medium">At this {layerNoun}'s own threshold</p>
-              {thresholds.proposed.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[#8a7a5c]">
-                    Proposed — readings, in pencil
-                  </p>
-                  <ul className="mt-1 space-y-1.5">
-                    {thresholds.proposed.map((item) => (
-                      <li key={item.reading_id} className="italic text-[#8a7a5c]">
-                        {item.author_name}
-                        {item.status === 'accepted' ? ' (a reading you accepted)' : ''}:{' '}
-                        {[...item.tensions, ...item.open_questions].join(' · ')}
-                        {item.status === 'accepted' &&
-                          (openCandidacyReadingIds.has(item.reading_id) ? (
-                            <span className="mt-1 block text-xs not-italic text-[#6b5b45]">
-                              A request to look again already rests on this reading.
-                            </span>
-                          ) : (
-                            <span className="mt-1 block">
-                              <ReconsiderAsk readingId={item.reading_id} onSubmit={runReconsider} />
-                            </span>
-                          ))}
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="mt-1 text-xs not-italic text-[#6b5b45]">
-                    A reading is an interpretation offered, not a boundary established. Placement at this door is
-                    offered only this way — in pencil — until you settle it yourself.
-                  </p>
-                </div>
-              )}
-              {thresholds.established.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[#8a7a5c]">Established</p>
-                  <ul className="mt-1 list-inside list-disc text-[#6b5b45]">
-                    {thresholds.established.map((item, i) =>
-                      item.source === 'decision' ? (
-                        <li key={i}>A decision stands recorded here — {item.decision_type?.replace(/_/g, ' ')}</li>
-                      ) : (
-                        <li key={i}>A commitment you made: {item.text}</li>
-                      ),
-                    )}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
-          {pendingItems.length > 0 && (
-            <div
-              data-testid="palace-pending-section"
-              className="mt-2 space-y-2 border-b border-[#e3d5b8] pb-3 leading-relaxed"
+      {guestDoor && (
+        <div
+          data-testid="palace-guest-strip"
+          className="flex flex-wrap items-center gap-2 border-t border-[#e3d5b8] bg-[#fffaf0] px-4 py-2.5 text-sm text-[#4a3f30]"
+        >
+          <span className="font-semibold">{GUEST_OBJECTS[guestDoor.seat]?.label}</span>
+          <span className="ml-auto flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-testid="palace-guest-explore"
+              className={DOOR_BUTTON}
+              onClick={() => stage(`guest:${guestDoor.seat}`)}
             >
-              <p className="font-medium">Undecided — resting at this {layerNoun}’s threshold</p>
-              <p className="text-xs text-[#6b5b45]">
-                These are the Steward’s proposals naming this {layerNoun}, in pencil, with what grounds them.
-                They rest here until you rule — resting is a legitimate state, and nothing here is a task.
-              </p>
-              <PendingList
-                items={pendingItems}
-                place="threshold"
-                busyId={reviewBusyId}
-                exploreOpenFor={exploreOpenFor}
-                onToggleExplore={setExploreOpenFor}
-                onAct={(item, act) => void runReviewAct(item, act)}
-                onExplore={(item, key) => void runExplore(item, key)}
-              />
-            </div>
-          )}
-          {boundaryModel && (
-            <div className="mt-2 space-y-3 leading-relaxed">
-              {(boundaryModel.nonNegotiables || boundaryModel.strandBoundaries.length > 0) && (
-                <p className="text-xs font-semibold uppercase tracking-wide text-[#8a7a5c]">Expressed</p>
-              )}
-              {boundaryModel.nonNegotiables && (
-                <div>
-                  <p className="font-medium">Declared in your core profile</p>
-                  <p className="whitespace-pre-wrap text-[#6b5b45]">{boundaryModel.nonNegotiables}</p>
-                  <p className="text-xs text-[#6b5b45]">
-                    The Palace holds these as existing — it does not place them at any particular door. Placement is
-                    yours to make.
-                  </p>
-                </div>
-              )}
-              {boundaryModel.strandBoundaries.map((set) => (
-                <div key={set.strandKey}>
-                  <p className="font-medium">{set.strandName} — topics you have bounded</p>
-                  <ul className="list-inside list-disc text-[#6b5b45]">
-                    {set.topics.map((topic) => (
-                      <li key={topic}>{topic}</li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-              {boundaryModel.permissionGroups.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-[#8a7a5c]">Enforceable</p>
-                  <p className="font-medium">Your permission state</p>
-                  <ul className="list-inside list-disc text-[#6b5b45]">
-                    {boundaryModel.permissionGroups.map((g) => (
-                      <li key={g.id}>
-                        {g.id.replace(/_/g, ' ')} — {g.state.replace(/_/g, ' ')}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {!boundaryModel.hasAnyRecord && (
-                <p className="text-[#6b5b45]">
-                  Nothing is recorded yet — no declared non-negotiables, no bounded topics, no permission state served
-                  to this surface.
-                </p>
-              )}
-              <p className="border-t border-[#e3d5b8] pt-2 text-[#6b5b45]">
-                No boundary is recorded against this room itself — the per-subject boundary record does not exist yet,
-                and Maeve will not invent one. She can discover and examine boundaries with you; establishing them
-                stays yours. Talk it through with her — she is right there.
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {panel?.kind === 'held' && room && (
-        <div data-testid="palace-held-panel" className="max-h-[46%] overflow-y-auto border-t border-[#e3d5b8] bg-[#fffaf0] px-4 py-3 text-sm text-[#4a3f30]">
-          <div className="flex items-baseline justify-between">
-            <h3 className="font-semibold">What this room holds — {room.task.title}</h3>
-            <button type="button" className="text-xs underline decoration-dotted" onClick={() => setPanel(null)}>
-              Close
+              Explore it here with Maeve
             </button>
-          </div>
-          {room.held && (
-            <div className="mt-2 space-y-2 leading-relaxed">
-              {room.held.description.trim() && (
-                <p>
-                  <span className="font-medium">Description.</span>{' '}
-                  <span className="whitespace-pre-wrap">{room.held.description}</span>
-                </p>
-              )}
-              {room.held.notes.trim() && (
-                <p>
-                  <span className="font-medium">Notes.</span> <span className="whitespace-pre-wrap">{room.held.notes}</span>
-                </p>
-              )}
-              {room.held.criteria.trim() && (
-                <p>
-                  <span className="font-medium">Done when.</span>{' '}
-                  <span className="whitespace-pre-wrap">{room.held.criteria}</span>
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {panel?.kind === 'vessel' && room && (
-        <div data-testid="palace-vessel-panel" className="max-h-[46%] overflow-y-auto border-t border-[#e3d5b8] bg-[#fffaf0] px-4 py-3 text-sm text-[#4a3f30]">
-          <div className="flex items-baseline justify-between">
-            <h3 className="font-semibold">The Kintsugi vessel — {room.task.title}</h3>
-            <button type="button" className="text-xs underline decoration-dotted" onClick={() => setPanel(null)}>
-              Close
-            </button>
-          </div>
-          <div className="mt-2 space-y-3 leading-relaxed">
-            {vesselHeld.restorationOfUnderstanding && (
-              <p className="border-l-2 border-[#d4af37] pl-3" data-testid="palace-vessel-seam-note">
-                The gold seam: a reading of this room was reconsidered, and the correction stands accepted. The
-                gold marks the corrected reading — an understanding restored. It does not claim the thing itself
-                is mended.
-              </p>
-            )}
-            {vesselHeld.openQuestions.length > 0 && (
-              <div>
-                <p className="font-medium">Open questions Maeve holds for this room</p>
-                <ul className="mt-1 space-y-1 italic text-[#8a7a5c]">
-                  {vesselHeld.openQuestions.map((q, i) => (
-                    <li key={i}>{q.text}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {vesselHeld.tensions.length > 0 && (
-              <div>
-                <p className="font-medium">Tensions she holds open</p>
-                <ul className="mt-1 space-y-1 italic text-[#8a7a5c]">
-                  {vesselHeld.tensions.map((t, i) => (
-                    <li key={i}>{t.text}</li>
-                  ))}
-                </ul>
-                <p className="mt-1 text-xs text-[#6b5b45]">
-                  A tension held is not damage done — it is a question that has not finished. The vessel does not
-                  crack for it.
-                </p>
-              </div>
-            )}
-            {vesselHeld.openReconsiderations.length > 0 && (
-              <div>
-                <p className="font-medium">Up for reconsideration</p>
-                <ul className="mt-1 space-y-1 italic text-[#8a7a5c]">
-                  {vesselHeld.openReconsiderations.map((r, i) => (
-                    <li key={i}>A reading of this room is up for reconsideration{r.reason ? ` — ${r.reason}` : ''}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {vesselDoorItems.length > 0 && (
-              <div data-testid="palace-vessel-pending">
-                <p className="font-medium">Undecided, resting at the vessel</p>
-                <p className="text-xs text-[#6b5b45]">
-                  Readings and requests to look again, naming this room. They rest in pencil until you rule —
-                  ruling is yours alone, and leaving them resting is a ruling the record honours.
-                </p>
-                <PendingList
-                  items={vesselDoorItems}
-                  place="vessel"
-                  busyId={reviewBusyId}
-                  exploreOpenFor={exploreOpenFor}
-                  onToggleExplore={setExploreOpenFor}
-                  onAct={(item, act) => void runReviewAct(item, act)}
-                  onExplore={(item, key) => void runExplore(item, key)}
-                />
-              </div>
-            )}
-            {vesselHeld.acceptedReadings.length > 0 && (
-              <div data-testid="palace-vessel-reconsider">
-                <p className="font-medium">Readings standing accepted here</p>
-                <ul className="mt-1 space-y-2">
-                  {vesselHeld.acceptedReadings.map((reading) => (
-                    <li key={reading.reading_id}>
-                      <span className="italic text-[#8a7a5c]">{reading.label}</span>
-                      {openCandidacyReadingIds.has(reading.reading_id) ? (
-                        <span className="mt-1 block text-xs text-[#6b5b45]">
-                          A request to look again already rests on this reading — it waits at this room’s
-                          threshold for your word on the asking itself.
-                        </span>
-                      ) : (
-                        <span className="mt-1 block">
-                          <ReconsiderAsk readingId={reading.reading_id} onSubmit={runReconsider} />
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-                <p className="mt-1 text-xs text-[#6b5b45]">
-                  Asking does not unsettle the reading: it stands accepted, word for word, until a correction
-                  you accept takes its place. And disagreement spoken to Maeve in conversation stays
-                  conversation — nothing said there is made formal here.
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {panel?.kind === 'weighing' && weighing && data && (
-        <div data-testid="palace-weighing-panel" className="max-h-[46%] overflow-y-auto border-t border-[#e3d5b8] bg-[#fffaf0] px-4 py-3 text-sm text-[#4a3f30]">
-          <div className="flex items-baseline justify-between">
-            <h3 className="font-semibold">
-              The scales — {weighing.baseline.task ? weighing.baseline.task.title : weighing.baseline.project?.title}
-            </h3>
-            <button type="button" className="text-xs underline decoration-dotted" onClick={closeWeighing}>
-              Close
-            </button>
-          </div>
-          <div className="mt-2 space-y-3 leading-relaxed">
-            <p className="text-xs text-[#6b5b45]">
-              A weighing changes nothing in the record. Move the figures and watch where the balance lies; only
-              settling writes them down, and closing the scales keeps nothing of the arrangement.
-            </p>
-            {weighing.baseline.task && (
-              <label className="block">
-                <span className="font-medium">This room’s estimate</span>
-                <span className="mt-1 flex items-center gap-2">
-                  <input
-                    data-testid="palace-weighing-task-hours"
-                    type="number"
-                    min={0}
-                    step={0.5}
-                    value={weighing.figures.taskHours ?? ''}
-                    onChange={setWeighingFigure('taskHours')}
-                    className="w-24 rounded-lg border border-[#c9b995] bg-white/80 px-2 py-1 text-sm text-[#4a3f30]"
-                  />
-                  <span className="text-xs text-[#6b5b45]">
-                    hours · as recorded: {weighing.baseline.figures.taskHours}h
-                  </span>
-                </span>
-              </label>
-            )}
-            {weighing.baseline.project && (
-              <label className="block">
-                <span className="font-medium">This floor asks, each week</span>
-                <span className="mt-1 flex items-center gap-2">
-                  <input
-                    data-testid="palace-weighing-project-hours"
-                    type="number"
-                    min={0}
-                    step={0.5}
-                    disabled={!weighing.baseline.adjustable.projectHours}
-                    value={weighing.figures.projectHours ?? ''}
-                    onChange={setWeighingFigure('projectHours')}
-                    className="w-24 rounded-lg border border-[#c9b995] bg-white/80 px-2 py-1 text-sm text-[#4a3f30] disabled:opacity-50"
-                  />
-                  <span className="text-xs text-[#6b5b45]">
-                    {weighing.baseline.adjustable.projectHours
-                      ? `hours · as recorded: ${weighing.baseline.figures.projectHours}h`
-                      : 'no weekly figure is recorded for this floor — there is nothing to place on this pan'}
-                  </span>
-                </span>
-              </label>
-            )}
-            {weighing.baseline.project && weighing.baseline.adjustable.keeper && (
-              <label className="block">
-                <span className="font-medium">Who keeps this floor</span>
-                <span className="mt-1 flex items-center gap-2">
-                  <select
-                    data-testid="palace-weighing-keeper"
-                    value={weighing.figures.keeperId ?? ''}
-                    onChange={(e) => {
-                      const id = e.target.value
-                      if (!id) return
-                      setWeighing((w) =>
-                        w ? { ...w, figures: weighingWithKeeper(data, w.figures, id) } : w,
-                      )
-                    }}
-                    className="rounded-lg border border-[#c9b995] bg-white/80 px-2 py-1 text-sm text-[#4a3f30]"
-                  >
-                    {weighing.baseline.keeperCandidates.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-xs text-[#6b5b45]">
-                    as recorded: {keeperNameOf(weighing.baseline.figures.keeperId)}
-                  </span>
-                </span>
-              </label>
-            )}
-            {weighing.baseline.project &&
-              weighing.figures.keeperId &&
-              (recordedCapacityFor(data, weighing.figures.keeperId) != null ? (
-                <label className="block">
-                  <span className="font-medium">{keeperNameOf(weighing.figures.keeperId)}’s weekly capacity</span>
-                  <span className="mt-1 flex items-center gap-2">
-                    <input
-                      data-testid="palace-weighing-capacity"
-                      type="number"
-                      min={0}
-                      step={0.5}
-                      value={weighing.figures.keeperCapacity ?? ''}
-                      onChange={setWeighingFigure('keeperCapacity')}
-                      className="w-24 rounded-lg border border-[#c9b995] bg-white/80 px-2 py-1 text-sm text-[#4a3f30]"
-                    />
-                    <span className="text-xs text-[#6b5b45]">
-                      hours · as recorded: {recordedCapacityFor(data, weighing.figures.keeperId)}h
-                    </span>
-                  </span>
-                </label>
-              ) : (
-                <p className="text-xs text-[#6b5b45]">
-                  No capacity is recorded for {keeperNameOf(weighing.figures.keeperId)} — that side of the scales
-                  stands empty, and nothing is invented to fill it.
-                </p>
-              ))}
-            {weighingConsequencesNow.length > 0 && (
-              <div>
-                <p className="font-medium">Where the balance lies</p>
-                <ul className="mt-1 space-y-1.5">
-                  {weighingConsequencesNow.map((c) => (
-                    <li key={c.arranged.personId}>
-                      <p>{pictureLine(c.arranged)}</p>
-                      {!samePicture(c.arranged, c.recorded) && (
-                        <p className="text-xs text-[#6b5b45]">As recorded: {pictureLine(c.recorded)}</p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  data-testid="palace-weighing-stash"
-                  className={PANEL_BUTTON}
-                  disabled={sameFigures(weighing.figures, weighing.baseline.figures)}
-                  onClick={() =>
-                    setWeighing((w) =>
-                      w
-                        ? {
-                            ...w,
-                            alternatives: [
-                              ...w.alternatives,
-                              { label: `Arrangement ${w.alternatives.length + 1}`, figures: w.figures },
-                            ],
-                          }
-                        : w,
-                    )
-                  }
-                >
-                  Keep this arrangement
-                </button>
-                <button
-                  type="button"
-                  data-testid="palace-weighing-reset"
-                  className={PANEL_BUTTON}
-                  disabled={sameFigures(weighing.figures, weighing.baseline.figures)}
-                  onClick={() =>
-                    setWeighing((w) => (w ? { ...w, figures: w.baseline.figures } : w))
-                  }
-                >
-                  Return to the recorded figures
-                </button>
-              </div>
-              {weighing.alternatives.map((alt, i) => {
-                const parts: string[] = []
-                if (weighing.baseline.task && alt.figures.taskHours != null) {
-                  parts.push(`room ${alt.figures.taskHours}h`)
-                }
-                if (weighing.baseline.project && alt.figures.projectHours != null) {
-                  parts.push(`floor asks ${alt.figures.projectHours}h a week`)
-                }
-                if (alt.figures.keeperId) parts.push(`${keeperNameOf(alt.figures.keeperId)} keeps it`)
-                if (alt.figures.keeperCapacity != null) parts.push(`capacity ${alt.figures.keeperCapacity}h`)
-                return (
-                  <div key={i} className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-[#6b5b45]">
-                    <span>
-                      <span className="font-medium text-[#4a3f30]">{alt.label}</span> — {parts.join(' · ')}
-                    </span>
-                    <button
-                      type="button"
-                      data-testid={`palace-weighing-restore-${i}`}
-                      className="underline decoration-dotted"
-                      onClick={() => setWeighing((w) => (w ? { ...w, figures: alt.figures } : w))}
-                    >
-                      Return to it
-                    </button>
-                    <button
-                      type="button"
-                      data-testid={`palace-weighing-drop-${i}`}
-                      className="underline decoration-dotted"
-                      onClick={() =>
-                        setWeighing((w) =>
-                          w ? { ...w, alternatives: w.alternatives.filter((_, j) => j !== i) } : w,
-                        )
-                      }
-                    >
-                      Set aside
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-            <div className="border-t border-[#e3d5b8] pt-2">
+            {guestDoor.seat === 'ambassador' ? (
+              <span className="text-xs text-[#6b5b45]">
+                Lucian has no world of his own yet — his cup is explored here, with Maeve.
+              </span>
+            ) : onFollowGuest ? (
               <button
                 type="button"
-                data-testid="palace-weighing-settle"
-                className={PANEL_BUTTON}
-                disabled={!weighingChangesNow?.changed || settling}
-                onClick={() => void runSettle()}
+                data-testid="palace-guest-follow"
+                className={DOOR_BUTTON}
+                onClick={() => onFollowGuest(guestDoor.seat)}
               >
-                {settling ? 'Settling…' : 'Settle these figures into the record'}
+                Follow it into {guestDoor.seat_name}'s world
               </button>
-              <p className="mt-1 text-xs text-[#6b5b45]">
-                Settling writes the figures through the house’s own records, and keeps the weighing as a decision —
-                the arrangement explored, the figures settled, and the recorded figures they replaced.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {panel?.kind === 'guest' && guestPanelSeat && (
-        <div data-testid="palace-guest-panel" className="max-h-[46%] overflow-y-auto border-t border-[#e3d5b8] bg-[#fffaf0] px-4 py-3 text-sm text-[#4a3f30]">
-          <div className="flex items-baseline justify-between">
-            <h3 className="font-semibold">{GUEST_OBJECTS[guestPanelSeat.seat]?.label}</h3>
-            <button type="button" className="text-xs underline decoration-dotted" onClick={() => setPanel(null)}>
+            ) : null}
+            <button
+              type="button"
+              data-testid="palace-guest-close"
+              className="text-xs underline decoration-dotted"
+              onClick={() => setGuestDoorSeat(null)}
+            >
               Close
             </button>
-          </div>
-          <div className="mt-2 space-y-2 leading-relaxed">
-            {guestPanelSeat.via.includes('reading') && (
-              <p>
-                {guestPanelSeat.seat_name} has a reading on this {layerNoun}.
-              </p>
-            )}
-            {guestPanelSeat.via.includes('conversation') && (
-              <p>
-                {guestPanelSeat.seat_name} has spoken of this {layerNoun} in conversation.
-              </p>
-            )}
-            <p className="text-[#6b5b45]">
-              The material itself stays in {guestPanelSeat.seat_name}'s keeping — none of it is copied into the
-              Palace. It stands here by attribution, and there are two doors.
-            </p>
-            <div className="flex flex-wrap gap-2 pt-1">
-              <button
-                type="button"
-                data-testid="palace-guest-explore"
-                className="rounded-full border border-[#c9b995] bg-white/60 px-3 py-1.5 text-xs text-[#4a3f30]"
-                onClick={() => {
-                  setPanel(null)
-                  say(
-                    `This ${layerNoun} is Maeve's subject here — ask her about ${guestPanelSeat.seat_name}'s part in it, and it rides into her conversation from where you stand.`,
-                  )
-                }}
-              >
-                Explore it here with Maeve
-              </button>
-              {guestPanelSeat.seat === 'ambassador' ? (
-                <span className="text-xs text-[#6b5b45]">
-                  Lucian has no world of his own yet — his cup is explored here, with Maeve.
-                </span>
-              ) : onFollowGuest ? (
-                <button
-                  type="button"
-                  data-testid="palace-guest-follow"
-                  className="rounded-full border border-[#c9b995] bg-white/60 px-3 py-1.5 text-xs text-[#4a3f30]"
-                  onClick={() => onFollowGuest(guestPanelSeat.seat)}
-                >
-                  Follow it into {guestPanelSeat.seat_name}'s world
-                </button>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {panel?.kind === 'idea' && selectedIdea && (
-        <div data-testid="palace-idea-panel" className="max-h-[46%] overflow-y-auto border-t border-[#e3d5b8] bg-[#fffaf0] px-4 py-3 text-sm text-[#4a3f30]">
-          <div className="flex items-baseline justify-between">
-            <h3 className="font-semibold">{selectedIdea.title}</h3>
-            <button type="button" className="text-xs underline decoration-dotted" onClick={() => setPanel(null)}>
-              Close
-            </button>
-          </div>
-          <p className="mt-1 text-xs text-[#6b5b45]">
-            An undeveloped idea, resting on the drawing table · {selectedIdea.status}
-          </p>
-          {selectedIdea.summary.trim() && <p className="mt-2 whitespace-pre-wrap leading-relaxed">{selectedIdea.summary}</p>}
-          {selectedIdea.notes?.trim() && <p className="mt-2 whitespace-pre-wrap leading-relaxed">{selectedIdea.notes}</p>}
+          </span>
         </div>
       )}
     </div>
@@ -1532,6 +533,7 @@ export default function LivingPalaceView({
         initialArchetypeId="guardian"
         conversationId={chatSubject.conversationId}
         context={chatSubject.context}
+        onTurnSent={onTurnLanded}
       />
     </div>
   )

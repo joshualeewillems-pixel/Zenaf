@@ -43,6 +43,10 @@ from local_ai.conversation.meeting import (
     MeetingStore,
     MeetingValidationError,
 )
+from local_ai.conversation.palace_tails import (
+    default_palace_verdict_executor,
+    default_palace_weighing_executor,
+)
 from local_ai.conversation.service import ConversationService
 from local_ai.conversation.store import (
     ConversationIntegrityError,
@@ -144,6 +148,14 @@ def _service() -> ConversationService:
         # slice-dark deployment never touches the narrative DB
         # through this path.
         obligation_gate=default_obligation_gate(),
+        # Palace pass (chat-is-the-work): the guardian's
+        # conversational verdict + weighing executors. Consulted
+        # only at the request tail of a guardian Living Palace turn
+        # whose tails parsed; the verdict executor's NarrativeStore
+        # builds lazily on first execution, so other turns never
+        # touch the narrative DB through this path.
+        palace_verdict_executor=default_palace_verdict_executor(),
+        palace_weighing_executor=default_palace_weighing_executor(),
     )
 
 
@@ -172,6 +184,14 @@ class LiveContext(BaseModel):
     # design says must not break. The service pops the field from the
     # turn context before persistence; it is never stored.
     sketch_summary: str | None = None
+    # Palace tentative population (founder ruling 2026-11-25 13:56
+    # PT): the object a Palace tap staged in the chat, set ONLY by
+    # the Living Palace view for guardian turns. A tap writes
+    # nothing; the focus joins the ledger only through the sent
+    # turn's own context snapshot. Validated server-side on every
+    # turn against the closed focus kinds — an invalid value is
+    # scrubbed by the service, never honored, never a turn failure.
+    palace_focus: str | None = Field(default=None, max_length=64)
 
 
 class ConversationTurnBody(BaseModel):

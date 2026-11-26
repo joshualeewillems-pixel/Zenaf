@@ -98,10 +98,10 @@ describe('scene geometry scan', () => {
     expect(compound).toContain('palace-fire')
     // The building scene is Scene 2 (founder, 2026-11-26): plain
     // positioned DOM, not SVG — the founder's dome shell as the
-    // ground, floors as Apollonian circles nested in its cavity
-    // and the one hearth on its floor at the bottom centre, its
-    // flame the same founder image. No NaN / undefined geometry
-    // either.
+    // ground, floors as room-circles composed in its whole space
+    // under the packing rules and the one hearth on its floor at
+    // the bottom centre, its flame the same founder image. No
+    // NaN / undefined geometry either.
     const building = renderToHtml(React.createElement(BuildingScene, {
       model: buildBuilding(DATA, I1), attendedFloorId: 'p1', onAttend: () => {}, onOpenFloor: () => {},
     }))
@@ -115,5 +115,10 @@ describe('scene geometry scan', () => {
     // floor interiors are the founder's room plates (addendum
     // 2026-11-26 13:16 PT), assigned by size rank
     expect(building).toContain('palace-room-')
+    // no text rides the circles (the founder's ruling,
+    // 2026-11-26 14:03 PT: "Don't show the cards/tags/
+    // percentages") — no share/count plaque, no released tag
+    expect(building).not.toMatch(/\d+%\s*·/)
+    expect(building).not.toContain('· released')
   })
 })

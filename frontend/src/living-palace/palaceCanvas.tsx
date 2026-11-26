@@ -44,7 +44,7 @@ import {
   type SceneStructureInput,
   type SubjectInteraction,
 } from './palaceSceneLogic'
-import { CAVITY_CLIP_PATH, SCENE2_FRAME, planBuildingScene, type RoomPlate } from './palaceScene2Logic'
+import { CONTAINER_CLIP_PATH, SCENE2_FRAME, planBuildingScene, type RoomPlate } from './palaceScene2Logic'
 import { useTintedMaster } from './palaceTint'
 import planImage from './assets/palace-plan.jpg'
 import frontWallImage from './assets/palace-front-wall.png'
@@ -645,24 +645,29 @@ export function CompoundScene({
 /* Sky's plate — parchment sky, mountains, waterfalls, strata,       */
 /* imported not copied — is the scene's ground, and the shell        */
 /* (its white surround cut to alpha) stands in that landscape.       */
-/* and the composition stands inside its cavity under the placement  */
-/* law (palaceScene2Logic): each floor's AREA is its percentage      */
-/* share of the building's rooms, the composition fills the          */
-/* cavity with descending filler circles, and ONE hearth — the       */
-/* founder's flame in its stone ring — stands on the shell's floor   */
-/* at the bottom centre. Each floor circle's interior is one of the  */
-/* three unfurnished room plates, by size rank cycling rose →        */
-/* spiral → tiers (addendum 2026-11-26 13:16 PT), its name on a      */
-/* parchment plaque over the art. Plain positioned DOM throughout    */
+/* and the composition stands inside it under the packing rules     */
+/* (palaceScene2Logic; the founder's rules of 2026-11-26): the      */
+/* whole dome interior — wall cavity and floor together — is the     */
+/* space; each floor's AREA is its share of the building's rooms    */
+/* against that space's area, the whole set scaled together to      */
+/* the largest composition in which every circle still rests —      */
+/* on the floor, or nested in the pocket of the circles below       */
+/* it. Rooms only: no filler circles, and no text rides the         */
+/* circles (his ruling, 2026-11-26 14:03 PT: "Don't show the        */
+/* cards/tags/ percentages") — a circle is its room, and its        */
+/* identity travels through the chat. ONE hearth — the founder's    */
+/* flame in its stone ring — stands on the shell's floor at the     */
+/* bottom centre. Each floor circle's interior is one of the        */
+/* three unfurnished room plates, by size rank cycling rose →       */
+/* spiral → tiers (addendum 2026-11-26 13:16 PT), and the circles   */
+/* draw back-to-front by depth. Plain positioned DOM throughout     */
 /* (the Scene 1 lesson): no SVG transform stacks.                    */
 /*                                                                     */
 /* A tap does what it always did here: it descends into that         */
 /* floor, with the same chat subject carriage. A floor's earned      */
-/* balcony plant stands as a small marker on its circle's rim;       */
-/* a released floor keeps its word in its label, as the old          */
-/* hanging sign carried it. Filler circles and the hearth are        */
-/* not interactive. The scene writes nothing — the chat is           */
-/* the work.                                                           */
+/* balcony plant stands as a small marker on its circle's rim.       */
+/* The hearth is not interactive. The scene writes nothing —         */
+/* the chat is the work.                                             */
 /* ------------------------------------------------------------------ */
 
 /** The study's palette (build_study_v5.py), in the plates' tones. */
@@ -707,7 +712,7 @@ export function BuildingScene({
       ),
     [model],
   )
-  const placedByKey = new Map(layout.floors.map((p) => [p.key, p]))
+  const floorByKey = new Map(model.floors.map((f) => [f.project.id, f]))
   const { hearth } = layout
   return (
     <div style={{ containerType: 'inline-size' }} onMouseLeave={() => onAttend(null)}>
@@ -747,31 +752,21 @@ export function BuildingScene({
           className="absolute inset-0 block h-full w-full"
         />
 
-        {/* the composition, clipped to the cavity polygon —
-            belt-and-braces: the placement law's containment
-            already keeps every circle inside the cavity */}
-        <div className="absolute inset-0" style={{ clipPath: CAVITY_CLIP_PATH }}>
+        {/* the composition, clipped to the container's outline —
+            the whole space, floor included, so a room standing
+            on the floor is not cut at the cavity's back rim;
+            belt-and-braces: the packing law's containment
+            already keeps every circle inside the space */}
+        <div className="absolute inset-0" style={{ clipPath: CONTAINER_CLIP_PATH }}>
 
-        {/* the filler — descending circles closing the gaps */}
-        {layout.fillers.map((c, i) => (
-          <div
-            key={i}
-            className="pointer-events-none absolute rounded-full"
-            style={{
-              left: pct(c.x - c.r),
-              top: pct(c.y - c.r),
-              width: pct(2 * c.r),
-              aspectRatio: '1 / 1',
-              border: `1px solid ${SCENE2_RING_INNER}`,
-            }}
-          />
-        ))}
-
-        {/* the floors — one circle each, area = share of the rooms */}
-        {model.floors.map((floor) => {
-          const p = placedByKey.get(floor.project.id)!
+        {/* the floors — one circle each, area = share of the
+            rooms, drawn back-to-front by depth (bottom y + r
+            ascending: the front rooms paint last) */}
+        {[...layout.floors]
+          .sort((a, b) => a.y + a.r - (b.y + b.r))
+          .map((p) => {
+          const floor = floorByKey.get(p.key)!
           const attended = attendedFloorId === floor.project.id
-          const sharePct = Math.round(p.share * 100)
           return (
             <button
               key={floor.project.id}
@@ -814,36 +809,9 @@ export function BuildingScene({
                 className="pointer-events-none absolute rounded-full"
                 style={{ inset: '4.5%', border: `1px solid ${SCENE2_RING_INNER}` }}
               />
-              <span className="absolute inset-0 flex items-center justify-center px-[11%] text-center">
-                <span
-                  className="flex flex-col items-center"
-                  style={{
-                    background: 'rgba(247, 241, 227, 0.86)',
-                    border: `1px solid ${SCENE2_RING_INNER}`,
-                    borderRadius: 10,
-                    padding: '3px 8px 4px',
-                    maxWidth: '92%',
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: `max(1.3cqw, ${p.r * 0.0234}cqw)`,
-                      fontWeight: 600,
-                      color: PAL.ink,
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    {floor.project.title}
-                  </span>
-                  <span style={{ fontSize: `max(1.05cqw, ${p.r * 0.0186}cqw)`, color: PAL.inkSoft }}>
-                    {sharePct}% · {floor.roomCount} room{floor.roomCount === 1 ? '' : 's'}
-                    {floor.released ? ' · released' : ''}
-                  </span>
-                </span>
-              </span>
+              {/* no text rides the circle (the founder's ruling,
+                  2026-11-26 14:03 PT) — the room alone; its name
+                  travels through the chat and the button's label */}
               {/* the floor's balcony plant, earned by its rooms —
                   a small marker standing on the circle's rim (just
                   inside it: the button clips its interior now) */}

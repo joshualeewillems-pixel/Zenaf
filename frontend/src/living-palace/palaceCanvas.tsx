@@ -12,8 +12,10 @@
  * The compound layer is Scene 1 (founder, 2026-11-26): the
  * founder's own three-court plan art with the ivy buildings placed
  * by the ruled placement law — see the CompoundScene section and
- * palaceSceneLogic. The building / floor / room layers below are
- * unchanged.
+ * palaceSceneLogic. The building layer is Scene 2 (founder,
+ * 2026-11-26): the Apollonian circle — see the BuildingScene
+ * section and palaceScene2Logic. The floor / room layers below
+ * are unchanged.
  *
  * Surface rule: the scenes carry no legends, no vocabulary panels,
  * no explanations of themselves. What a tap reveals lives in the
@@ -42,6 +44,7 @@ import {
   type SceneStructureInput,
   type SubjectInteraction,
 } from './palaceSceneLogic'
+import { SCENE2_FRAME, planBuildingScene } from './palaceScene2Logic'
 import { useTintedMaster } from './palaceTint'
 import planImage from './assets/palace-plan.jpg'
 import frontWallImage from './assets/palace-front-wall.png'
@@ -627,8 +630,42 @@ export function CompoundScene({
 }
 
 /* ------------------------------------------------------------------ */
-/* building                                                            */
+/* building — Scene 2 (founder, 2026-11-26: "Great build it!")         */
+/*                                                                     */
+/* The building layer IS the Apollonian circle now: a cutaway of     */
+/* the dome — one great circle (sandstone rim, parchment disc)       */
+/* holding the building's floors as circles under the placement      */
+/* law (palaceScene2Logic): each floor's AREA is its percentage      */
+/* share of the building's rooms, the composition fills the          */
+/* circle with descending filler circles, and ONE hearth — the       */
+/* founder's flame in its stone ring — stands at the bottom          */
+/* centre. Plain positioned DOM throughout (the Scene 1 lesson):     */
+/* no SVG transform stacks, no per-element SVG images.               */
+/*                                                                     */
+/* A tap does what it always did here: it descends into that         */
+/* floor, with the same chat subject carriage. A floor's earned      */
+/* balcony plant stands as a small marker on its circle's rim;       */
+/* a released floor keeps its word in its label, as the old          */
+/* hanging sign carried it. Filler circles and the hearth are        */
+/* not interactive. The scene writes nothing — the chat is           */
+/* the work.                                                           */
 /* ------------------------------------------------------------------ */
+
+/** The study's palette (build_study_v5.py), in the plates' tones. */
+const SCENE2_RIM = '#c4a47a'
+const SCENE2_DISC = '#f3ead6'
+const SCENE2_CIRCLE = '#e7cda4'
+const SCENE2_RING = '#927046'
+const SCENE2_RING_INNER = '#b29268'
+const SCENE2_HEARTH_FILL = '#e2cfaa'
+
+/** The flame's height inside the hearth disc (frame units — the
+ *  study's 96 in its 1024 frame; aspect from the shipped asset,
+ *  as the compound's fire reads it). */
+const HEARTH_FLAME_H = 96
+const FLAME_ASPECT = 989 / 1530
+
+const pct = (units: number) => `${(units / SCENE2_FRAME) * 100}%`
 
 export function BuildingScene({
   model,
@@ -641,71 +678,162 @@ export function BuildingScene({
   onAttend: (projectId: string | null) => void
   onOpenFloor: (projectId: string) => void
 }) {
-  const W = 720
-  const storeyH = 98
-  const top = 118
-  const H = top + model.floors.length * storeyH + 56
-  const x = 84
-  const w = 552
+  const layout = useMemo(
+    () =>
+      planBuildingScene(
+        model.floors.map((f) => ({ key: f.project.id, roomCount: f.roomCount })),
+      ),
+    [model],
+  )
+  const placedByKey = new Map(layout.floors.map((p) => [p.key, p]))
+  const { hearth } = layout
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block" role="img" aria-label={`Inside ${model.initiative.title}`}>
-      <rect x={0} y={0} width={W} height={H} fill={PAL.sky} />
-      <rect x={0} y={H - 40} width={W} height={40} fill={PAL.ground} />
-      {/* roof seated on the wall lines */}
-      <path d={`M ${x - 14} ${top} L ${x + w / 2} ${top - 58} L ${x + w + 14} ${top} Z`} fill={PAL.roof} stroke={PAL.roofDark} strokeWidth={2} />
-      {model.floors.map((floor, i) => {
-        const y = top + i * storeyH
-        const lit = attendedFloorId === floor.project.id
-        return (
-          <g
-            key={floor.project.id}
-            data-testid={`palace-floor-${floor.project.id}`}
-            onClick={() => onOpenFloor(floor.project.id)}
-            onMouseEnter={() => onAttend(floor.project.id)}
-            onMouseLeave={() => onAttend(null)}
-            style={{ cursor: 'pointer' }}
-          >
-            <title>{floor.project.title}</title>
-            <rect x={x} y={y} width={w} height={storeyH} fill={i % 2 ? '#eee2cb' : PAL.wall} stroke={WALL_LINE} strokeWidth={2} />
-            {/* the floor's hearth, in the side wall's frame */}
-            <g transform={`translate(${x + w - 58} ${y + storeyH - 12})`}>
-              <HearthGlyph x={0} base={0} w={52} h={62} lit={lit} />
-            </g>
-            {/* the balcony ledge and what the floor's rooms earn onto it */}
-            <rect x={x + w - 128} y={y + storeyH - 10} width={120} height={6} fill={PAL.woodDark} />
-            {floor.plant && <PlantGlyph x={x + w - 108} base={y + storeyH - 10} state={floor.plant} scale={0.8} />}
-            {/* hanging sign: floor number, name, room count */}
-            <g transform={`translate(${x + 26} ${y + 16})`}>
-              <line x1={10} y1={-14} x2={10} y2={0} stroke={PAL.stoneDark} strokeWidth={2} />
-              <line x1={150} y1={-14} x2={150} y2={0} stroke={PAL.stoneDark} strokeWidth={2} />
-              <rect x={0} y={0} width={252} height={52} rx={4} fill={PAL.paper} stroke={PAL.stoneDark} />
-              <text x={12} y={21} fontSize={12.5} fontWeight={600} fill={PAL.ink}>
-                Floor {model.floors.length - i} · {floor.project.title.length > 26 ? `${floor.project.title.slice(0, 25)}…` : floor.project.title}
-              </text>
-              <text x={12} y={40} fontSize={11} fill={PAL.inkSoft}>
-                {floor.roomCount} room{floor.roomCount === 1 ? '' : 's'}
-                {floor.released ? ' · released' : ''}
-              </text>
-            </g>
-            {/* windows along the storey */}
-            {[0, 1, 2].map((wi) => (
-              <rect key={wi} x={x + 306 + wi * 52} y={y + 26} width={24} height={32} fill="#f6e7bd" stroke={WALL_LINE} />
-            ))}
-          </g>
-        )
-      })}
-      {model.floors.length === 0 && (
-        <text x={W / 2} y={top + 40} textAnchor="middle" fontSize={13} fill={PAL.inkSoft}>
-          No floors yet — no projects stand under this initiative.
-        </text>
-      )}
-      <text x={W / 2} y={30} textAnchor="middle" fontSize={16} fontWeight={600} fill={PAL.ink}>
-        {model.initiative.title}
-      </text>
-      <text x={W / 2} y={52} textAnchor="middle" fontSize={11.5} fill={PAL.inkSoft}>
-        each floor is one of its projects — tap a floor to walk it
-      </text>
-    </svg>
+    <div style={{ containerType: 'inline-size' }} onMouseLeave={() => onAttend(null)}>
+      <div className="pb-1 pt-2 text-center">
+        <div style={{ fontSize: '2.2cqw', fontWeight: 600, color: PAL.ink }}>
+          {model.initiative.title}
+        </div>
+        <div style={{ fontSize: '1.55cqw', color: PAL.inkSoft }}>
+          each floor is one of its projects — tap a floor to walk it
+        </div>
+      </div>
+
+      <div
+        className="relative w-full select-none"
+        style={{ aspectRatio: '1 / 1' }}
+        role="img"
+        aria-label={`Inside ${model.initiative.title}`}
+      >
+        {/* the great circle: sandstone rim, parchment disc */}
+        <div
+          className="absolute inset-0 rounded-full"
+          style={{ background: SCENE2_RIM }}
+        />
+        <div
+          className="absolute rounded-full"
+          style={{ inset: pct(16), background: SCENE2_DISC }}
+        />
+
+        {/* the filler — descending circles closing the gaps */}
+        {layout.fillers.map((c, i) => (
+          <div
+            key={i}
+            className="pointer-events-none absolute rounded-full"
+            style={{
+              left: pct(c.x - c.r),
+              top: pct(c.y - c.r),
+              width: pct(2 * c.r),
+              aspectRatio: '1 / 1',
+              border: `1px solid ${SCENE2_RING_INNER}`,
+            }}
+          />
+        ))}
+
+        {/* the floors — one circle each, area = share of the rooms */}
+        {model.floors.map((floor) => {
+          const p = placedByKey.get(floor.project.id)!
+          const attended = attendedFloorId === floor.project.id
+          const sharePct = Math.round(p.share * 100)
+          return (
+            <button
+              key={floor.project.id}
+              type="button"
+              data-testid={`palace-floor-${floor.project.id}`}
+              title={floor.project.title}
+              aria-label={floor.project.title}
+              onClick={() => onOpenFloor(floor.project.id)}
+              onMouseEnter={() => onAttend(floor.project.id)}
+              onMouseLeave={() => onAttend(null)}
+              className="absolute block cursor-pointer rounded-full p-0"
+              style={{
+                left: pct(p.x - p.r),
+                top: pct(p.y - p.r),
+                width: pct(2 * p.r),
+                aspectRatio: '1 / 1',
+                background: SCENE2_CIRCLE,
+                border: `${attended ? 3 : 2}px solid ${attended ? PAL.maeve : SCENE2_RING}`,
+                boxShadow: attended ? '0 0 0 3px rgba(172, 124, 91, 0.35)' : undefined,
+              }}
+            >
+              <span
+                className="pointer-events-none absolute rounded-full"
+                style={{ inset: '4.5%', border: `1px solid ${SCENE2_RING_INNER}` }}
+              />
+              <span className="absolute inset-0 flex flex-col items-center justify-center px-[11%] text-center">
+                <span
+                  style={{
+                    fontSize: `max(1.3cqw, ${p.r * 0.0234}cqw)`,
+                    fontWeight: 600,
+                    color: PAL.ink,
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {floor.project.title}
+                </span>
+                <span style={{ fontSize: `max(1.05cqw, ${p.r * 0.0186}cqw)`, color: PAL.inkSoft }}>
+                  {sharePct}% · {floor.roomCount} room{floor.roomCount === 1 ? '' : 's'}
+                  {floor.released ? ' · released' : ''}
+                </span>
+              </span>
+              {/* the floor's balcony plant, earned by its rooms —
+                  a small marker standing on the circle's rim */}
+              {floor.plant && (
+                <span
+                  className="pointer-events-none absolute"
+                  style={{ left: '50%', top: 0, width: '18%', transform: 'translate(-50%, -32%)' }}
+                >
+                  <svg viewBox="-20 -40 40 42" className="block h-auto w-full" aria-hidden>
+                    <PlantGlyph x={0} base={0} state={floor.plant} scale={0.8} />
+                  </svg>
+                </span>
+              )}
+            </button>
+          )
+        })}
+
+        {/* the hearth — one per building, at the bottom centre:
+            the founder's flame in its stone ring */}
+        <div
+          data-testid="palace-building-hearth"
+          className="pointer-events-none absolute rounded-full"
+          style={{
+            left: pct(hearth.x - hearth.r),
+            top: pct(hearth.y - hearth.r),
+            width: pct(2 * hearth.r),
+            aspectRatio: '1 / 1',
+            background: SCENE2_HEARTH_FILL,
+            border: `2px solid ${SCENE2_RING}`,
+          }}
+        >
+          <span
+            className="absolute rounded-full"
+            style={{ inset: '11%', border: `1px solid ${SCENE2_RING_INNER}` }}
+          />
+        </div>
+        <img
+          src={fireImage}
+          alt=""
+          draggable={false}
+          className="pointer-events-none absolute block"
+          style={{
+            left: pct(hearth.x - (HEARTH_FLAME_H * FLAME_ASPECT) / 2),
+            bottom: pct(SCENE2_FRAME - (hearth.y + hearth.r - 8)),
+            width: pct(HEARTH_FLAME_H * FLAME_ASPECT),
+          }}
+        />
+
+        {model.floors.length === 0 && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <span style={{ fontSize: '1.8cqw', color: PAL.inkSoft }}>
+              No floors yet — no projects stand under this initiative.
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 

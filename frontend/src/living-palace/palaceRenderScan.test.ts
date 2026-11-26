@@ -2,9 +2,11 @@
 /**
  * Geometry sanity scan (throwaway-grade gate, kept because it is
  * cheap): render all four Palace scenes from a fixture body of work
- * and assert the serialized SVG carries no NaN / undefined / broken
- * coordinates — the failure mode jsdom cannot see by painting. True
- * on-device painting remains the founder's visual acceptance.
+ * and assert the serialized output carries no NaN / undefined /
+ * broken coordinates — the failure mode jsdom cannot see by
+ * painting. (The compound and building scenes are positioned DOM
+ * since Scenes 1 and 2; the floor and room scenes remain SVG.)
+ * True on-device painting remains the founder's visual acceptance.
  */
 import { describe, it, expect } from 'vitest'
 import * as React from 'react'
@@ -68,9 +70,6 @@ describe('scene geometry scan', () => {
         onAttend: () => {}, onOpenBuilding: () => {}, onOpenProject: () => {}, onOpenTask: () => {},
         onSelectIdea: () => {}, selectedIdeaId: null,
       }))],
-      ['building', renderToHtml(React.createElement(BuildingScene, {
-        model: buildBuilding(DATA, I1), attendedFloorId: 'p1', onAttend: () => {}, onOpenFloor: () => {},
-      }))],
       ['floor', renderToHtml(React.createElement(FloorScene, {
         model: buildFloor(DATA, P1, { unnested: true }), onOpenRoom: () => {}, onThreshold: () => {}, onScales: () => {},
       }))],
@@ -97,5 +96,17 @@ describe('scene geometry scan', () => {
     // the lotus — an image, not the SVG council flames.
     const compound = scenes[0][1]
     expect(compound).toContain('palace-fire')
+    // The building scene is Scene 2 (founder, 2026-11-26): plain
+    // positioned DOM, not SVG — floors as Apollonian circles and
+    // the one hearth at the bottom centre, its flame the same
+    // founder image. No NaN / undefined geometry either.
+    const building = renderToHtml(React.createElement(BuildingScene, {
+      model: buildBuilding(DATA, I1), attendedFloorId: 'p1', onAttend: () => {}, onOpenFloor: () => {},
+    }))
+    expect(building.length, 'building').toBeGreaterThan(800)
+    expect(building, 'building').not.toMatch(/NaN|undefined/)
+    expect(building).toContain('palace-floor-p1')
+    expect(building).toContain('palace-building-hearth')
+    expect(building).toContain('palace-fire')
   })
 })

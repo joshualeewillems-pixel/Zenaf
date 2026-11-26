@@ -167,10 +167,12 @@ describe('Scene 1 harness render', () => {
     // The build tree's cubby clusters: head + 3 shown of its nest.
     const build = container.querySelector('[data-cubby="initiative:i-build"]')
     expect(build!.querySelectorAll('[data-scroll]')).toHaveLength(4)
-    // The fabric stands: the four soft depth bands for each of the
-    // 230 rhombs, and one wooden frame image laid on every rhomb.
-    expect(scene!.querySelectorAll('polygon').length).toBe(920)
-    expect(scene!.querySelectorAll('image[transform^="matrix"]').length).toBe(230)
+    // The fabric stands as ONE image — the frozen builder's own
+    // raster — and no per-rhomb drawing of any kind stands in for
+    // it (no polygons, no transformed frame images).
+    expect(scene!.querySelectorAll('[data-testid="scene-fabric"]')).toHaveLength(1)
+    expect(scene!.querySelectorAll('polygon')).toHaveLength(0)
+    expect(scene!.querySelectorAll('image[transform^="matrix"]')).toHaveLength(0)
 
     const outRoom = process.env.SCENE_HARNESS_OUT ?? '/tmp/scene-one-room.html'
     writeFileSync(outRoom, standalone(inlineAssets(scene!.outerHTML), 'Scene 1 — the room'))
@@ -199,8 +201,8 @@ describe('Scene 1 harness render', () => {
     await flush()
     const outOpen = outRoom.replace(/\.html$/, '-open.html')
     writeFileSync(outOpen, standalone(inlineAssets(scene!.outerHTML), 'Scene 1 — a scroll open'))
-    // The full room render (920 depth bands + 230 frame images +
-    // inlined assets) is genuinely slow under jsdom — the
-    // assertions are the gate, not the default 5s clock.
+    // The full room render (the fabric raster + inlined assets)
+    // is genuinely slow under jsdom — the assertions are the
+    // gate, not the default 5s clock.
   }, 60000)
 })

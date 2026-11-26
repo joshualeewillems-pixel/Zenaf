@@ -280,8 +280,50 @@ def _children(
     return None, [], ""
 
 
+def _declaration_lines(
+    lines: list[str], user_id: str, project_id: str
+) -> None:
+    """The staged project's Board declaration state (S2 of the Board
+    interaction pass, 2026-11-25): its River — the declared window,
+    or that none is declared — and its Holds, each named by the id
+    the record gives it so Valen can reference it in a declaration
+    tail. Derived owner-scoped from the caller's own decision
+    records; a derivation failure degrades to no lines, never a
+    broken block."""
+    try:
+        from local_ai.vision_execution.declarations import (
+            derive_project_declarations,
+        )
+
+        state = derive_project_declarations(user_id, project_id)
+    except Exception:
+        logger.exception("subject context: declaration derivation failed")
+        return
+    lines.append(
+        "Board declarations for this project (the visitor's own "
+        "recorded fixings, made in conversation):"
+    )
+    river = state.get("river")
+    if river:
+        lines.append(
+            f"River — declared window: {river.get('start')} to {river.get('end')}"
+        )
+    else:
+        lines.append("River — no window declared")
+    holds = state.get("holds") or []
+    if holds:
+        lines.append("Holds — review checkpoints standing at:")
+        for hold in holds:
+            lines.append(f"- {hold.get('at')} (hold {hold.get('id')})")
+    else:
+        lines.append("Holds — none placed")
+
+
 def _compose(
-    user_id: str, entity_type: str, row: dict[str, Any]
+    user_id: str,
+    entity_type: str,
+    row: dict[str, Any],
+    sheet_type: str = "",
 ) -> str:
     """The fenced block: the record's own fields, verbatim, bounded."""
     lines: list[str] = [
@@ -314,6 +356,19 @@ def _compose(
     label, children, noun = _children(user_id, row, entity_type)
     if label:
         _children_lines(lines, label, children, noun)
+    # Board declarations ride only on the Campaign Board sheet: the
+    # selected project's River and Holds, so Valen — who explains
+    # and actuates declarations in conversation — is never asked
+    # about state he cannot see. For a task subject the declarations
+    # are its project's.
+    if sheet_type == "campaign_board":
+        project_id = ""
+        if entity_type == "project":
+            project_id = str(row.get("id") or "")
+        elif entity_type == "task":
+            project_id = str(row.get("project_id") or "")
+        if project_id:
+            _declaration_lines(lines, user_id, project_id)
     # Last, inside the same cap: the record's AI-written fields.
     # The record's own material always outranks generated material —
     # when the cap bites, the truncation below takes these first.
@@ -491,7 +546,7 @@ def build_subject_context(
         row = _resolve_subject(user_id, entity_type, entity_id)
         if not row:
             return None
-        return _compose(user_id, entity_type, row)
+        return _compose(user_id, entity_type, row, sheet_type)
     except Exception:
         logger.exception("subject context: block assembly failed")
         return None

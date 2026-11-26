@@ -12,10 +12,13 @@
  * draws the project's reported circumstances (its linked open signals,
  * standing: reported — never upgraded to confirmed) and the capacity
  * load of the people on the work (the Radar's overcapacity rule).
- * Rivers and Holds are the user's own terrain declarations —
- * provisional, session-local, withdrawable, stored nowhere. Date
- * writes go through the existing VE PATCH endpoints only; routes
- * themselves are provisional arrangements and are stored nowhere.
+ * Rivers and Holds are the user's own terrain declarations — made
+ * in conversation with Valen and recorded as VE decisions; the
+ * board reads them from that record on load and never writes them.
+ * A tap stages an object tentatively in the conversation; a drag
+ * never stages anything. The one surface write is a dragged
+ * waypoint's due date, through the existing VE PATCH endpoint;
+ * routes themselves are provisional arrangements, stored nowhere.
  *
  * Talk is the existing council conversation, locked onto no one but
  * opened with Valen (champion), carrying the focused project/task as
@@ -27,39 +30,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CouncilChat from '../chat/CouncilChat'
 import type { Project, Task } from '../vision-execution/types'
-import { fetchBoardEntities, patchProjectDates, patchTaskDueDate, type BoardEntities } from './boardApi'
+import { fetchBoardEntities, patchTaskDueDate, type BoardEntities } from './boardApi'
 import {
   buildOverview,
   buildRoutes,
   computePxPerDay,
-  createHold,
-  createRiverFromSignal,
-  createRiverWindow,
   dateAtFraction,
   declareTerrain,
   deriveCapacityPicture,
+  deriveDeclarations,
   deriveObstacles,
   deriveSignalMarkers,
   estimateLabelWidth,
+  fractionForDate,
   fullDate,
   groupOverviewByInitiative,
   layoutBoardLabels,
-  moveHold,
-  obstacleDomainLabel,
-  parseDateMs,
   projectSpan,
-  removeHold,
   riverBand,
-  setRiverWindow,
   shortDate,
   signalsForProject,
   stripWaypointLabels,
   toLocalDateTimeString,
-  withdrawRiver,
   type BoardLabelItem,
   type BoardLabelPlacement,
   type BoardObstacle,
-  type BoardSignal,
   type BoardWaypoint,
   type HoldDeclaration,
   type OverviewProject,
@@ -141,20 +136,11 @@ export default function CampaignBoardView() {
   const [selection, setSelection] = useState<Selection>(null)
   const [drag, setDrag] = useState<{ taskId: string; fraction: number; moved: boolean } | null>(null)
   const [writeError, setWriteError] = useState<string | null>(null)
-  const [dateInput, setDateInput] = useState<string>('')
-  // River/Hold declarations — PROVISIONAL, session-local terrain
-  // fixings (founder doctrine: terrain is also fixed by the user's
-  // declaration). Held in component state only: no record is written,
-  // nothing persists past the session, and every declaration can be
-  // withdrawn. The declaration-binding standard is deferred.
-  const [rivers, setRivers] = useState<RiverDeclaration[]>([])
-  const [holds, setHolds] = useState<HoldDeclaration[]>([])
   // Split-shell divider (wide screens): the conversation pane's
   // width, draggable between the board and Valen's chat. Portrait
   // stacks the panes and the divider is not rendered.
   const [chatW, setChatW] = useState(380)
   const dividerDrag = useRef<{ pointerId: number } | null>(null)
-  const declSeq = useRef(0)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const dragStart = useRef<{ x: number; taskId: string } | null>(null)
 
@@ -175,6 +161,13 @@ export default function CampaignBoardView() {
   const overview = useMemo(
     () => (entities ? buildOverview(entities.projects, entities.tasks, nowMs) : []),
     [entities, nowMs],
+  )
+  // River/Hold declarations are read from the record: folded from
+  // the owner's decision rows on load (Board interaction pass,
+  // 2026-11-25). The board never holds declaration state of its own.
+  const declarations = useMemo(
+    () => (entities ? deriveDeclarations(entities.decisions) : { rivers: [], holds: [] }),
+    [entities],
   )
 
   const focus = useMemo(() => {
@@ -200,53 +193,14 @@ export default function CampaignBoardView() {
         entities.capacityProfiles,
         projectTasks,
       ),
-      rivers: rivers.filter((r) => r.projectId === project.id),
-      holds: holds.filter((h) => h.projectId === project.id),
+      rivers: declarations.rivers.filter((r) => r.projectId === project.id),
+      holds: declarations.holds.filter((h) => h.projectId === project.id),
     }
-  }, [entities, focusId, nowMs, rivers, holds])
-
-  /* --------------------- declarations (provisional) --------------------- */
-
-  const nextDeclId = useCallback((prefix: string) => {
-    declSeq.current += 1
-    return `${prefix}-${declSeq.current}`
-  }, [])
-
-  const declareRiverFromSignal = useCallback(
-    (signal: BoardSignal) => {
-      if (!focus) return
-      const river = createRiverFromSignal(nextDeclId('river'), focus.project.id, signal, focus.span)
-      setRivers((prev) => [...prev, river])
-      setSelection({ kind: 'river', riverId: river.id })
-    },
-    [focus, nextDeclId],
-  )
-
-  const declareRiverWindow = useCallback(() => {
-    if (!focus) return
-    const river = createRiverWindow(nextDeclId('river'), focus.project.id, focus.span)
-    setRivers((prev) => [...prev, river])
-    setSelection({ kind: 'river', riverId: river.id })
-  }, [focus, nextDeclId])
-
-  const placeHold = useCallback(() => {
-    if (!focus) return
-    const hold = createHold(nextDeclId('hold'), focus.project.id)
-    setHolds((prev) => [...prev, hold])
-    setSelection({ kind: 'hold', holdId: hold.id })
-  }, [focus, nextDeclId])
+  }, [entities, focusId, nowMs, declarations])
 
   const applyTask = useCallback((updated: Task) => {
     setEntities((prev) =>
       prev ? { ...prev, tasks: prev.tasks.map((t) => (t.id === updated.id ? updated : t)) } : prev,
-    )
-  }, [])
-
-  const applyProject = useCallback((updated: Project) => {
-    setEntities((prev) =>
-      prev
-        ? { ...prev, projects: prev.projects.map((p) => (p.id === updated.id ? updated : p)) }
-        : prev,
     )
   }, [])
 
@@ -260,19 +214,6 @@ export default function CampaignBoardView() {
       }
     },
     [applyTask],
-  )
-
-  const commitProjectDate = useCallback(
-    async (field: 'start_date' | 'end_date', localDateTime: string) => {
-      if (!focus) return
-      setWriteError(null)
-      try {
-        applyProject(await patchProjectDates(focus.project.id, { [field]: localDateTime }))
-      } catch (e) {
-        setWriteError(e instanceof Error ? e.message : 'That date could not be saved.')
-      }
-    },
-    [applyProject, focus],
   )
 
   /* ------------------------------ drag ------------------------------ */
@@ -305,9 +246,15 @@ export default function CampaignBoardView() {
     dragStart.current = null
     if (!focus) return
     if (wasDrag) {
+      // A drag is a surface-native reschedule gesture and nothing
+      // more: it commits the due date and stages NOTHING — no card,
+      // no chat change (S1 of the Board interaction pass).
       void commitDueDate(w.task.id, toLocalDateTimeString(dateAtFraction(focus.span, fraction)))
+      return
     }
-    setDateInput(toLocalDateTimeString(dateAtFraction(focus.span, fraction)))
+    // A tap stages the waypoint tentatively in the conversation:
+    // pure client state, no write; it enters the record only when
+    // the visitor sends a turn while it is staged.
     setSelection({ kind: 'waypoint', taskId: w.task.id })
   }
 
@@ -378,26 +325,7 @@ export default function CampaignBoardView() {
             onWaypointPointerDown={onWaypointPointerDown}
             onWaypointPointerMove={onWaypointPointerMove}
             onWaypointPointerUp={onWaypointPointerUp}
-            dateInput={dateInput}
-            setDateInput={setDateInput}
-            onCommitDueDate={(taskId, v) => void commitDueDate(taskId, v)}
-            onCommitProjectDate={(field, v) => void commitProjectDate(field, v)}
             writeError={writeError}
-            onDeclareRiverFromSignal={declareRiverFromSignal}
-            onDeclareRiverWindow={declareRiverWindow}
-            onPlaceHold={placeHold}
-            onSetRiverWindow={(id, startMs, endMs) =>
-              setRivers((prev) => setRiverWindow(prev, id, startMs, endMs))
-            }
-            onWithdrawRiver={(id) => {
-              setRivers((prev) => withdrawRiver(prev, id))
-              setSelection(null)
-            }}
-            onMoveHold={(id, fraction) => setHolds((prev) => moveHold(prev, id, fraction))}
-            onRemoveHold={(id) => {
-              setHolds((prev) => removeHold(prev, id))
-              setSelection(null)
-            }}
           />
         ) : (
           <OverviewBoard
@@ -830,18 +758,7 @@ function FocusBoard({
   onWaypointPointerDown,
   onWaypointPointerMove,
   onWaypointPointerUp,
-  dateInput,
-  setDateInput,
-  onCommitDueDate,
-  onCommitProjectDate,
   writeError,
-  onDeclareRiverFromSignal,
-  onDeclareRiverWindow,
-  onPlaceHold,
-  onSetRiverWindow,
-  onWithdrawRiver,
-  onMoveHold,
-  onRemoveHold,
 }: {
   focus: FocusData
   selection: Selection
@@ -852,31 +769,9 @@ function FocusBoard({
   onWaypointPointerDown: (e: React.PointerEvent, w: BoardWaypoint) => void
   onWaypointPointerMove: (e: React.PointerEvent, w: BoardWaypoint) => void
   onWaypointPointerUp: (e: React.PointerEvent, w: BoardWaypoint) => void
-  dateInput: string
-  setDateInput: (v: string) => void
-  onCommitDueDate: (taskId: string, v: string) => void
-  onCommitProjectDate: (field: 'start_date' | 'end_date', v: string) => void
   writeError: string | null
-  onDeclareRiverFromSignal: (signal: BoardSignal) => void
-  onDeclareRiverWindow: () => void
-  onPlaceHold: () => void
-  onSetRiverWindow: (id: string, startMs: number, endMs: number) => void
-  onWithdrawRiver: (id: string) => void
-  onMoveHold: (id: string, fraction: number) => void
-  onRemoveHold: (id: string) => void
 }) {
   const { project, span, obstacles, terrain, routes, signalMarkers, capacity, rivers, holds } = focus
-  // Hold dragging is a local gesture over session state — the override
-  // lives here; the committed fraction goes up on release.
-  const [holdDrag, setHoldDrag] = useState<{ holdId: string; fraction: number } | null>(null)
-  const holdFraction = (h: HoldDeclaration): number =>
-    holdDrag && holdDrag.holdId === h.id ? holdDrag.fraction : h.fraction
-  const svgLocalX = (clientX: number): number => {
-    const svg = (svgRef as React.RefObject<SVGSVGElement | null>)?.current
-    if (!svg) return 0
-    const rect = svg.getBoundingClientRect()
-    return ((clientX - rect.left) / rect.width) * MAP_W
-  }
   const dragOverride = drag ? { taskId: drag.taskId, fraction: drag.fraction } : null
   const aPts = routePoints(routes.a.filter((w) => !w.done), ROUTE_A_Y, dragOverride)
   const bPts = routePoints(routes.b, ROUTE_B_Y, dragOverride)
@@ -951,14 +846,14 @@ function FocusBoard({
     return { x: X0 + 40, y: ROUTE_A_Y }
   }
 
+  // A tap stages tentatively — selection only, no card, no write.
+  // The conversation with Valen is where the staged thing is
+  // discussed and where anything about it is decided or recorded.
   const openWaypoint = (taskId: string) => {
-    const w = [...routes.a, ...routes.b].find((x) => x.task.id === taskId)
-    if (w) setDateInput(toLocalDateTimeString(dateAtFraction(span, w.fraction)))
     setSelection({ kind: 'waypoint', taskId })
   }
 
   const openEndpoint = (kind: 'start' | 'finish') => {
-    setDateInput(toLocalDateTimeString(new Date(kind === 'finish' ? span.endMs : span.startMs)))
     setSelection({ kind })
   }
 
@@ -978,23 +873,8 @@ function FocusBoard({
           {shortDate(new Date(span.startMs))} – {shortDate(new Date(span.endMs))}
           {span.source === 'provisional' ? ' · dates not recorded yet' : ''}
         </span>
-        <span className="flex items-center gap-2 ml-auto">
-          <button
-            type="button"
-            onClick={onDeclareRiverWindow}
-            className="min-h-[40px] px-3 rounded-full border border-stone-600 text-stone-200 text-sm hover:bg-stone-800"
-          >
-            ＋ River
-          </button>
-          <button
-            type="button"
-            onClick={onPlaceHold}
-            className="min-h-[40px] px-3 rounded-full border border-stone-600 text-stone-200 text-sm hover:bg-stone-800"
-          >
-            ＋ Hold
-          </button>
-        </span>
       </div>
+      {writeError && <p className="px-1 pb-2 text-xs text-red-300">{writeError}</p>}
 
       <div className="relative rounded-2xl overflow-hidden border border-[#9a7b24]/50 shadow-lg">
         <svg
@@ -1069,6 +949,7 @@ function FocusBoard({
             const bx1 = xForFraction(band.endFraction)
             const top = ROUTE_A_Y - 62
             const bottom = ROUTE_B_Y + 58
+            const staged = selection?.kind === 'river' && selection.riverId === river.id
             return (
               <g
                 key={river.id}
@@ -1076,6 +957,9 @@ function FocusBoard({
                 onClick={() => setSelection({ kind: 'river', riverId: river.id })}
               >
                 <rect x={bx0} y={top} width={Math.max(10, bx1 - bx0)} height={bottom - top} fill="#7fa8b8" opacity="0.38" />
+                {staged && (
+                  <rect x={bx0} y={top} width={Math.max(10, bx1 - bx0)} height={bottom - top} fill="none" stroke="#33617a" strokeWidth="2" />
+                )}
                 {[0.22, 0.5, 0.78].map((t) => {
                   const wx = bx0 + (bx1 - bx0) * t
                   return (
@@ -1121,6 +1005,9 @@ function FocusBoard({
                 style={{ cursor: 'pointer' }}
                 onClick={() => setSelection({ kind: 'obstacle', obstacleId: ob.id })}
               >
+                {selection?.kind === 'obstacle' && selection.obstacleId === ob.id && (
+                  <circle r="15" fill="none" stroke={EMBER} strokeWidth="2" />
+                )}
                 {isGate ? (
                   <>
                     <rect x="-16" y="-13" width="5" height="24" fill="#8d8574" stroke="#5f594c" />
@@ -1164,6 +1051,9 @@ function FocusBoard({
                 onClick={() => setSelection({ kind: 'signal', signalId: m.signal.id })}
               >
                 <circle r="15" fill="transparent" />
+                {selection?.kind === 'signal' && selection.signalId === m.signal.id && (
+                  <circle r="13" fill="none" stroke={EMBER} strokeWidth="2" />
+                )}
                 <line x1="0" y1="10" x2="0" y2="-8" stroke={color} strokeWidth="2" />
                 <path d="M0 -8 L13 -4.5 L0 -1 Z" fill={color} />
                 <text y="-14" textAnchor="middle" fontSize="10.5" fontWeight="600" fill={color} style={{ pointerEvents: 'none' }}>
@@ -1189,7 +1079,7 @@ function FocusBoard({
                   style={{ cursor: 'pointer' }}
                   onClick={() => setSelection({ kind: 'capacity', personId: c.personId })}
                 >
-                  <rect x="-4" y="-13" width="106" height="24" rx="12" fill={c.over ? '#f3d9cf' : '#e7dfc8'} stroke={c.over ? EMBER : '#9a7b24'} strokeWidth="1.2" />
+                  <rect x="-4" y="-13" width="106" height="24" rx="12" fill={c.over ? '#f3d9cf' : '#e7dfc8'} stroke={selection?.kind === 'capacity' && selection.personId === c.personId ? EMBER : c.over ? EMBER : '#9a7b24'} strokeWidth={selection?.kind === 'capacity' && selection.personId === c.personId ? 2.4 : 1.2} />
                   <text x="6" y="4" fontSize="10.5" fontWeight="600" fill={c.over ? '#8c2e1e' : INK} style={{ pointerEvents: 'none' }}>
                     {c.name.split(' ')[0]} · {label}
                     {c.over ? ' · over' : ''}
@@ -1200,12 +1090,14 @@ function FocusBoard({
 
           {/* start camp + finish banner */}
           <g transform={`translate(${X0},${MID_Y})`} style={{ cursor: 'pointer' }} onClick={() => openEndpoint('start')}>
+            {selection?.kind === 'start' && <circle r="16" fill="none" stroke={EMBER} strokeWidth="2" />}
             <path d="M-13 10 L0 -12 L13 10 Z" fill="#8a6a42" stroke="#6b5133" strokeWidth="1.2" />
             <text x={startLabel ? startLabel.x - X0 : 0} y={startLabel ? startLabel.top + 11 - MID_Y : 28} textAnchor="middle" fontSize="11" fill={INK}>
               Start · {shortDate(new Date(span.startMs))}
             </text>
           </g>
           <g transform={`translate(${X1},${MID_Y})`} style={{ cursor: 'pointer' }} onClick={() => openEndpoint('finish')}>
+            {selection?.kind === 'finish' && <circle r="16" fill="none" stroke={EMBER} strokeWidth="2" />}
             <line x1="0" y1="12" x2="0" y2="-24" stroke={INK} strokeWidth="2.2" />
             <path d="M0 -24 L20 -19 L0 -14 Z" fill={EMBER} />
             <text x={finishLabel ? finishLabel.x - X1 : 0} y={finishLabel ? finishLabel.top + 11 - MID_Y : 30} textAnchor="middle" fontSize="11" fill={INK}>
@@ -1238,6 +1130,9 @@ function FocusBoard({
                 }}
               >
                 <circle r="17" fill="transparent" />
+                {selection?.kind === 'waypoint' && selection.taskId === w.task.id && (
+                  <circle r="13.5" fill="none" stroke={EMBER} strokeWidth="2" />
+                )}
                 {w.done ? (
                   <>
                     <circle r="9" fill="#54683f" stroke="#f1e8d0" strokeWidth="1.6" />
@@ -1256,34 +1151,22 @@ function FocusBoard({
             )
           })}
 
-          {/* holds — user-placed review checkpoints, draggable on the line */}
+          {/* holds — review checkpoints recorded in conversation; a tap
+              stages one tentatively. Moving or removing a hold is a
+              conversational act with Valen, never a surface drag. */}
           {holds.map((h) => {
-            const f = holdFraction(h)
+            const f = fractionForDate(span, h.atMs)
             const x = xForFraction(f)
+            const staged = selection?.kind === 'hold' && selection.holdId === h.id
             return (
               <g
                 key={h.id}
                 transform={`translate(${x},${MID_Y})`}
-                style={{ cursor: 'grab', touchAction: 'none' }}
-                onPointerDown={(e) => {
-                  ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
-                  setHoldDrag({ holdId: h.id, fraction: f })
-                }}
-                onPointerMove={(e) => {
-                  if (holdDrag && holdDrag.holdId === h.id) {
-                    setHoldDrag({ holdId: h.id, fraction: fractionForX(svgLocalX(e.clientX)) })
-                  }
-                }}
-                onPointerUp={() => {
-                  if (holdDrag && holdDrag.holdId === h.id) {
-                    onMoveHold(h.id, holdDrag.fraction)
-                    setHoldDrag(null)
-                    setSelection({ kind: 'hold', holdId: h.id })
-                  }
-                }}
+                style={{ cursor: 'pointer' }}
                 onClick={() => setSelection({ kind: 'hold', holdId: h.id })}
               >
                 <circle r="17" fill="transparent" />
+                {staged && <circle r="15" fill="none" stroke="#a8741a" strokeWidth="2" />}
                 <line x1="0" y1="8" x2="0" y2="-16" stroke="#6b5133" strokeWidth="2.2" />
                 <path d="M0 -16 L14 -12.5 L0 -9 Z" fill="#a8741a" />
                 <ellipse cx="-5" cy="10" rx="7" ry="3.4" fill="#8d8574" stroke="#5f594c" strokeWidth="0.8" />
@@ -1293,7 +1176,7 @@ function FocusBoard({
                   Hold
                 </text>
                 <text y="43" textAnchor="middle" fontSize="10" fill="#6b5a43" style={{ pointerEvents: 'none' }}>
-                  {shortDate(dateAtFraction(span, f))}
+                  {shortDate(new Date(h.atMs))}
                 </text>
               </g>
             )
@@ -1315,24 +1198,6 @@ function FocusBoard({
             <rect x="15" y="15" width="770" height="470" strokeWidth="0.8" opacity="0.4" />
           </g>
         </svg>
-
-        {selection && (
-          <FocusPopup
-            focus={focus}
-            selection={selection}
-            onClose={() => setSelection(null)}
-            dateInput={dateInput}
-            setDateInput={setDateInput}
-            onCommitDueDate={onCommitDueDate}
-            onCommitProjectDate={onCommitProjectDate}
-            onOpenWaypoint={openWaypoint}
-            writeError={writeError}
-            onDeclareRiverFromSignal={onDeclareRiverFromSignal}
-            onSetRiverWindow={onSetRiverWindow}
-            onWithdrawRiver={onWithdrawRiver}
-            onRemoveHold={onRemoveHold}
-          />
-        )}
       </div>
 
       {/* timeline strip — each step's date between start and finish */}
@@ -1357,317 +1222,5 @@ function FocusBoard({
         </svg>
       </div>
     </section>
-  )
-}
-
-/* ================================================================== */
-/* Popup — the dossier lives here and in Valen's chat, not on the map  */
-/* ================================================================== */
-
-function FocusPopup({
-  focus,
-  selection,
-  onClose,
-  dateInput,
-  setDateInput,
-  onCommitDueDate,
-  onCommitProjectDate,
-  onOpenWaypoint,
-  writeError,
-  onDeclareRiverFromSignal,
-  onSetRiverWindow,
-  onWithdrawRiver,
-  onRemoveHold,
-}: {
-  focus: FocusData
-  selection: Exclude<Selection, null>
-  onClose: () => void
-  dateInput: string
-  setDateInput: (v: string) => void
-  onCommitDueDate: (taskId: string, v: string) => void
-  onCommitProjectDate: (field: 'start_date' | 'end_date', v: string) => void
-  onOpenWaypoint: (taskId: string) => void
-  writeError: string | null
-  onDeclareRiverFromSignal: (signal: BoardSignal) => void
-  onSetRiverWindow: (id: string, startMs: number, endMs: number) => void
-  onWithdrawRiver: (id: string) => void
-  onRemoveHold: (id: string) => void
-}) {
-  const { project, span, projectTasks } = focus
-  const taskById = new Map(projectTasks.map((t) => [t.id, t]))
-  // River window editing — local form state, re-seeded per river.
-  const [riverStart, setRiverStart] = useState('')
-  const [riverEnd, setRiverEnd] = useState('')
-  const riverForForm = selection.kind === 'river' ? focus.rivers.find((r) => r.id === selection.riverId) : undefined
-  useEffect(() => {
-    if (riverForForm) {
-      setRiverStart(toLocalDateTimeString(new Date(riverForForm.startMs)))
-      setRiverEnd(toLocalDateTimeString(new Date(riverForForm.endMs)))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [riverForForm?.id])
-
-  let title = ''
-  let body: React.ReactNode = null
-
-  if (selection.kind === 'waypoint') {
-    const task = taskById.get(selection.taskId)
-    if (task) {
-      const dueMs = parseDateMs(task.due_date)
-      const deps = (task.dependency_ids ?? [])
-        .map((id) => taskById.get(id))
-        .filter((x): x is Task => !!x)
-      title = task.title
-      body = (
-        <>
-          <p className="text-stone-300">
-            {task.status === 'Done'
-              ? 'Completed step — an existing task, recorded done.'
-              : task.due_date
-                ? `Recorded step — due ${fullDate(new Date(dueMs ?? 0))}.`
-                : 'Recorded step — no date set yet. Its place on the line is by order, not by date.'}
-          </p>
-          {task.description.trim() && <p className="text-stone-400">{task.description.trim()}</p>}
-          {deps.length > 0 && (
-            <p className="text-stone-400">
-              Waits on: {deps.map((d) => `${d.title} (${d.status.toLowerCase()})`).join(' · ')}
-            </p>
-          )}
-          {task.status !== 'Done' && (
-            <div className="flex items-center gap-2 pt-1 flex-wrap">
-              <input
-                type="datetime-local"
-                value={dateInput}
-                onChange={(e) => setDateInput(e.target.value)}
-                className="bg-stone-950 border border-stone-600 rounded-lg px-2 py-1.5 text-sm text-stone-100"
-                aria-label="Set this step's date and time"
-              />
-              <button
-                type="button"
-                onClick={() => dateInput && onCommitDueDate(task.id, dateInput)}
-                className="min-h-[36px] px-3 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold"
-              >
-                Set date
-              </button>
-            </div>
-          )}
-        </>
-      )
-    }
-  } else if (selection.kind === 'obstacle') {
-    const ob = focus.obstacles.find((o) => o.id === selection.obstacleId)
-    if (ob) {
-      title = `${ob.kindLabel} — ${ob.label}`
-      body = (
-        <>
-          <p className="text-stone-300">
-            {obstacleDomainLabel(ob.domain)} · standing: {ob.standing}
-          </p>
-          <p className="text-stone-400">{ob.rule}</p>
-          {ob.detail && <p className="text-stone-400">“{ob.detail}”</p>}
-          <button
-            type="button"
-            onClick={() => onOpenWaypoint(ob.taskId)}
-            className="min-h-[36px] px-3 rounded-full border border-stone-500 text-stone-100 text-sm"
-          >
-            Open the step
-          </button>
-        </>
-      )
-    }
-  } else if (selection.kind === 'terrain') {
-    const f = selection.feature
-    title = f.form
-    body = (
-      <>
-        <p className="text-stone-300">{f.fact}</p>
-        <p className="text-stone-400">{f.rule}</p>
-      </>
-    )
-  } else if (selection.kind === 'signal') {
-    const m = focus.signalMarkers.find((x) => x.signal.id === selection.signalId)
-    if (m) {
-      const s = m.signal
-      const created = parseDateMs(s.created_at)
-      title = `${m.kindLabel} — ${s.title}`
-      body = (
-        <>
-          <p className="text-stone-300">Circumstance · standing: reported</p>
-          <p className="text-stone-400">{m.rule}</p>
-          {s.detail && <p className="text-stone-400">{s.detail}</p>}
-          {s.source_excerpt && <p className="text-stone-400">“{s.source_excerpt}”</p>}
-          <p className="text-stone-500 text-xs">
-            {s.source ? `Source: ${s.source}` : 'Source not recorded'}
-            {created != null ? ` · recorded ${fullDate(new Date(created))}` : ''}
-            {s.confidence != null ? ` · confidence ${s.confidence}` : ''}
-            {m.via === 'task' ? ' · linked to a step on this line' : m.via === 'initiative' ? ' · linked to the initiative' : ' · linked to this project'}
-          </p>
-          <div className="flex items-center gap-2 pt-1 flex-wrap">
-            {m.taskId && (
-              <button
-                type="button"
-                onClick={() => onOpenWaypoint(m.taskId as string)}
-                className="min-h-[36px] px-3 rounded-full border border-stone-500 text-stone-100 text-sm"
-              >
-                Open the step
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => onDeclareRiverFromSignal(s)}
-              className="min-h-[36px] px-3 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold"
-            >
-              Declare a River
-            </button>
-          </div>
-        </>
-      )
-    }
-  } else if (selection.kind === 'river') {
-    const river = focus.rivers.find((r) => r.id === selection.riverId)
-    if (river) {
-      title = 'The River'
-      body = (
-        <>
-          <p className="text-stone-300">
-            {river.source.type === 'signal'
-              ? `Declared from signal: “${river.source.signalTitle}”`
-              : `Declared window: ${shortDate(new Date(river.startMs))} – ${shortDate(new Date(river.endMs))}`}
-          </p>
-          {river.source.type === 'signal' && (
-            <p className="text-stone-400">
-              Window: {shortDate(new Date(river.startMs))} – {shortDate(new Date(river.endMs))}. An
-              immovable window, fixed by your declaration.
-            </p>
-          )}
-          <div className="flex items-center gap-2 pt-1 flex-wrap">
-            <input
-              type="datetime-local"
-              value={riverStart}
-              onChange={(e) => setRiverStart(e.target.value)}
-              className="bg-stone-950 border border-stone-600 rounded-lg px-2 py-1.5 text-sm text-stone-100"
-              aria-label="River window opens"
-            />
-            <input
-              type="datetime-local"
-              value={riverEnd}
-              onChange={(e) => setRiverEnd(e.target.value)}
-              className="bg-stone-950 border border-stone-600 rounded-lg px-2 py-1.5 text-sm text-stone-100"
-              aria-label="River window closes"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                const sMs = parseDateMs(riverStart)
-                const eMs = parseDateMs(riverEnd)
-                if (sMs != null && eMs != null && eMs > sMs) onSetRiverWindow(river.id, sMs, eMs)
-              }}
-              className="min-h-[36px] px-3 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold"
-            >
-              Set window
-            </button>
-            <button
-              type="button"
-              onClick={() => onWithdrawRiver(river.id)}
-              className="min-h-[36px] px-3 rounded-full border border-stone-500 text-stone-100 text-sm"
-            >
-              Withdraw declaration
-            </button>
-          </div>
-        </>
-      )
-    }
-  } else if (selection.kind === 'hold') {
-    const hold = focus.holds.find((h) => h.id === selection.holdId)
-    if (hold) {
-      title = 'Hold'
-      body = (
-        <>
-          <p className="text-stone-300">
-            A review checkpoint placed by you, standing at{' '}
-            {fullDate(dateAtFraction(span, hold.fraction))}. Drag it along the line to move it.
-          </p>
-          <button
-            type="button"
-            onClick={() => onRemoveHold(hold.id)}
-            className="min-h-[36px] px-3 rounded-full border border-stone-500 text-stone-100 text-sm"
-          >
-            Remove hold
-          </button>
-        </>
-      )
-    }
-  } else if (selection.kind === 'capacity') {
-    const c = focus.capacity.find((x) => x.personId === selection.personId)
-    if (c) {
-      title = `${c.name} — the load`
-      body = (
-        <>
-          <p className="text-stone-300">
-            {c.committedHours}h a week committed
-            {c.weeklyCapacityHours != null ? ` against ${c.weeklyCapacityHours}h recorded capacity` : ''}
-            {c.over ? ` — ${c.delta}h over.` : '.'}
-          </p>
-          <p className="text-stone-400">{c.rule}</p>
-        </>
-      )
-    }
-  } else if (selection.kind === 'finish' || selection.kind === 'start') {
-    const isFinish = selection.kind === 'finish'
-    const recorded = isFinish ? project.end_date : project.start_date
-    title = isFinish ? `Finish — ${project.title}` : `Start — ${project.title}`
-    body = (
-      <>
-        <p className="text-stone-300">
-          {recorded
-            ? `Recorded: ${fullDate(new Date(parseDateMs(recorded) ?? 0))}.`
-            : isFinish
-              ? 'No finish date recorded. Date the finish first and the rest of the line gains its context.'
-              : 'No start date recorded.'}
-        </p>
-        <div className="flex items-center gap-2 pt-1 flex-wrap">
-          <input
-            type="datetime-local"
-            value={dateInput}
-            onChange={(e) => setDateInput(e.target.value)}
-            className="bg-stone-950 border border-stone-600 rounded-lg px-2 py-1.5 text-sm text-stone-100"
-            aria-label={isFinish ? 'Set the finish date and time' : 'Set the start date and time'}
-          />
-          <button
-            type="button"
-            onClick={() =>
-              dateInput && onCommitProjectDate(isFinish ? 'end_date' : 'start_date', dateInput)
-            }
-            className="min-h-[36px] px-3 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold"
-          >
-            Set date
-          </button>
-        </div>
-        {span.source === 'provisional' && (
-          <p className="text-stone-500 text-xs">
-            Until real dates are recorded, the line is drawn against a provisional window and is not
-            to scale.
-          </p>
-        )}
-      </>
-    )
-  }
-
-  return (
-    <div className="absolute top-2 right-2 w-[min(92vw,340px)] max-h-[92%] overflow-y-auto rounded-xl bg-stone-900/95 border border-stone-600 shadow-2xl p-3.5 text-sm z-10">
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="font-semibold text-stone-100 leading-snug">{title}</h3>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="shrink-0 w-8 h-8 rounded-full border border-stone-600 text-stone-300"
-        >
-          ✕
-        </button>
-      </div>
-      <div className="mt-2 space-y-2">{body}</div>
-      {writeError && <p className="mt-2 text-xs text-red-300">{writeError}</p>}
-    </div>
   )
 }

@@ -103,6 +103,16 @@ export interface ShelfScroll {
   /** For an initiative founded from an idea: the idea's id (the
    *  record's source_idea_id origin edge). Null otherwise. */
   sourceIdeaId: string | null
+  /** The item's recorded window: a project's declared start and
+   *  end dates (the record's start_date / end_date). Initiatives,
+   *  tasks and ideas carry no declared window — null. Carried for
+   *  the Scene 1 popup's synopsis, which is composed from recorded
+   *  fields only. */
+  windowStart: string | null
+  windowEnd: string | null
+  /** A task's recorded due date; null for every other kind and
+   *  for tasks the record leaves undated. */
+  dueDate: string | null
   appearance: ScrollAppearance
 }
 
@@ -211,6 +221,7 @@ export function buildScrollShelf(
     createdAt: string,
     sourceIdeaId: string | null = null,
     parentTaskId: string | null = null,
+    recorded: { windowStart?: string | null; windowEnd?: string | null; dueDate?: string | null } = {},
   ): ShelfScroll => {
     const t = new Date(createdAt).getTime()
     const ageTone =
@@ -227,6 +238,9 @@ export function buildScrollShelf(
       mass,
       createdAt,
       sourceIdeaId,
+      windowStart: recorded.windowStart ?? null,
+      windowEnd: recorded.windowEnd ?? null,
+      dueDate: recorded.dueDate ?? null,
       appearance: {
         radius: radiusFor(kind, mass),
         ageTone,
@@ -252,9 +266,14 @@ export function buildScrollShelf(
   const projectScroll = (p: Project): ShelfBayProject => {
     const projectTasks = orderTasks(tasksByProject.get(p.id) ?? [])
     return {
-      scroll: make('project', p.id, p.title, p.status, projectTasks.length, p.created_at),
+      scroll: make('project', p.id, p.title, p.status, projectTasks.length, p.created_at, null, null, {
+        windowStart: p.start_date,
+        windowEnd: p.end_date,
+      }),
       tasks: projectTasks.map((t) =>
-        make('task', t.id, t.title, t.status, t.estimated_hours, t.created_at, null, t.parent_task_id),
+        make('task', t.id, t.title, t.status, t.estimated_hours, t.created_at, null, t.parent_task_id, {
+          dueDate: t.due_date,
+        }),
       ),
     }
   }
@@ -288,7 +307,9 @@ export function buildScrollShelf(
       initiative: null,
       projects: unanchored.map(projectScroll),
       looseTasks: orderTasks(looseTasks).map((t) =>
-        make('task', t.id, t.title, t.status, t.estimated_hours, t.created_at, null, t.parent_task_id),
+        make('task', t.id, t.title, t.status, t.estimated_hours, t.created_at, null, t.parent_task_id, {
+          dueDate: t.due_date,
+        }),
       ),
       ideas: ideaScrolls,
     })

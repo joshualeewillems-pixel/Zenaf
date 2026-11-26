@@ -44,6 +44,7 @@ import type {
   Task,
 } from '../vision-execution/types'
 import { SEAT_COLORS, type SeatId } from '../council/colors'
+import { capacityDerived } from '../vision-execution/capacityDerived'
 
 export interface PalaceData {
   ideas: Idea[]
@@ -834,9 +835,10 @@ export const PENDING_KIND_LABELS: Record<string, string> = {
 /* adjustable — no baseline is invented, and the scales stay empty   */
 /* where there is nothing recorded to place on them.                 */
 /*                                                                     */
-/* The consequence arithmetic mirrors the backend derivation         */
-/* EXACTLY: local_ai/vision_execution/derived.py                     */
-/* add_capacity_derived — committed hours are the sum of             */
+/* The consequence arithmetic is the shared frontend mirror of the   */
+/* backend derivation — vision-execution/capacityDerived.ts, which   */
+/* restates local_ai/vision_execution/derived.py                     */
+/* add_capacity_derived EXACTLY: committed hours are the sum of       */
 /* estimated_weekly_hours over projects with status Ready or Active  */
 /* that the person owns or supports (a null estimate counts 0;       */
 /* owned-and-supported counts once); activeWeeklyHours rounds to     */
@@ -936,29 +938,18 @@ export interface WeighingPicture {
   over: boolean
 }
 
-function round1(x: number): number {
-  return Math.round(x * 10) / 10
-}
-
 /** One person's capacity picture under a given body of projects —
+ *  the shared mirror (vision-execution/capacityDerived.ts) of
  *  add_capacity_derived's arithmetic, step for step. */
 function capacityPicture(projects: Project[], capacityHours: number | null, person: Person): WeighingPicture {
-  let active = 0
-  for (const p of projects) {
-    const status = (p.status ?? '').trim()
-    if (status !== 'Ready' && status !== 'Active') continue
-    const involved =
-      p.owner_id === person.id ||
-      (Array.isArray(p.supporting_owner_ids) && p.supporting_owner_ids.includes(person.id))
-    if (involved) active += p.estimated_weekly_hours ?? 0
-  }
+  const derived = capacityDerived(projects, capacityHours, person.id)
   return {
     personId: person.id,
     name: person.name,
-    committedHours: round1(active),
+    committedHours: derived.committedHours,
     capacityHours,
-    capacityDelta: capacityHours != null ? round1(active - capacityHours) : null,
-    over: capacityHours != null ? active - capacityHours > 0 : false,
+    capacityDelta: derived.capacityDelta,
+    over: derived.over,
   }
 }
 

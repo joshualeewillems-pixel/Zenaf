@@ -29,6 +29,7 @@
  * See the Declarations section below.
  */
 import type { CapacityProfile, Person, Project, Task } from '../vision-execution/types'
+import { capacityDerived } from '../vision-execution/capacityDerived'
 
 export const DAY_MS = 86_400_000
 /** A working day, for converting estimated_hours into the prototype's
@@ -664,7 +665,12 @@ export function deriveSignalMarkers(
 }
 
 /* ------------------------------------------------------------------ */
-/* Capacity — the time-constraint picture (the Radar's computation)    */
+/* Capacity — the time-constraint picture (the Radar's computation).   */
+/* The arithmetic is the shared frontend mirror of derived.py's        */
+/* add_capacity_derived (vision-execution/capacityDerived.ts): the     */
+/* committed sum is judged UNROUNDED — rounding is display only, so    */
+/* 10.04 committed against a capacity of 10 is over, exactly as the    */
+/* backend (and the Radar's bucket) rules it.                          */
 /* ------------------------------------------------------------------ */
 
 export interface PersonCapacity {
@@ -672,27 +678,18 @@ export interface PersonCapacity {
   name: string
   /** Recorded weekly capacity, or null when no profile is recorded. */
   weeklyCapacityHours: number | null
-  /** Committed hours: estimated_weekly_hours summed over the person's
-   *  Ready/Active projects (owned or supported) — derived.py's rule,
-   *  the same computation the Radar's overcapacity bucket reads. */
+  /** Committed hours (derived.py's activeWeeklyHours): the sum over
+   *  the person's Ready/Active projects (owned or supported), rounded
+   *  to one decimal for display — judgements never read this figure. */
   committedHours: number
-  /** committed − capacity, or null when no capacity is recorded. */
+  /** derived.py's capacityDelta: the UNROUNDED committed sum minus
+   *  capacity, rounded to one decimal for display; null when no
+   *  capacity is recorded. */
   delta: number | null
-  /** The Radar's overcapacity condition: delta > 0. */
+  /** derived.py's overcapacity: the UNROUNDED difference > 0 — the
+   *  same condition the Radar's overcapacity bucket reads. */
   over: boolean
   rule: string
-}
-
-function committedHoursFor(personId: string, projects: Project[]): number {
-  let active = 0
-  for (const p of projects) {
-    const status = (p.status || '').trim()
-    if (status !== 'Ready' && status !== 'Active') continue
-    if (p.owner_id === personId || (p.supporting_owner_ids ?? []).includes(personId)) {
-      active += p.estimated_weekly_hours ?? 0
-    }
-  }
-  return Math.round(active * 10) / 10
 }
 
 /**
@@ -722,11 +719,12 @@ export function deriveCapacityPicture(
   for (const pid of personIds) {
     const person = byId.get(pid)
     if (!person) continue
-    const committed = committedHoursFor(pid, allProjects)
     const cap = profileByPerson.get(pid)?.weekly_capacity_hours
     const weeklyCapacityHours = cap != null ? Number(cap) : null
-    const delta = weeklyCapacityHours != null ? Math.round((committed - weeklyCapacityHours) * 10) / 10 : null
-    const over = delta != null && delta > 0
+    const derived = capacityDerived(allProjects, weeklyCapacityHours, pid)
+    const committed = derived.committedHours
+    const delta = derived.capacityDelta
+    const over = derived.over
     out.push({
       personId: pid,
       name: person.name,

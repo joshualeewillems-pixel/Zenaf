@@ -377,6 +377,29 @@ describe('deriveCapacityPicture', () => {
     expect(picture[0].over).toBe(false)
     expect(picture[0].delta).toBe(-4)
   })
+
+  it('judges overcapacity on the UNROUNDED difference — 10.04 against 10 is over, as derived.py rules', () => {
+    // derived.py add_capacity_derived on this record: activeWeeklyHours
+    // reads 10.0 and capacityDelta reads 0.0, yet overcapacity is TRUE,
+    // because the backend tests the unrounded difference (0.04 > 0).
+    // The Board's mirror must produce the same three figures.
+    const edge = project({ id: 'p1', owner_id: 'per1', estimated_weekly_hours: 10.04 })
+    const picture = deriveCapacityPicture(edge, [edge], [person({})], [profile({})], [])
+    expect(picture[0].committedHours).toBe(10)
+    expect(picture[0].delta).toBe(0)
+    expect(picture[0].over).toBe(true)
+  })
+
+  it('does not fire overcapacity just under the line — 9.96 against 10 displays the same and is NOT over', () => {
+    // The mirror image of the boundary above: the displayed figures
+    // round to the same 10 / 0, but the unrounded difference is
+    // negative, so derived.py's overcapacity stays false.
+    const edge = project({ id: 'p1', owner_id: 'per1', estimated_weekly_hours: 9.96 })
+    const picture = deriveCapacityPicture(edge, [edge], [person({})], [profile({})], [])
+    expect(picture[0].committedHours).toBe(10)
+    expect(picture[0].delta).toBeCloseTo(0)
+    expect(picture[0].over).toBe(false)
+  })
 })
 
 describe('river + hold declarations', () => {

@@ -787,6 +787,7 @@ export default function CouncilChat({
           onInviteSelected={selectInvitedSeat}
           refreshKey={inviteRefreshKey}
           onRowDisappeared={dispatchInvitationsChanged}
+          hideWhenEmpty={environment !== 'sheet'}
         />
       )}
 

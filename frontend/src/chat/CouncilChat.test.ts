@@ -613,8 +613,8 @@ describe('invitations in chat (Capability C)', () => {
       (b) => (b.textContent ?? '').trim() === 'Talk to guardian',
     )
 
-  async function renderWithInvitations() {
-    renderChat({ environment: 'sheet', conversationId: A, initialArchetypeId: 'mentor' })
+  async function renderWithInvitations(environment: 'sheet' | 'workspace' = 'sheet') {
+    renderChat({ environment, conversationId: A, initialArchetypeId: 'mentor' })
     await flush()
     hydrations[A].resolve(ok({ conversation_id: A, messages: [], total: 0 }))
     await flush()
@@ -641,10 +641,16 @@ describe('invitations in chat (Capability C)', () => {
 
   it('(d) zero rows render no invitation rows', async () => {
     invitationPayload = []
-    await renderWithInvitations()
+    await renderWithInvitations('workspace')
     expect(calls.some((c) => c.url.includes('/conversation/invitations'))).toBe(true)
     expect(rowButton()).toBeNull()
     expect(talkButton()).toBeUndefined()
+    // Workspace (seat-world) mounts are quiet when empty: no
+    // empty-state line stands in the pane (hideWhenEmpty), so a chat
+    // with no invitations carries no invitation furniture at all.
+    // The sheet mount keeps its standing empty state (pinned in
+    // TreeTalkSheet's suite).
+    expect(container.textContent).not.toContain('No pending invitations')
   })
 
   it('(b)+(e) selecting a row makes the invited seat the addressee; selection alone sends and consumes nothing', async () => {

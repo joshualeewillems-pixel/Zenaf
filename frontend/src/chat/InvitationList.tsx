@@ -105,8 +105,15 @@ export default function InvitationList({
   onInviteSelected,
   refreshKey,
   onRowDisappeared,
+  hideWhenEmpty,
 }: {
   conversationId: string
+  /** In-chat mounts (CouncilChat) pass this: while loading and when
+      there are no pending invitations the list renders nothing at
+      all, so a chat with no invitations carries no empty-state line.
+      The sheet mount leaves it off and keeps the standing empty
+      state. Error and signed-out states render either way. */
+  hideWhenEmpty?: boolean
   /** The user tapped "talk to this seat": make that seat active. This
       does NOT accept anything — acceptance happens only when a turn
       to that seat is sent. */
@@ -176,6 +183,7 @@ export default function InvitationList({
   if (!conversationId) return null
 
   if (mode === 'loading') {
+    if (hideWhenEmpty) return null
     return <p className="text-sm text-stone-400 px-1 py-2">Loading invitations…</p>
   }
 
@@ -199,6 +207,7 @@ export default function InvitationList({
   }
 
   if (items.length === 0) {
+    if (hideWhenEmpty) return null
     return (
       <p className="text-sm text-stone-400 px-1 py-2">
         No pending invitations in this conversation.

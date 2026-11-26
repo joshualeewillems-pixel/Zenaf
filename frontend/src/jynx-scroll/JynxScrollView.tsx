@@ -993,7 +993,7 @@ function RoomScene({
             style={{ left: '39.16%', top: '41.99%', width: '17.5%', height: '37.5%' }}
           />
         ) : null}
-        <FoxMedallion leftPct={50} topPct={18.75} sizePct={6} />
+        <FoxMedallion leftPct={50} topPct={17.77} sizePct={6} />
       </div>
     </section>
   )

@@ -100,6 +100,7 @@
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CouncilChat from '../chat/CouncilChat'
+import SplitShell from '../components/SplitShell'
 import { fetchScrollDrawings, fetchScrollEntities, type ScrollEntities } from './scrollApi'
 import {
   buildScrollShelf,
@@ -230,10 +231,6 @@ export default function JynxScrollView() {
    *  that start belongs to. */
   const openSinceRef = useRef(0)
   const openSinceKeyRef = useRef<string | null>(null)
-  // Split-shell divider (wide screens), as on the Campaign Board:
-  // the conversation pane's width, draggable; portrait stacks.
-  const [chatW, setChatW] = useState(380)
-  const dividerDrag = useRef<{ pointerId: number } | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -542,74 +539,56 @@ export default function JynxScrollView() {
   }
 
   return (
-    <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden">
-      <div className="flex-1 min-w-0 lg:overflow-y-auto p-3 lg:p-5 space-y-3">
-        <div className="flex items-center gap-3 px-1 pb-1">
+    <SplitShell
+      storageKey="jynx-scroll"
+      left={
+        <div className="p-3 lg:p-5 space-y-3">
+          <div className="flex items-center gap-3 px-1 pb-1">
+            {open ? (
+              <button
+                type="button"
+                onClick={goBack}
+                className="text-sm text-amber-200/90 hover:text-amber-100 min-h-[36px] shrink-0"
+              >
+                {openParent ? `← ${letterName(openParent.title, 30)}` : '← The shelf'}
+              </button>
+            ) : null}
+            <h1 className="text-lg font-semibold text-stone-100">
+              {open ? open.title : 'The Shelf of Scrolls'}
+            </h1>
+          </div>
           {open ? (
-            <button
-              type="button"
-              onClick={goBack}
-              className="text-sm text-amber-200/90 hover:text-amber-100 min-h-[36px] shrink-0"
-            >
-              {openParent ? `← ${letterName(openParent.title, 30)}` : '← The shelf'}
-            </button>
-          ) : null}
-          <h1 className="text-lg font-semibold text-stone-100">
-            {open ? open.title : 'The Shelf of Scrolls'}
-          </h1>
+            <OpenScrollScreen
+              scroll={open}
+              children={openChildren}
+              layout={layout}
+              unroll={unroll}
+              progressFor={progressFor}
+              selectedDrawingId={selectedDrawingId}
+              onOpenChild={openChild}
+              onSelectDrawing={handleSelectDrawing}
+              onRoll={rollBy}
+            />
+          ) : (
+            <ScrollScene shelf={shelf} onChoose={choose} />
+          )}
         </div>
-        {open ? (
-          <OpenScrollScreen
-            scroll={open}
-            children={openChildren}
-            layout={layout}
-            unroll={unroll}
-            progressFor={progressFor}
-            selectedDrawingId={selectedDrawingId}
-            onOpenChild={openChild}
-            onSelectDrawing={handleSelectDrawing}
-            onRoll={rollBy}
-          />
-        ) : (
-          <ScrollScene shelf={shelf} onChoose={choose} />
-        )}
-      </div>
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize conversation pane"
-        className="hidden lg:block w-1.5 shrink-0 cursor-col-resize bg-stone-700/40 hover:bg-amber-600/60 touch-none"
-        onPointerDown={(e) => {
-          ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
-          dividerDrag.current = { pointerId: e.pointerId }
-        }}
-        onPointerMove={(e) => {
-          if (!dividerDrag.current || dividerDrag.current.pointerId !== e.pointerId) return
-          const parent = (e.currentTarget as Element).parentElement
-          if (!parent) return
-          const rect = parent.getBoundingClientRect()
-          setChatW(Math.min(560, Math.max(300, rect.right - e.clientX)))
-        }}
-        onPointerUp={(e) => {
-          if (dividerDrag.current?.pointerId === e.pointerId) dividerDrag.current = null
-        }}
-      />
-      <aside
-        className="shrink-0 lg:w-[var(--js-chat-w,380px)] lg:overflow-y-auto border-t lg:border-t-0 border-stone-700/60 p-3"
-        style={{ ['--js-chat-w' as string]: `${chatW}px` }}
-      >
-        <div className="rounded-2xl border border-stone-700/60 bg-stone-900/70 p-2">
-          <CouncilChat
-            key={conversationId}
-            environment="workspace"
-            initialArchetypeId="maverick"
-            conversationId={conversationId}
-            context={chatContext}
-            onTurnSent={onTurnLanded}
-          />
+      }
+      right={
+        <div className="p-3">
+          <div className="rounded-2xl border border-stone-700/60 bg-stone-900/70 p-2">
+            <CouncilChat
+              key={conversationId}
+              environment="workspace"
+              initialArchetypeId="maverick"
+              conversationId={conversationId}
+              context={chatContext}
+              onTurnSent={onTurnLanded}
+            />
+          </div>
         </div>
-      </aside>
-    </div>
+      }
+    />
   )
 }
 

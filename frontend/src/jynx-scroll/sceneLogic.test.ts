@@ -22,7 +22,8 @@ import {
   longPressRoute,
   popupSynopsis,
   scrollKey,
-  scrollWidthFor,
+  scrollPlacementFor,
+  SCROLL_CONTOUR,
   tableRows,
   trailForScroll,
   type FabricRhomb,
@@ -114,15 +115,67 @@ describe('the Penrose fabric port', () => {
   })
 })
 
-describe('the cubby ground rules — face-sized scrolls, standing on the wall', () => {
-  it('scrollWidthFor sizes by the end face — the disc fills the cell’s inscribed diameter', () => {
-    const a = assignCubbies(fixtureShelf(), buildPenroseFabric().rhombs)
-    for (const x of a) {
-      expect(scrollWidthFor(x.unit.head, x.cell)).toBeCloseTo(
-        (cellInDiameter(x.cell) * 0.98) / 0.6,
-        6,
-      )
+describe('the cubby ground rules — scrolls fitted within the large rhombi', () => {
+  const insideQuad = (p: { x: number; y: number }, quad: { x: number; y: number }[]) => {
+    let sign = 0
+    for (let i = 0; i < 4; i++) {
+      const a = quad[i]
+      const b = quad[(i + 1) % 4]
+      const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
+      if (cross !== 0) {
+        if (sign === 0) sign = Math.sign(cross)
+        else if (Math.sign(cross) !== sign) return false
+      }
     }
+    return true
+  }
+
+  it('scrollPlacementFor fits the scroll’s whole silhouette inside its rhomb', () => {
+    const a = assignCubbies(fixtureShelf(), buildPenroseFabric().rhombs)
+    expect(a.length).toBeGreaterThan(0)
+    for (const x of a) {
+      const place = scrollPlacementFor(x.cell, x.side)
+      const flip = x.side === 'right' ? -1 : 1
+      for (const [dx, dy] of SCROLL_CONTOUR) {
+        expect(
+          insideQuad(
+            { x: place.cx + flip * dx * place.width, y: place.cy + dy * place.width },
+            x.cell.corners,
+          ),
+          `the silhouette of ${x.unit.head.title}'s scroll stands outside its rhomb`,
+        ).toBe(true)
+      }
+      // and it still reads: never larger than the old face-fit,
+      // never a thumbnail
+      expect(place.width).toBeLessThanOrEqual(cellInDiameter(x.cell) / 0.6 + 0.001)
+      expect(place.width).toBeGreaterThan(30)
+    }
+  })
+
+  it('assignment stands scrolls only in large (thick) rhombi while they remain', () => {
+    const a = assignCubbies(fixtureShelf(), buildPenroseFabric().rhombs)
+    for (const x of a) expect(x.cell.thick).toBe(true)
+  })
+
+  it('a nearer thin rhomb never takes a scroll from a large one; thin is the last resort', () => {
+    const cell = (x: number, y: number, thick: boolean): FabricRhomb => ({
+      corners: [
+        { x: x - 10, y: y - 10 },
+        { x: x + 10, y: y - 10 },
+        { x: x + 10, y: y + 10 },
+        { x: x - 10, y: y + 10 },
+      ],
+      centre: { x, y },
+      thick,
+    })
+    // the thin cell stands much closer to the sheet; the thick
+    // cell must still be taken first, the thin only once no
+    // large rhomb remains
+    const cells = [cell(700, 500, false), cell(400, 400, true)]
+    const a = assignCubbies(fixtureShelf(), cells)
+    expect(a).toHaveLength(2)
+    expect(a[0].cell.thick).toBe(true)
+    expect(a[1].cell.thick).toBe(false)
   })
 
   it('assignment keeps cubbies inside the wall band while cells remain there', () => {

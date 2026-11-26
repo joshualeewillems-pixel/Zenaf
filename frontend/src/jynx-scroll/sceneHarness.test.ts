@@ -171,6 +171,7 @@ describe('Scene 1 harness render', () => {
     // raster — and no per-rhomb drawing of any kind stands in for
     // it (no polygons, no transformed frame images).
     expect(scene!.querySelectorAll('[data-testid="scene-fabric"]')).toHaveLength(1)
+    expect(scene!.querySelectorAll('[data-testid="scene-wall-dark"]')).toHaveLength(1)
     expect(scene!.querySelectorAll('polygon')).toHaveLength(0)
     expect(scene!.querySelectorAll('image[transform^="matrix"]')).toHaveLength(0)
 

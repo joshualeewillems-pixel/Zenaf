@@ -536,14 +536,34 @@ def cluster_items(items: list[EvidenceItem]) -> list[Cluster]:
 # ---------------------------------------------------------------------------
 
 
+def birth_signature_from_keys(keys: Iterable[str]) -> str:
+    """The birth signature over evidence keys ("<kind>:<id>").
+
+    The keys-based core of :func:`birth_signature`: callers that
+    hold a proposal's evidence as store rows (the review surface,
+    recording a rejection) rebuild the identical signature from
+    the rows' (ref_kind, ref_id) pairs.
+    """
+    return "birth:" + "|".join(sorted(keys))
+
+
 def birth_signature(items: Iterable[EvidenceItem]) -> str:
-    keys = sorted(item.evidence_key() for item in items)
-    return "birth:" + "|".join(keys)
+    return birth_signature_from_keys(item.evidence_key() for item in items)
+
+
+def extension_signature_from_keys(
+    thread_id: str, keys: Iterable[str]
+) -> str:
+    """The extension signature over evidence keys — the
+    keys-based core of :func:`extension_signature`, for callers
+    holding store rows rather than EvidenceItems."""
+    return f"extension:{thread_id}:" + "|".join(sorted(keys))
 
 
 def extension_signature(thread_id: str, items: Iterable[EvidenceItem]) -> str:
-    keys = sorted(item.evidence_key() for item in items)
-    return f"extension:{thread_id}:" + "|".join(keys)
+    return extension_signature_from_keys(
+        thread_id, (item.evidence_key() for item in items)
+    )
 
 
 # ---------------------------------------------------------------------------

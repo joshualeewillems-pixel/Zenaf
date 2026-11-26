@@ -47,13 +47,25 @@ Verdict mapping (existing store transitions only, nothing new):
 
 Durability note, stated honestly: a decided proposal never
 reappears as pending — rejected/accepted statuses are terminal in
-the store — and the verdict log is durable. What Phase 1 does NOT
-do is write derivation dismissal memory: whether derivation
-re-proposes equivalent content on re-analysis is governed
-separately by ``is_dismissed`` rows, which review verdicts do not
-create (a verdict is about a specific proposal; a dismissal is a
-content-addressed signature). Wiring the two is a later-phase
-decision, not something Phase 1 invents. The PR body flags this.
+the store — and the verdict log is durable. Rejections ALSO write
+derivation dismissal memory where a dismissal kind exists for the
+proposal (the later-phase wiring, built 2026-11-25 under the
+founder's durable-rejection standard): a rejected birth records a
+``thread_birth`` dismissal and a rejected change records an
+``extension`` dismissal, each over the proposal's own evidence
+fingerprint — the same content-addressed signature derivation
+consults before proposing (``is_dismissed`` in derive_batch). So
+the identical evidence cannot be re-proposed as an equivalent
+birth/extension after rejection, while genuinely new evidence
+produces a different signature and is never barred, and
+visitor-initiated paths consult no dismissal state at all.
+Readings, fittings, revisions, oversight proposals,
+correspondences, and reconsiderations have no dismissal kind in
+DISMISSAL_KINDS and write nothing — whether they should is a
+separate decision, not settled here. The dismissal write is
+failure-isolated: it runs after the transition and the verdict
+log, and a failure is logged, never raised — the verdict has
+landed either way.
 
 Point-in-time preservation (non-foreclosure, Phase 1 only):
 this module implements NO snapshot capture and NO abstention
@@ -100,10 +112,18 @@ without changing any Phase 1 contract:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from .currency import derive_currency
+from .derivation import (
+    birth_signature_from_keys,
+    dismiss_proposal,
+    extension_signature_from_keys,
+)
 from .store import NarrativeStore
+
+logger = logging.getLogger(__name__)
 
 # Phase 6: schedule revisions are review items too — a version in
 # review is a steward proposal awaiting a verdict, exactly like a
@@ -396,6 +416,119 @@ def _find_pending(
     raise ValueError(f"no pending review item: {kind}:{row_id}")
 
 
+def _birth_dismissal_signature(
+    store: NarrativeStore, user_id: str, thread_id: str
+) -> str | None:
+    """The founding evidence fingerprint of a birth proposal.
+
+    Sources, in exactness order — each is the fingerprint
+    derivation itself proposed over:
+
+    1. The thread's records-first deferred-prose row for the
+       birth, which stores the exact ``evidence_signature``
+       derivation computed over the founding cluster.
+    2. The earliest steward-authored reading's cited evidence:
+       a generation-born birth's reading cites exactly the
+       founding refs, even if an extension later attached more
+       evidence to the nascent thread.
+    3. The thread's evidence rows as they stand (exact whenever
+       nothing further has attached since the birth).
+
+    None when the thread carries no evidence at all — no
+    fingerprint exists to record, and none is invented.
+    """
+    for row in store.deferred_prose_for_thread(user_id, thread_id):
+        if row.get("kind") == "birth" and row.get("evidence_signature"):
+            return str(row["evidence_signature"])
+    rows = store.evidence_for(user_id, thread_id)
+    keys_by_row_id = {
+        row.id: f"{row.ref_kind}:{row.ref_id}" for row in rows
+    }
+    for reading in store.readings_for(user_id, thread_id):
+        if reading.author != "steward":
+            continue
+        keys = [
+            keys_by_row_id[row_id]
+            for row_id in (reading.evidence_refs or [])
+            if row_id in keys_by_row_id
+        ]
+        if keys:
+            return birth_signature_from_keys(keys)
+        break
+    if rows:
+        return birth_signature_from_keys(keys_by_row_id.values())
+    return None
+
+
+def _record_rejection_dismissal(
+    store: NarrativeStore,
+    user_id: str,
+    item: ReviewItem,
+    kind: str,
+    row_id: str,
+) -> None:
+    """Write derivation dismissal memory for a rejected proposal,
+    where a dismissal kind exists for it (see the module
+    docstring's durability note).
+
+    A birth maps to ``thread_birth``; a change — the movement
+    record of an extension proposal — maps to ``extension`` over
+    exactly the evidence rows the change cites, which is the set
+    derivation's extension check fingerprints. Every other review
+    kind has no dismissal kind and writes nothing.
+
+    Failure-isolated by design: this runs after the verdict's
+    transition and log entry have landed, and a dismissal-write
+    failure is logged, never raised — the decided proposal cannot
+    return either way (its status is terminal); dismissal memory
+    is the second layer, against re-derivation.
+    """
+    try:
+        if kind == "birth":
+            signature = _birth_dismissal_signature(store, user_id, row_id)
+            if signature is None:
+                return
+            dismiss_proposal(
+                store, user_id, kind="thread_birth", signature=signature
+            )
+        elif kind == "change":
+            change = next(
+                (
+                    row
+                    for row in store.changes_for(user_id, item.thread_id)
+                    if row.id == row_id
+                ),
+                None,
+            )
+            if change is None or not change.evidence_refs:
+                return
+            keys_by_row_id = {
+                row.id: f"{row.ref_kind}:{row.ref_id}"
+                for row in store.evidence_for(user_id, item.thread_id)
+            }
+            keys = [
+                keys_by_row_id[cited_id]
+                for cited_id in change.evidence_refs
+                if cited_id in keys_by_row_id
+            ]
+            if not keys:
+                return
+            dismiss_proposal(
+                store,
+                user_id,
+                kind="extension",
+                signature=extension_signature_from_keys(
+                    item.thread_id, keys
+                ),
+            )
+    except Exception:
+        logger.exception(
+            "narrative: dismissal write failed for rejected %s %s",
+            kind,
+            row_id,
+        )
+
+
 def apply_verdict(
     store: NarrativeStore, user_id: str, item_id: str, verdict: str
 ) -> ReviewItem:
@@ -492,6 +625,8 @@ def apply_verdict(
                 user_id, row_id, "dismissed"
             )
     store.record_review_verdict(user_id, kind, row_id, verdict)
+    if verdict == "rejected":
+        _record_rejection_dismissal(store, user_id, item, kind, row_id)
     if verdict == "unresolved":
         return item
     # Decided items leave the pending list, so report the terminal

@@ -45,6 +45,7 @@ import {
 import { useTintedMaster } from './palaceTint'
 import planImage from './assets/palace-plan.jpg'
 import frontWallImage from './assets/palace-front-wall.png'
+import fireImage from './assets/palace-fire.png'
 import { SEAT_COLORS, type SeatId } from '../council/colors'
 
 /* The prototype's material palette. */
@@ -317,7 +318,12 @@ const PLAN_H = PALACE_GEOMETRY.height
 
 /** The bonfire's place on the plan — the plaza where the three
  *  courts meet (plan coordinates, the brief's numbers). */
-const PLAZA = { x: 642, y: 378 }
+// The plaza fire: the founder's own flame (2026-11-26 00:16 PT),
+// standing on the lotus at the courts' junction — moved up onto
+// the medallion at his direction (2026-11-26 12:09 PT: "The fire
+// also needs to move up and please use the fire I gave you").
+// Height 118 = the halved size he ruled 2026-11-26 01:19 PT.
+const PLAZA_FIRE = { cx: 642, base: 362, h: 118 }
 
 interface SceneBuilding {
   key: string
@@ -498,16 +504,21 @@ export function CompoundScene({
                 <SceneBuildingImage klass={b.klass} stage={b.stage} colour={b.colour} />
               </button>
             ))}
-        {/* the bonfire at the plaza, over the buildings */}
-        <svg
-          viewBox={`0 0 ${PLAN_W} ${PLAN_H}`}
-          className="pointer-events-none absolute inset-0 h-full w-full"
-          aria-hidden
-        >
-          <g onMouseEnter={() => onAttend(true)} style={{ pointerEvents: 'auto' }}>
-            <Bonfire x={PLAZA.x} y={PLAZA.y} lit={attended} />
-          </g>
-        </svg>
+        {/* the fire at the plaza: the founder's flame on the lotus,
+            over the buildings */}
+        <img
+          data-testid="palace-fire"
+          src={fireImage}
+          alt=""
+          draggable={false}
+          onMouseEnter={() => onAttend(true)}
+          className="pointer-events-none absolute block"
+          style={{
+            left: `${((PLAZA_FIRE.cx - (PLAZA_FIRE.h * 989) / 1530 / 2) / PLAN_W) * 100}%`,
+            bottom: `${((PLAN_H - PLAZA_FIRE.base) / PLAN_H) * 100}%`,
+            width: `${((PLAZA_FIRE.h * 989) / 1530 / PLAN_W) * 100}%`,
+          }}
+        />
         {/* the front wall, over everything */}
         <img
           src={frontWallImage}

@@ -92,10 +92,10 @@ describe('scene geometry scan', () => {
       expect(html, name).not.toMatch(/NaN|undefined/)
       expect(html, name).toContain('<svg')
     }
-    // The compound fire carries all seven council colours.
+    // The compound fire is the founder's own flame (his ruling,
+    // 2026-11-26 12:09 PT: "use the fire I gave you"), standing on
+    // the lotus — an image, not the SVG council flames.
     const compound = scenes[0][1]
-    for (const hex of ['#92b692', '#e24e4e', '#ac7c5b', '#a55cce', '#5c9cea', '#8892c3', '#a29ac1']) {
-      expect(compound, `flame colour ${hex}`).toContain(hex)
-    }
+    expect(compound).toContain('palace-fire')
   })
 })

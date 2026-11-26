@@ -259,10 +259,10 @@ afterEach(() => {
 })
 
 describe('Living Palace view', () => {
-  it('renders the compound over live records, bonfire at its centre', async () => {
+  it('renders the compound over live records, the founder’s fire at its centre', async () => {
     await render()
     expect(container.querySelector('[data-testid="palace-building-i1"]')).not.toBeNull()
-    expect(container.querySelector('[data-testid="palace-bonfire"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="palace-fire"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="palace-loose-project-lp"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="palace-loose-task-lt"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="palace-idea-id1"]')).not.toBeNull()

@@ -44,11 +44,12 @@ import {
   type SceneStructureInput,
   type SubjectInteraction,
 } from './palaceSceneLogic'
-import { SCENE2_FRAME, planBuildingScene, type RoomPlate } from './palaceScene2Logic'
+import { CAVITY_CLIP_PATH, SCENE2_FRAME, planBuildingScene, type RoomPlate } from './palaceScene2Logic'
 import { useTintedMaster } from './palaceTint'
 import planImage from './assets/palace-plan.jpg'
 import frontWallImage from './assets/palace-front-wall.png'
 import fireImage from './assets/palace-fire.png'
+import shellImage from './assets/palace-shell.jpg'
 import roomRoseImage from './assets/palace-room-rose.jpg'
 import roomSpiralImage from './assets/palace-room-spiral.jpg'
 import roomTiersImage from './assets/palace-room-tiers.jpg'
@@ -635,14 +636,15 @@ export function CompoundScene({
 /* ------------------------------------------------------------------ */
 /* building — Scene 2 (founder, 2026-11-26: "Great build it!")         */
 /*                                                                     */
-/* The building layer IS the Apollonian circle now: a cutaway of     */
-/* the dome — one great circle (sandstone rim, parchment disc)       */
-/* holding the building's floors as circles under the placement      */
+/* The building layer IS the Apollonian circle now, nested in the   */
+/* founder's dome shell (his ruling, 2026-11-26 13:33 PT: "It needs  */
+/* to nest In this geometry"): the shell art is the scene's ground   */
+/* and the composition stands inside its cavity under the placement  */
 /* law (palaceScene2Logic): each floor's AREA is its percentage      */
 /* share of the building's rooms, the composition fills the          */
-/* circle with descending filler circles, and ONE hearth — the       */
-/* founder's flame in its stone ring — stands at the bottom          */
-/* centre. Each floor circle's interior is one of the founder's      */
+/* cavity with descending filler circles, and ONE hearth — the       */
+/* founder's flame in its stone ring — stands on the shell's floor   */
+/* at the bottom centre. Each floor circle's interior is one of the  */
 /* three unfurnished room plates, by size rank cycling rose →        */
 /* spiral → tiers (addendum 2026-11-26 13:16 PT), its name on a      */
 /* parchment plaque over the art. Plain positioned DOM throughout    */
@@ -658,8 +660,6 @@ export function CompoundScene({
 /* ------------------------------------------------------------------ */
 
 /** The study's palette (build_study_v5.py), in the plates' tones. */
-const SCENE2_RIM = '#c4a47a'
-const SCENE2_DISC = '#f3ead6'
 const SCENE2_CIRCLE = '#e7cda4'
 const SCENE2_RING = '#927046'
 const SCENE2_RING_INNER = '#b29268'
@@ -675,9 +675,10 @@ const ROOM_PLATE_IMAGES: Record<RoomPlate, string> = {
 }
 
 /** The flame's height inside the hearth disc (frame units — the
- *  study's 96 in its 1024 frame; aspect from the shipped asset,
- *  as the compound's fire reads it). */
-const HEARTH_FLAME_H = 96
+ *  study's proportion, 0.706 of the hearth disc's diameter, in
+ *  the shell's 1254 frame; aspect from the shipped asset, as
+ *  the compound's fire reads it). */
+const HEARTH_FLAME_H = 88
 const FLAME_ASPECT = 989 / 1530
 
 const pct = (units: number) => `${(units / SCENE2_FRAME) * 100}%`
@@ -719,15 +720,21 @@ export function BuildingScene({
         role="img"
         aria-label={`Inside ${model.initiative.title}`}
       >
-        {/* the great circle: sandstone rim, parchment disc */}
-        <div
-          className="absolute inset-0 rounded-full"
-          style={{ background: SCENE2_RIM }}
+        {/* the dome shell — the founder's art is the scene's
+            ground, the whole 1254 frame; the composition nests
+            in its cavity */}
+        <img
+          data-testid="palace-shell"
+          src={shellImage}
+          alt=""
+          draggable={false}
+          className="absolute inset-0 block h-full w-full"
         />
-        <div
-          className="absolute rounded-full"
-          style={{ inset: pct(16), background: SCENE2_DISC }}
-        />
+
+        {/* the composition, clipped to the cavity polygon —
+            belt-and-braces: the placement law's containment
+            already keeps every circle inside the cavity */}
+        <div className="absolute inset-0" style={{ clipPath: CAVITY_CLIP_PATH }}>
 
         {/* the filler — descending circles closing the gaps */}
         {layout.fillers.map((c, i) => (
@@ -837,9 +844,11 @@ export function BuildingScene({
             </button>
           )
         })}
+        </div>
 
-        {/* the hearth — one per building, at the bottom centre:
-            the founder's flame in its stone ring */}
+        {/* the hearth — one per building, standing on the shell's
+            floor at the bottom centre: the founder's flame in
+            its stone ring */}
         <div
           data-testid="palace-building-hearth"
           className="pointer-events-none absolute rounded-full"

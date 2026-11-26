@@ -97,14 +97,17 @@ describe('scene geometry scan', () => {
     const compound = scenes[0][1]
     expect(compound).toContain('palace-fire')
     // The building scene is Scene 2 (founder, 2026-11-26): plain
-    // positioned DOM, not SVG — floors as Apollonian circles and
-    // the one hearth at the bottom centre, its flame the same
-    // founder image. No NaN / undefined geometry either.
+    // positioned DOM, not SVG — the founder's dome shell as the
+    // ground, floors as Apollonian circles nested in its cavity
+    // and the one hearth on its floor at the bottom centre, its
+    // flame the same founder image. No NaN / undefined geometry
+    // either.
     const building = renderToHtml(React.createElement(BuildingScene, {
       model: buildBuilding(DATA, I1), attendedFloorId: 'p1', onAttend: () => {}, onOpenFloor: () => {},
     }))
     expect(building.length, 'building').toBeGreaterThan(800)
     expect(building, 'building').not.toMatch(/NaN|undefined/)
+    expect(building).toContain('palace-shell')
     expect(building).toContain('palace-floor-p1')
     expect(building).toContain('palace-building-hearth')
     expect(building).toContain('palace-fire')

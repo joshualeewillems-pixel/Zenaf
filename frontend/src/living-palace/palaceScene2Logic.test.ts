@@ -1,22 +1,26 @@
 /**
- * Palace Scene 2 — placement-law invariants. The study builder
- * verifies by rendering; these pin the law itself as tests:
- * containment (every floor circle inside the great circle, clear
- * of the hearth), separation, share monotonicity (more rooms → not
- * smaller), the area-share rule, and determinism — on the shapes
- * the Palace must actually stand, the founder's live building
- * first.
+ * Palace Scene 2 — placement-law invariants, nested in the dome
+ * shell. The study builder verifies by rendering; these pin the
+ * law itself as tests: the cavity asset's decoded area (verified
+ * against the record before use — the #453 lesson), containment
+ * (every placed circle's centre has cavity-EDT ≥ its radius, so
+ * the whole circle stands inside the cavity), separation incl.
+ * the hearth, share monotonicity, the area-share rule, and
+ * determinism — on the shapes the Palace must actually stand,
+ * the founder's live building first.
  */
 import { describe, it, expect } from 'vitest'
 import {
   FILL_LADDER,
+  FILLER_HEARTH_MARGIN,
+  FILLER_WALL_MARGIN,
   FLOOR_GAP,
-  GREAT_CIRCLE_R,
+  HEARTH,
   HEARTH_CLEARANCE,
   HEARTH_R,
   MIN_FLOOR_RADIUS,
-  SCENE2_CENTER,
-  WALL_CLEARANCE,
+  cavityEdtAt,
+  cavityUsableArea,
   planBuildingScene,
   type PlacedFloor,
   type Scene2FloorInput,
@@ -54,10 +58,7 @@ const SHAPES: [string, Scene2FloorInput[]][] = [
 
 function expectLawful(placed: PlacedFloor[], hearth: { x: number; y: number; r: number }) {
   for (const p of placed) {
-    const dc = Math.hypot(p.x - SCENE2_CENTER, p.y - SCENE2_CENTER)
-    expect(dc + p.r, `${p.key} leaves the great circle`).toBeLessThanOrEqual(
-      GREAT_CIRCLE_R - WALL_CLEARANCE + EPS,
-    )
+    expect(cavityEdtAt(p.x, p.y), `${p.key} crosses the shell's frame`).toBeGreaterThanOrEqual(p.r - EPS)
     const dh = Math.hypot(p.x - hearth.x, p.y - hearth.y)
     expect(dh, `${p.key} overlaps the hearth`).toBeGreaterThanOrEqual(p.r + HEARTH_R + HEARTH_CLEARANCE - EPS)
   }
@@ -71,7 +72,14 @@ function expectLawful(placed: PlacedFloor[], hearth: { x: number; y: number; r: 
   }
 }
 
-describe('Palace Scene 2 — the Apollonian building law', () => {
+describe('Palace Scene 2 — the Apollonian building law, nested in the shell', () => {
+  it('the cavity asset decodes to its recorded usable area', () => {
+    // Verified before use (the #453 lesson): the RLE shipped in
+    // palace-cavity.json decodes to exactly the 543,190 px the
+    // derivation recorded.
+    expect(cavityUsableArea()).toBe(543190)
+  })
+
   it.each(SHAPES)('containment and separation hold: %s', (_name, shape) => {
     const layout = planBuildingScene(shape)
     expect(layout.floors).toHaveLength(shape.length)
@@ -82,16 +90,17 @@ describe('Palace Scene 2 — the Apollonian building law', () => {
     expect(planBuildingScene(shape)).toEqual(planBuildingScene(shape))
   })
 
-  it('the live building packs under the strict ladder, at its first rung', () => {
+  it('the live building packs whole — all eight floors placed', () => {
     const layout = planBuildingScene(LIVE_SHAPE)
-    expect(layout.fillUsed).toBe(FILL_LADDER[0])
+    expect(layout.floors).toHaveLength(LIVE_SHAPE.length)
+    expect(layout.fillUsed).toBeLessThanOrEqual(FILL_LADDER[0])
   })
 
-  it('area is the percentage share: radius² tracks rooms', () => {
+  it('area is the percentage share of the filled cavity: radius² tracks rooms', () => {
     const layout = planBuildingScene(LIVE_SHAPE)
     const total = LIVE_SHAPE.reduce((s, f) => s + f.roomCount, 0)
     for (const p of layout.floors) {
-      const expected = GREAT_CIRCLE_R * Math.sqrt((p.roomCount / total) * layout.fillUsed)
+      const expected = Math.sqrt(((p.roomCount / total) * layout.fillUsed * cavityUsableArea()) / Math.PI)
       expect(p.r, p.key).toBeCloseTo(expected, 6)
       expect(p.share).toBeCloseTo(p.roomCount / total, 9)
     }
@@ -131,7 +140,10 @@ describe('Palace Scene 2 — the Apollonian building law', () => {
   it('one floor is one large circle', () => {
     const layout = planBuildingScene([floor('only', 12)])
     expect(layout.floors).toHaveLength(1)
-    expect(layout.floors[0].r).toBeCloseTo(GREAT_CIRCLE_R * Math.sqrt(FILL_LADDER[0]), 6)
+    expect(layout.floors[0].r).toBeCloseTo(
+      Math.sqrt((layout.fillUsed * cavityUsableArea()) / Math.PI),
+      6,
+    )
   })
 
   it('a zero-room floor still gets the minimum tappable circle', () => {
@@ -147,13 +159,10 @@ describe('Palace Scene 2 — the Apollonian building law', () => {
     for (const f of layout.floors) expect(f.share).toBeCloseTo(0.25, 9)
   })
 
-  it('the hearth stands at the bottom centre, tangent to the rim', () => {
+  it('the hearth stands at the recorded place, on the shell’s floor', () => {
     const layout = planBuildingScene(LIVE_SHAPE)
-    expect(layout.hearth.x).toBe(SCENE2_CENTER)
-    expect(layout.hearth.r).toBe(HEARTH_R)
-    const dc = Math.hypot(layout.hearth.x - SCENE2_CENTER, layout.hearth.y - SCENE2_CENTER)
-    expect(dc + layout.hearth.r).toBeLessThanOrEqual(GREAT_CIRCLE_R)
-    expect(layout.hearth.y).toBeGreaterThan(SCENE2_CENTER)
+    expect(layout.hearth).toEqual({ x: HEARTH.x, y: HEARTH.y, r: HEARTH_R })
+    expect(layout.hearth).toEqual({ x: 627, y: 1022, r: 62 })
   })
 
   it('filler closes the gaps: contained, separated, descending, clear of the hearth', () => {
@@ -161,10 +170,9 @@ describe('Palace Scene 2 — the Apollonian building law', () => {
     expect(layout.fillers.length).toBeGreaterThan(40)
     const all = [...layout.floors, ...layout.fillers]
     for (const c of layout.fillers) {
-      const dc = Math.hypot(c.x - SCENE2_CENTER, c.y - SCENE2_CENTER)
-      expect(dc + c.r).toBeLessThanOrEqual(GREAT_CIRCLE_R - 3 + EPS)
+      expect(cavityEdtAt(c.x, c.y)).toBeGreaterThanOrEqual(c.r + FILLER_WALL_MARGIN - EPS)
       const dh = Math.hypot(c.x - layout.hearth.x, c.y - layout.hearth.y)
-      expect(dh).toBeGreaterThanOrEqual(c.r + HEARTH_R + 3 - EPS)
+      expect(dh).toBeGreaterThanOrEqual(c.r + HEARTH_R + FILLER_HEARTH_MARGIN - EPS)
     }
     for (let i = 0; i < all.length; i++) {
       for (let j = i + 1; j < all.length; j++) {
@@ -178,10 +186,10 @@ describe('Palace Scene 2 — the Apollonian building law', () => {
     }
   })
 
-  it('an empty building plans as the empty circle and the hearth alone', () => {
+  it('an empty building plans as the empty cavity and the hearth alone', () => {
     const layout = planBuildingScene([])
     expect(layout.floors).toEqual([])
     expect(layout.fillers).toEqual([])
-    expect(layout.hearth.r).toBe(HEARTH_R)
+    expect(layout.hearth).toEqual({ x: 627, y: 1022, r: 62 })
   })
 })

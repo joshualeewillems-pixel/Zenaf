@@ -1,31 +1,44 @@
 /**
- * Palace Scene 2 — the building as an Apollonian circle, ported to
- * TypeScript.
+ * Palace Scene 2 — the building as an Apollonian circle, nested in
+ * the dome shell. Ported to TypeScript.
  *
- * The building layer's ground is one great circle — the cutaway of
- * the building's dome — and the building's floors stand in it as
- * circles in Apollonian fashion, under the law the founder ruled
- * across 2026-11-26 12:53–13:04 PT and the study builder
- * (rendering-test-assets/maeve-palace-study/scene-2/
- * build_study_v5.py) implements — this module is that law's port,
- * and the invariants, not the study's coordinates, are the
- * contract (live data differs):
+ * The building layer's ground is the founder's empty dome shell
+ * (assets/palace-shell.jpg) and the building's floors stand as
+ * circles INSIDE its cavity, in Apollonian fashion, under the law
+ * the founder ruled across 2026-11-26 12:53–13:33 PT — the study
+ * builder (rendering-test-assets/maeve-palace-study/scene-2/
+ * build_study_v5.py) implements the packing, and the shell ruling
+ * ("It needs to nest In this geometry", 2026-11-26 13:33 PT) sets
+ * the container: the cavity derived from the shell art itself
+ * (assets/palace-cavity.json — 720-ray radial derivation from
+ * (627, 655), the polygon eroded 6px; usable area 543,190 px,
+ * verified against the decoded RLE by the tests, the #453
+ * lesson). This module is that law's port, and the invariants,
+ * not the study's coordinates, are the contract (live data
+ * differs):
  *
  *   - each floor (project) is one circle; its AREA is its
  *     percentage share of the filled composition: share = the
- *     floor's roomCount / the building's total rooms, radius =
- *     R × sqrt(share × fill). A floor with 0 rooms still gets a
- *     small tappable circle (MIN_FLOOR_RADIUS); if the building's
- *     total rooms are 0, shares are equal. One floor = one large
- *     circle.
- *   - the composition fills the circle: floors pack largest-first,
- *     tangent-seeking (wall-ring and around-placed candidates,
- *     scored by snugness — the study's score verbatim), fully
- *     deterministic. Remaining gaps close with descending
- *     unlabelled filler circles down to radius 3. No reserved
- *     centre hall.
- *   - one hearth, at the bottom centre: a stone-ring disc reserved
- *     on the bottom arc; nothing overlaps it. (The per-circle
+ *     floor's roomCount / the building's total rooms, area =
+ *     share × fill × the cavity's usable area. A floor with 0
+ *     rooms still gets a small tappable circle (MIN_FLOOR_RADIUS);
+ *     if the building's total rooms are 0, shares are equal. One
+ *     floor = one large circle.
+ *   - containment is the cavity's own: a placed circle's centre
+ *     must have cavity-EDT ≥ its radius (the EDT of the usable
+ *     mask decoded from the shipped RLE, Scene 1's exact
+ *     transform) — the whole circle then stands inside the
+ *     cavity, never crossing the shell's frame.
+ *   - the composition fills the cavity: floors pack largest-first,
+ *     tangent-seeking (tangency candidates around placed circles
+ *     plus a deterministic coarse grid over the cavity, scored by
+ *     the study's snugness — least slack to a neighbour, then to
+ *     the boundary via EDT), fully deterministic. Remaining gaps
+ *     close with descending unlabelled filler circles down to
+ *     radius 3. No reserved centre hall.
+ *   - one hearth, at the recorded place: centre (627, 1022),
+ *     r 62 in the 1254 frame — standing on the shell's floor at
+ *     the bottom centre; nothing overlaps it. (The per-circle
  *     hearths of study v4 were a misread and do not ship.)
  *   - each floor circle's interior is one of the founder's three
  *     unfurnished room plates, assigned by size rank cycling
@@ -34,38 +47,131 @@
  *     be denser than any study, so below the ladder the port keeps
  *     stepping the fill down (to 0.30), then scales every radius
  *     (the minimum included) by 0.9 steps, rather than dropping a
- *     floor silently. Every shape the tests exercise packs under
- *     the strict ladder; the relaxed phases are a documented
- *     safety net, not the design.
+ *     floor silently. The relaxed phases are a documented safety
+ *     net, not the design.
  *
  * The study's filler is seeded-random; here it is a fixed-seed
- * PRNG (mulberry32, seed 11 as in the study) running the study's
- * rejection sampling verbatim, so the layout is deterministic:
+ * PRNG (mulberry32, seed 11 as in the study) running rejection
+ * sampling over the cavity, so the layout is deterministic:
  * same input → same layout, every run.
  */
+import cavityJson from './assets/palace-cavity.json'
+import { distanceTransform } from './palaceSceneLogic'
 
 /* ------------------------------------------------------------------ */
-/* the frame (the study's coordinates)                                 */
+/* the frame and the cavity (the shell's own geometry)                 */
 /* ------------------------------------------------------------------ */
 
-/** The study's frame: a 1024 square, the great circle centred at
- *  (512, 512) with radius 468. Rendering converts to %. */
-export const SCENE2_FRAME = 1024
-export const SCENE2_CENTER = 512
-export const GREAT_CIRCLE_R = 468
+/** The shell art's frame: a 1254 square. Rendering converts the
+ *  placements to % of it. */
+export const SCENE2_FRAME = 1254
 
-/** The hearth's disc — reserved on the bottom arc, tangent to the
- *  great circle's bottom (the study: r 68, centre 2 units above
- *  the tangent point). */
-export const HEARTH_R = 68
-export const HEARTH = { x: 512, y: SCENE2_CENTER + GREAT_CIRCLE_R - HEARTH_R - 2 }
+interface CavityJsonShape {
+  frame: number
+  centre: [number, number]
+  polygon: [number, number][]
+  /** Per-row runs of usable pixels: each row is a list of
+   *  [start, length] pairs. */
+  usableRle: [number, number][][]
+  usableArea: number
+  polygonArea: number
+  hearth: { cx: number; cy: number; r: number }
+}
 
-/** A floor circle keeps this far from the great circle's rim. */
-export const WALL_CLEARANCE = 4
-/** …and this far from the hearth's disc. */
+const CAVITY_JSON = cavityJson as unknown as CavityJsonShape
+
+/** The cavity's recorded centre (the derivation's ray origin). */
+export const CAVITY_CENTER = { x: CAVITY_JSON.centre[0], y: CAVITY_JSON.centre[1] }
+
+/** The hearth's disc — the recorded place in the asset: standing
+ *  on the shell's floor at the bottom centre of the 1254 frame. */
+export const HEARTH_R = CAVITY_JSON.hearth.r
+export const HEARTH = { x: CAVITY_JSON.hearth.cx, y: CAVITY_JSON.hearth.cy }
+
+interface Cavity {
+  /** Usable-ground mask (1 = a circle may stand on this pixel). */
+  mask: Uint8Array
+  /** Exact EDT of the mask: distance to the nearest unusable
+   *  pixel. A circle of radius r centred where edt ≥ r stands
+   *  wholly inside the cavity. */
+  edt: Float64Array
+  /** The decoded usable area, in pixels — counted from the RLE,
+   *  never trusted from the record alone (the tests pin it
+   *  against the recorded 543,190). */
+  usableArea: number
+  minX: number
+  maxX: number
+  minY: number
+  maxY: number
+}
+
+let cavityCache: Cavity | null = null
+
+function loadCavity(): Cavity {
+  if (cavityCache) return cavityCache
+  const size = CAVITY_JSON.frame
+  const mask = new Uint8Array(size * size)
+  let usableArea = 0
+  let minX = size
+  let minY = size
+  let maxX = -1
+  let maxY = -1
+  CAVITY_JSON.usableRle.forEach((runs, y) => {
+    for (const [start, length] of runs) {
+      mask.fill(1, y * size + start, y * size + start + length)
+      usableArea += length
+      if (start < minX) minX = start
+      if (start + length - 1 > maxX) maxX = start + length - 1
+      if (y < minY) minY = y
+      if (y > maxY) maxY = y
+    }
+  })
+  cavityCache = {
+    mask,
+    edt: distanceTransform(mask, size, size),
+    usableArea,
+    minX,
+    maxX,
+    minY,
+    maxY,
+  }
+  return cavityCache
+}
+
+/** The cavity's decoded usable area (px). */
+export function cavityUsableArea(): number {
+  return loadCavity().usableArea
+}
+
+/** The cavity EDT at a point (nearest pixel; 0 outside the
+ *  frame). Containment reads: cavityEdtAt(x, y) ≥ r. */
+export function cavityEdtAt(x: number, y: number): number {
+  const { edt } = loadCavity()
+  const px = Math.round(x)
+  const py = Math.round(y)
+  if (px < 0 || py < 0 || px >= SCENE2_FRAME || py >= SCENE2_FRAME) return 0
+  return edt[py * SCENE2_FRAME + px]
+}
+
+/** The cavity polygon as a CSS clip-path (percent of the frame) —
+ *  belt-and-braces over the composition: containment already
+ *  guarantees no floor paints outside the cavity. */
+export const CAVITY_CLIP_PATH = `polygon(${CAVITY_JSON.polygon
+  .map(([x, y]) => `${((x / SCENE2_FRAME) * 100).toFixed(2)}% ${((y / SCENE2_FRAME) * 100).toFixed(2)}%`)
+  .join(', ')})`
+
+/* ------------------------------------------------------------------ */
+/* the law's constants                                                 */
+/* ------------------------------------------------------------------ */
+
+/** A floor circle keeps this far from the hearth's disc. */
 export const HEARTH_CLEARANCE = 4
 /** Minimum edge-to-edge gap between two floor circles. */
 export const FLOOR_GAP = 2
+/** Filler circles keep this much EDT margin inside the cavity. */
+export const FILLER_WALL_MARGIN = 3
+/** …and this far from the hearth's disc. */
+export const FILLER_HEARTH_MARGIN = 3
 
 /** The study's fill ladder. */
 export const FILL_LADDER = [0.66, 0.62, 0.58, 0.54]
@@ -75,6 +181,9 @@ const FILL_SAFETY_STEPS = [0.5, 0.46, 0.42, 0.38, 0.34, 0.3]
 /** A floor with few or no rooms still gets a tappable circle of
  *  at least this radius (frame units). */
 export const MIN_FLOOR_RADIUS = 34
+
+/** The candidate grid's step over the cavity (frame units). */
+export const GRID_STEP = 10
 
 /** Filler circles descend through these radii, as in the study. */
 export const FILLER_RADII = [52, 42, 34, 27, 21, 17, 13, 10, 8, 6, 5, 4, 3]
@@ -141,7 +250,7 @@ export function mulberry32(seed: number): () => number {
 }
 
 /* ------------------------------------------------------------------ */
-/* the packing (the study's try_pack, verbatim law)                    */
+/* the packing (the study's law, the cavity as container)              */
 /* ------------------------------------------------------------------ */
 
 interface SizedFloor extends Scene2FloorInput {
@@ -150,37 +259,41 @@ interface SizedFloor extends Scene2FloorInput {
 }
 
 function sizedFloors(floors: Scene2FloorInput[], fill: number, radiusScale: number): SizedFloor[] {
+  const usableArea = loadCavity().usableArea
   const total = floors.reduce((s, f) => s + f.roomCount, 0)
   return floors.map((f) => {
     const share = total > 0 ? f.roomCount / total : 1 / floors.length
-    const r = Math.max(GREAT_CIRCLE_R * Math.sqrt(share * fill), MIN_FLOOR_RADIUS) * radiusScale
+    const r = Math.max(Math.sqrt((share * fill * usableArea) / Math.PI), MIN_FLOOR_RADIUS) * radiusScale
     return { ...f, share, r }
   })
 }
 
 function fits(x: number, y: number, r: number, placed: PlacedFloor[]): boolean {
-  if (Math.hypot(x - SCENE2_CENTER, y - SCENE2_CENTER) + r > GREAT_CIRCLE_R - WALL_CLEARANCE) return false
+  if (cavityEdtAt(x, y) < r) return false
   if (Math.hypot(x - HEARTH.x, y - HEARTH.y) < r + HEARTH_R + HEARTH_CLEARANCE) return false
   return placed.every((p) => Math.hypot(x - p.x, y - p.y) >= r + p.r + FLOOR_GAP)
 }
 
-/** One packing attempt at one fill and radius scale — the study's
- *  candidate search and snugness score, verbatim. Returns null if
- *  any floor finds no lawful place. */
+/** One packing attempt at one fill and radius scale. Candidates:
+ *  a deterministic coarse grid over the cavity, then tangency
+ *  candidates around each placed circle (the study's second
+ *  family). The study's score: snugness — least slack to a
+ *  neighbour, then least slack to the boundary (EDT); first
+ *  maximum wins. Returns null if any floor finds no lawful
+ *  place. */
 function tryPack(sized: SizedFloor[]): PlacedFloor[] | null {
+  const cavity = loadCavity()
   const order = sized
     .map((f, i) => ({ f, i }))
     .sort((a, b) => b.f.r - a.f.r || a.i - b.i)
   const placed: PlacedFloor[] = []
   for (const { f } of order) {
     const r = f.r
-    // Candidates in the study's generation order: the wall ring
-    // first, then around each placed circle in placement order.
     const candidates: { x: number; y: number }[] = []
-    const rr = GREAT_CIRCLE_R - WALL_CLEARANCE - r
-    for (let i = 0; i < 240; i++) {
-      const a = (i * Math.PI) / 120
-      candidates.push({ x: SCENE2_CENTER + rr * Math.cos(a), y: SCENE2_CENTER + rr * Math.sin(a) })
+    for (let y = cavity.minY; y <= cavity.maxY; y += GRID_STEP) {
+      for (let x = cavity.minX; x <= cavity.maxX; x += GRID_STEP) {
+        candidates.push({ x, y })
+      }
     }
     for (const p of placed) {
       const d = r + p.r + FLOOR_GAP
@@ -189,15 +302,13 @@ function tryPack(sized: SizedFloor[]): PlacedFloor[] | null {
         candidates.push({ x: p.x + d * Math.cos(a), y: p.y + d * Math.sin(a) })
       }
     }
-    // The study's score: snugness — least slack to a neighbour,
-    // then least slack to the wall; first maximum wins.
     let best: { score: number; x: number; y: number } | null = null
     for (const { x, y } of candidates) {
       if (!fits(x, y, r, placed)) continue
       const slack = placed.length
         ? Math.min(...placed.map((p) => Math.hypot(x - p.x, y - p.y) - (r + p.r)))
         : 0
-      const wallSlack = GREAT_CIRCLE_R - (Math.hypot(x - SCENE2_CENTER, y - SCENE2_CENTER) + r)
+      const wallSlack = cavityEdtAt(x, y) - r
       const score = -Math.min(slack, 40) - Math.min(wallSlack, 40) * 0.5
       if (best === null || score > best.score) best = { score, x, y }
     }
@@ -215,22 +326,24 @@ function tryPack(sized: SizedFloor[]): PlacedFloor[] | null {
   return placed
 }
 
-/** The descending filler — the study's rejection sampling with a
- *  fixed seed: for each target radius, sampled points that stay
- *  inside the great circle, clear of the hearth, and clear of
- *  every circle already standing (floors and earlier filler). */
+/** The descending filler — rejection sampling with a fixed seed
+ *  over the cavity's bounds: sampled points whose circle stands
+ *  inside the cavity (EDT, with the rim margin), clear of the
+ *  hearth, and clear of every circle already standing (floors
+ *  and earlier filler). */
 function planFillers(floors: PlacedFloor[]): Scene2Circle[] {
+  const cavity = loadCavity()
   const rand = mulberry32(FILLER_SEED)
   const all: Scene2Circle[] = [...floors]
   const fillers: Scene2Circle[] = []
+  const spanX = cavity.maxX - cavity.minX
+  const spanY = cavity.maxY - cavity.minY
   for (const target of FILLER_RADII) {
     for (let attempt = 0; attempt < FILLER_ATTEMPTS; attempt++) {
-      const a = rand() * 2 * Math.PI
-      const d = rand() * (GREAT_CIRCLE_R - target)
-      const x = SCENE2_CENTER + d * Math.cos(a)
-      const y = SCENE2_CENTER + d * Math.sin(a)
-      if (Math.hypot(x - SCENE2_CENTER, y - SCENE2_CENTER) + target > GREAT_CIRCLE_R - 3) continue
-      if (Math.hypot(x - HEARTH.x, y - HEARTH.y) < target + HEARTH_R + 3) continue
+      const x = cavity.minX + rand() * spanX
+      const y = cavity.minY + rand() * spanY
+      if (cavityEdtAt(x, y) < target + FILLER_WALL_MARGIN) continue
+      if (Math.hypot(x - HEARTH.x, y - HEARTH.y) < target + HEARTH_R + FILLER_HEARTH_MARGIN) continue
       if (!all.every((p) => Math.hypot(x - p.x, y - p.y) >= target + p.r + FLOOR_GAP)) continue
       const circle = { x, y, r: target }
       fillers.push(circle)
@@ -240,9 +353,10 @@ function planFillers(floors: PlacedFloor[]): Scene2Circle[] {
   return fillers
 }
 
-/** Plan the building scene: floors as Apollonian circles under the
- *  law, the gaps filled, the hearth reserved. An empty building
- *  plans as the empty circle and the hearth alone. */
+/** Plan the building scene: floors as Apollonian circles nested
+ *  in the dome shell's cavity, the gaps filled, the hearth
+ *  reserved on the floor. An empty building plans as the empty
+ *  cavity and the hearth alone. */
 export function planBuildingScene(floors: Scene2FloorInput[]): BuildingSceneLayout {
   const hearth: Scene2Circle = { x: HEARTH.x, y: HEARTH.y, r: HEARTH_R }
   if (floors.length === 0) {
@@ -261,7 +375,7 @@ export function planBuildingScene(floors: Scene2FloorInput[]): BuildingSceneLayo
       return { floors: placed, fillers: planFillers(placed), hearth, fillUsed: fill }
     }
   }
-  // Unreachable for any building whose floors fit the circle at
+  // Unreachable for any building whose floors fit the cavity at
   // all (the last safety phase stands circles ~12 units wide).
   // Fail loudly rather than place a floor outside the law.
   throw new Error('Palace Scene 2: no lawful placement for the building’s floors')

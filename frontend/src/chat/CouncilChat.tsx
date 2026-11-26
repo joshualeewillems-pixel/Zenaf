@@ -182,6 +182,8 @@ export default function CouncilChat({
   prefill = null,
   seedMessages = null,
   onTurnSent = () => {},
+  stagedLabel = null,
+  onStagedClear,
 }: {
   /** 'sheet' = compact. 'workspace' = roomier. */
   environment: 'sheet' | 'workspace'
@@ -214,6 +216,19 @@ export default function CouncilChat({
    *  target-mismatch early return. The sheet uses it to refetch the
    *  invitation list, observing a join by the entry disappearing. */
   onTurnSent?: () => void
+  /** Tentative staging (founder, 2026-11-25): the plain name of the
+   *  thing a tap in the seat's world has staged into this
+   *  conversation. When non-null, a quiet chip stands above the
+   *  composer naming it, for as long as it stands staged. The chip
+   *  is presentation only — rendering, replacing, or clearing it
+   *  writes nothing, sends nothing, and adds no message to the
+   *  thread; the staged subject itself rides the turn `context`
+   *  and commits only through a sent turn's snapshot. */
+  stagedLabel?: string | null
+  /** Discards the staging — the same state change as setting the
+   *  thing down in the view that staged it. When absent, the chip
+   *  carries no dismissal. */
+  onStagedClear?: () => void
 }) {
   const base = apiBase()
   const { names } = useSeatMeta()
@@ -930,6 +945,30 @@ export default function CouncilChat({
             )}
           </div>
         </>
+      )}
+
+      {/* Tentative staging chip — the staged thing made visible in
+          the chat itself (founder, 2026-11-25: a tap populates IN
+          THE CHAT tentatively). It stands directly above the
+          composer while the thing stands staged in the view, and
+          setting it down here is the view's own discard. */}
+      {stagedLabel && (
+        <div
+          data-testid="staged-chip"
+          className="flex items-center gap-2 self-start rounded-full border border-amber-700/40 bg-amber-950/30 px-3 py-1.5 text-xs text-amber-200/90"
+        >
+          <span className="font-medium">{stagedLabel}</span>
+          {onStagedClear && (
+            <button
+              type="button"
+              data-testid="staged-chip-clear"
+              onClick={onStagedClear}
+              className="text-amber-300/70 underline decoration-dotted underline-offset-2 hover:text-amber-200"
+            >
+              Set it down
+            </button>
+          )}
+        </div>
       )}
 
       {(activeId || councilMode) && (

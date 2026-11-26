@@ -3,15 +3,19 @@
  * Jynx's Scroll view — jsdom render verification.
  *
  * The view mounts against a stubbed Vision Execution API (the same
- * routes the product uses) and must render the shelf under the
- * standing display rule — parents and loose items only: the
- * initiative in the lattice, the unanchored project, the loose
- * task and the idea in the bin; the initiative's project and the
- * project's task are NOT on the shelf face. Choosing a scroll
- * opens its own screen: the scroll unrolls large (the founder's
- * ground) with NO text on the sheet, its children stand beneath
- * it as scrolls of their own, and the conversation keys to the
- * open scroll at every level.
+ * routes the product uses) and must render Scene 1 (founder,
+ * 2026-11-25): the room, its Penrose fabric, one cubby per
+ * top-level item — the initiative, the unanchored project, the
+ * loose task, the idea — with the initiative's project and its
+ * task standing IN its cubby as a cluster (the commission's named
+ * rule), and NO text anywhere in the room. A tap stages a scroll
+ * tentatively (popup + the chat's staged chip, nothing written);
+ * the popup's body opens the scroll on the centre sheet, where it
+ * unrolls (the founder's ground) with NO text on the sheet, its
+ * children stand beneath as scrolls of their own, and the
+ * conversation keys to the open scroll at every level. A
+ * long-press on a scroll with children opens the worktable; on a
+ * leaf, the sheet directly.
  *
  * The founder's 2026-11-25 live-use corrections are pinned here:
  * the conversation NEVER swaps (rolling, selecting a drawing, a
@@ -248,13 +252,24 @@ describe('JynxScrollView', () => {
     await flush()
   }
 
-  /** Choose a scroll on the shelf face. */
-  async function choose(kind: string, id: string) {
+  /** Tap a scroll standing in the room or on the table: its
+   *  popup stands and the scroll is staged — nothing more. */
+  async function tap(kind: string, id: string) {
     const g = scrollEl(kind, id)
-    expect(g, `${kind}:${id} on the shelf`).not.toBeNull()
+    expect(g, `${kind}:${id} standing`).not.toBeNull()
     const hit = [...g!.querySelectorAll('rect')].find((r) => r.getAttribute('fill-opacity') === '0')
     expect(hit).toBeTruthy()
     await clickEl(hit!)
+    return hit!
+  }
+
+  /** Choose a scroll: tap it, then tap the popup's body to open
+   *  it on the centre sheet. */
+  async function choose(kind: string, id: string) {
+    await tap(kind, id)
+    const popup = container.querySelector('[data-testid="scroll-popup"]')
+    expect(popup, 'the tap’s popup').not.toBeNull()
+    await clickEl(popup!)
   }
 
   /** Open a child scroll from the open scroll's screen. */
@@ -270,10 +285,8 @@ describe('JynxScrollView', () => {
   }
 
   async function goBack() {
-    const btn = [...container.querySelectorAll('button')].find((b) =>
-      b.textContent?.startsWith('←'),
-    )
-    expect(btn, 'back button').toBeTruthy()
+    const btn = container.querySelector('[data-testid="scene-back"]')
+    expect(btn, 'back chevron').toBeTruthy()
     await clickEl(btn!)
   }
 
@@ -293,11 +306,19 @@ describe('JynxScrollView', () => {
     return container.querySelector(`[data-testid="${testId}"]`)
   }
 
-  it('renders the shelf face — parents and loose only, children absent', async () => {
+  it('renders the Scene 1 room — cubbies for the top level, clusters within, no text anywhere', async () => {
     await render()
-    expect(container.textContent).toContain('The Shelf of Scrolls')
-    // On the face: the initiative, the unanchored project, the
-    // loose task, the idea.
+    // The room's scenes carry no text at all: no heading, no
+    // lettered names — the old shelf title is gone with the case.
+    expect(container.textContent).not.toContain('The Shelf of Scrolls')
+    expect(container.querySelectorAll('svg text')).toHaveLength(0)
+    // The room itself stands: room ground + the fabric's frames.
+    const roomImg = [...container.querySelectorAll('image')].find((i) =>
+      (i.getAttribute('href') ?? '').includes('scroll-room'),
+    )
+    expect(roomImg, 'the room ground').toBeTruthy()
+    // Top-level cubbies: the initiative, the unanchored project,
+    // the loose task, the idea.
     for (const [kind, id] of [
       ['initiative', 'i1'],
       ['project', 'p2'],
@@ -305,12 +326,20 @@ describe('JynxScrollView', () => {
       ['idea', 'idea1'],
     ] as const) {
       expect(scrollEl(kind, id), `${kind}:${id}`).not.toBeNull()
+      expect(scrollEl(kind, id)?.getAttribute('data-cluster')).toBeNull()
     }
-    // NOT on the face: the initiative's project and its task.
-    expect(scrollEl('project', 'p1')).toBeNull()
-    expect(scrollEl('task', 't1')).toBeNull()
+    // The commission's named rule: the initiative's cubby holds
+    // its nested project and the project's task as a cluster.
+    const cubby = container.querySelector('[data-cubby="initiative:i1"]')
+    expect(cubby).not.toBeNull()
+    expect(cubby!.querySelector('[data-scroll="project:p1"]')?.getAttribute('data-cluster')).toBe('true')
+    expect(cubby!.querySelector('[data-scroll="task:t1"]')?.getAttribute('data-cluster')).toBe('true')
+    // A leaf cubby holds one scroll alone.
+    const leaf = container.querySelector('[data-cubby="project:p2"]')
+    expect(leaf!.querySelectorAll('[data-scroll]')).toHaveLength(1)
+    // Names stand nowhere on the face — they live in the popup.
     expect(container.textContent).not.toContain('Meet the Bear')
-    expect(container.textContent).not.toContain('Bear step one')
+    expect(container.textContent).not.toContain('Council fellowship')
     // No scroll is open; the conversation is Jynx's, keyed to the shelf.
     expect(container.querySelector('[data-open-scroll]')).toBeNull()
     expect(chat()?.getAttribute('data-archetype')).toBe('maverick')
@@ -318,27 +347,64 @@ describe('JynxScrollView', () => {
     expect(chatContext()).toEqual({ sheet_type: 'jynx_scroll' })
   })
 
-  it('distinguishes scrolls from recorded fields only — the Blocked binding wears violet', async () => {
+  it('distinguishes scrolls from recorded fields only — a Blocked scroll’s ring band wears violet', async () => {
     await render()
-    const violetCords = [...container.querySelectorAll('rect')].filter(
-      (r) => r.getAttribute('fill') === '#a55cce',
+    const violetRings = [...container.querySelectorAll('circle')].filter(
+      (c) => c.getAttribute('stroke') === '#a55cce',
     )
-    // Exactly the Blocked loose project's two binding cords —
-    // nothing else on the shelf face is violet.
-    expect(violetCords).toHaveLength(2)
-    const blocked = scrollEl('project', 'p2')
-    expect([...blocked!.querySelectorAll('rect')].some((r) => r.getAttribute('fill') === '#a55cce')).toBe(true)
+    // Exactly the two Blocked scrolls wear violet: the loose
+    // project and the initiative's clustered project. Nothing
+    // else in the room is violet.
+    expect(violetRings).toHaveLength(2)
+    for (const [kind, id] of [
+      ['project', 'p2'],
+      ['project', 'p1'],
+    ] as const) {
+      const ring = scrollEl(kind, id)!.querySelector('[data-status-ring]')
+      expect(ring?.getAttribute('data-status-ring')).toBe('#a55cce')
+    }
     const active = scrollEl('initiative', 'i1')
-    expect([...active!.querySelectorAll('rect')].some((r) => r.getAttribute('fill') === '#a55cce')).toBe(false)
+    expect(active!.querySelector('[data-status-ring]')?.getAttribute('data-status-ring')).toBe('#4a3826')
   })
 
-  it('choosing a scroll opens its own screen — children beneath, back by levels, chat keyed throughout', async () => {
+  it('a tap stages a scroll tentatively — popup with its name and recorded synopsis, the chat’s chip, nothing written; tapping the room sets it down', async () => {
+    await render()
+    const traffic = () => ({ fetch: fetchMock.mock.calls.length, feed: stubDrawings.calls })
+    const before = traffic()
+
+    await tap('initiative', 'i1')
+    const popup = container.querySelector('[data-testid="scroll-popup"]')
+    expect(popup).not.toBeNull()
+    expect(popup!.textContent).toContain('Council fellowship')
+    expect(popup!.textContent).toContain('Initiative · Active')
+    expect(popup!.textContent).toContain('1 project · 1 task within')
+    // The staging shows in the chat and keys its subject — while
+    // the conversation itself stays the shelf's: nothing opened.
+    expect(chatStub.latest?.stagedLabel).toBe('Council fellowship')
+    expect(chatContext()).toEqual({
+      sheet_type: 'jynx_scroll',
+      entity_type: 'initiative',
+      entity_id: 'i1',
+    })
+    expect(chat()?.getAttribute('data-conversation-id')).toBe('jynx-scroll:shelf')
+    expect(container.querySelector('[data-open-scroll]')).toBeNull()
+    expect(traffic()).toEqual(before)
+
+    // Tapping the room's bare ground dismisses both, silently.
+    await clickEl(container.querySelector('[data-testid="scene-background"]')!)
+    expect(container.querySelector('[data-testid="scroll-popup"]')).toBeNull()
+    expect(chatStub.latest?.stagedLabel).toBeNull()
+    expect(chatContext()).toEqual({ sheet_type: 'jynx_scroll' })
+    expect(traffic()).toEqual(before)
+  })
+
+  it('choosing a scroll opens it on the centre sheet — the room stands around it, children beneath, back by levels, chat keyed throughout', async () => {
     await render()
     await choose('initiative', 'i1')
-    // The initiative's own screen: its scroll unrolled, its project
-    // standing beneath as a child scroll.
+    // The initiative stands open on the sheet, in the room: the
+    // shelf is NOT replaced — Scene 1 holds both at once.
     expect(container.querySelector('[data-open-scroll="initiative:i1"]')).not.toBeNull()
-    expect(container.querySelector('[data-scroll]')).toBeNull() // the shelf is replaced
+    expect(scrollEl('initiative', 'i1')).not.toBeNull()
     expect(chat()?.getAttribute('data-conversation-id')).toBe('jynx-scroll:initiative:i1')
 
     await openChild('project', 'p1')
@@ -362,8 +428,90 @@ describe('JynxScrollView', () => {
     expect(chat()?.getAttribute('data-conversation-id')).toBe('jynx-scroll:initiative:i1')
     await goBack()
     expect(container.querySelector('[data-open-scroll]')).toBeNull()
-    expect(container.textContent).toContain('The Shelf of Scrolls')
+    expect(scrollEl('initiative', 'i1')).not.toBeNull()
     expect(chat()?.getAttribute('data-conversation-id')).toBe('jynx-scroll:shelf')
+  })
+
+  it('a long-press on a bay’s parent opens the worktable; on a leaf, the sheet — and the trailing click is swallowed', async () => {
+    vi.useFakeTimers()
+    try {
+      const flushFake = async (ms = 0) => {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(ms)
+        })
+      }
+      await act(async () => {
+        root.render(React.createElement(JynxScrollView))
+      })
+      await flushFake(0)
+      await flushFake(0)
+
+      const press = async (kind: string, id: string) => {
+        const g = scrollEl(kind, id)
+        expect(g, `${kind}:${id}`).not.toBeNull()
+        const hit = [...g!.querySelectorAll('rect')].find(
+          (r) => r.getAttribute('fill-opacity') === '0',
+        )
+        await act(async () => {
+          hit!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+        })
+        await flushFake(500)
+        // The press ends and the browser's trailing click lands —
+        // it must not turn the long-press into a tap.
+        await act(async () => {
+          hit!.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }))
+          hit!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        })
+        await flushFake(0)
+        return hit!
+      }
+
+      // The initiative has children: the worktable opens, its
+      // project standing on the table with its task clustered.
+      await press('initiative', 'i1')
+      expect(container.querySelector('[data-testid="worktable"]')).not.toBeNull()
+      const row = container.querySelector('[data-table-row="project:p1"]')
+      expect(row).not.toBeNull()
+      expect(row!.querySelector('[data-scroll="task:t1"]')?.getAttribute('data-cluster')).toBe('true')
+      // No popup, no staging — the long-press was not a tap.
+      expect(container.querySelector('[data-testid="scroll-popup"]')).toBeNull()
+      expect(chatStub.latest?.stagedLabel).toBeNull()
+
+      // From the table, a tap stages the project and its popup
+      // opens it on the room's centre sheet, through its parent.
+      const rowHit = [...row!.querySelectorAll('rect')].find(
+        (r) => r.getAttribute('fill-opacity') === '0' && r.closest('[data-scroll="project:p1"]'),
+      )
+      await act(async () => {
+        rowHit!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      await flushFake(0)
+      const popup = container.querySelector('[data-testid="scroll-popup"]')
+      expect(popup).not.toBeNull()
+      expect(popup!.textContent).toContain('Meet the Bear')
+      expect(chatStub.latest?.stagedLabel).toBe('Meet the Bear')
+      await act(async () => {
+        popup!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      await flushFake(0)
+      expect(container.querySelector('[data-testid="worktable"]')).toBeNull()
+      expect(container.querySelector('[data-open-scroll="project:p1"]')).not.toBeNull()
+      // The trail walked through the parent: back lands on the
+      // initiative's sheet, then the shelf.
+      const back = container.querySelector('[data-testid="scene-back"]')
+      await act(async () => {
+        back!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      await flushFake(0)
+      expect(container.querySelector('[data-open-scroll="initiative:i1"]')).not.toBeNull()
+
+      // A leaf's long-press opens it on the sheet directly.
+      await press('idea', 'idea1')
+      expect(container.querySelector('[data-testid="worktable"]')).toBeNull()
+      expect(container.querySelector('[data-open-scroll="idea:idea1"]')).not.toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('the drawing scroll carries no text — no title on the sheet, no text elements at all', async () => {
@@ -759,7 +907,9 @@ describe('JynxScrollView', () => {
       const hit1 = [...g1!.querySelectorAll('rect')].find(
         (r) => r.getAttribute('fill-opacity') === '0',
       )
+      // Tap stages; the popup's body opens — the choose path.
       await clickFake(hit1!)
+      await clickFake(container.querySelector('[data-testid="scroll-popup"]')!)
       await clickFake(container.querySelector('[data-child-scroll="project:p1"]')!)
 
       const drawingEl = container.querySelector('[data-drawing-id="d1"]')

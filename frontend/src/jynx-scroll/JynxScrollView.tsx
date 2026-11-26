@@ -1,52 +1,63 @@
 /**
  * Jynx's Scroll — the production surface.
  *
- * The Fox's home is a shelf of scrolls (founder, 2026-11-24): a
- * diamond-lattice wooden case holding the user's real Vision
- * Execution work under the standing display rule — parents and
- * loose items only. The lattice holds one scroll per initiative;
- * the open bin at the case's base holds one scroll per unanchored
- * project, per top-level loose task, and per idea. Children are
- * not on the shelf face: choosing a scroll opens its OWN SCREEN
- * (founder, 2026-11-24, superseding the in-scene stand unroll of
- * the first build), where the scroll unrolls full-size into the
- * drawing surface and its children stand beneath it as scrolls of
- * their own, each opening in turn — every record stays reachable
- * through its parent. Jynx's drawings arrive on the sheet mark by
- * mark, in order (rhyme in paint first) — ONCE each: a drawing
- * draws itself when it first appears on its scroll's sheet, and
- * every later presentation shows the finished ink standing
- * (founder, 2026-11-25: signify permanence; don't repaint). The
- * conversation beside the scene belongs to the open scroll and
- * NEVER swaps (founder, 2026-11-25: rolling forward made the
- * conversation he was in disappear); a tapped drawing becomes
- * that conversation's SUBJECT — the seat explains the metaphor in
- * words, in the same talk — through the same LiveContext seam the
- * Campaign Board uses. The drawing scroll itself carries NO text
- * (founder, 2026-11-24): no title lettered on the parchment,
- * nothing on the sheet but the drawings — the subject's name
- * lives in the screen's chrome, never on the scroll. The surface
- * writes nothing anywhere.
+ * The Fox's home is Scene 1 (founder, 2026-11-25: "implement what
+ * we built as scene one") — the frozen room at
+ * sprites/scroll-rebuild/scene-1/: the room image as ground, the
+ * shelf wall tiled from the canonical Penrose deflation
+ * (sceneLogic.ts — the same geometry the founder accepted in the
+ * composite), and the founder's sheet hanging at the fixture's
+ * rect in the middle of the wall. The diamond-lattice case and
+ * base bin of the first build are gone; the room IS the shelf.
  *
- * Assembled from the record's own pieces, not redrawn: the
- * unrolled scroll IS the founder's scroll ground
- * (visual-references-2026-11-18/jynx-scroll-ground-founder, shipped
- * byte-identical as assets/scroll-ground.png, rollers and all);
- * the drawing hand is their stencil kit (rendering-test-assets/
- * jynx-stencil-kit — the same PNG stamps, byte-identical, placed
- * by centre/width/angle/flip/tier exactly as the approved scroll
- * study's generator places them) plus freehand sumi strokes; the
- * unroll and the mark-by-mark arrival follow the approved scroll
- * film's rhythm (the sheet unrolls downward, the painting paints
- * once). The shelf's drawn case is this surface's own furniture
- * in the app's register, after the founder's two shelf references
- * (diamond-lattice case, base bin).
+ * Cubbies: one rhomb cell per top-level item (initiatives and
+ * loose items alike — Scene 1 has no bin), assigned
+ * deterministically (sceneLogic.assignCubbies). A cubby whose
+ * item has nested projects/tasks holds a CLUSTER — the parent's
+ * scroll in front, up to three child scrolls tucked behind it
+ * (the commission's named rule). Every scroll is the founder's
+ * end-on asset, lifted byte-identical (left of the sheet's centre
+ * line it faces one way, right of it the mirrored asset — the
+ * founder's placement rule); its size is the recorded radius
+ * (kind + mass) capped by its cell, and its status stands as a
+ * ring band on the end face in the recorded cord colour — a
+ * Blocked scroll wears Jynx's violet. NO text stands on any
+ * scroll or in the room: no heading, no lettered names, no
+ * explanatory copy (the surface rule). Names live in the popup
+ * and the chat, never on the parchment.
  *
- * Every distinction between shelf scrolls is recorded, never
- * decorative (see scrollLogic): size from kind + recorded mass,
- * parchment tone from recorded age, the binding cord's colour from
- * recorded status — a Blocked item wears Jynx's violet, the one
- * scroll that stands out among plain ones.
+ * Taps and presses (founder rulings, 2026-11-25):
+ *  - TAP a scroll: a small popup stands in the room with the
+ *    item's name and a short synopsis composed from recorded
+ *    fields only, and the item is staged TENTATIVELY in the chat
+ *    through the staged-chip seam — the tap writes nothing
+ *    anywhere; tapping elsewhere dismisses both silently.
+ *    Tapping the popup's body opens the item on the centre sheet
+ *    (the open/unroll path below, walked through its parents so
+ *    the back step lands where it came from).
+ *  - LONG-PRESS a scroll with children: the WORKTABLE screen —
+ *    its children standing end-on along the table, each with its
+ *    own cluster; the same tap/popup rules; a back chevron (no
+ *    prose) returns to the room. Long-press on a leaf opens it
+ *    on the sheet directly.
+ *
+ * The centre sheet is the first build's sheet, unchanged: the
+ * founder's scroll ground (assets/scroll-ground.png, byte-
+ * identical, rollers and all) rendered into the fixture's rect,
+ * its drawings arriving mark by mark in order (rhyme in paint
+ * first) — ONCE each: a drawing draws itself when it first
+ * appears on its scroll's sheet, and every later presentation
+ * shows the finished ink standing (founder, 2026-11-25: signify
+ * permanence; don't repaint). The conversation beside the scene
+ * belongs to the open scroll and NEVER swaps (founder,
+ * 2026-11-25); a tapped drawing becomes that conversation's
+ * SUBJECT — the seat explains the metaphor in words, in the same
+ * talk — through the same LiveContext seam the Campaign Board
+ * uses. Exactly one subject stands staged at a time: a scroll
+ * tap stages the scroll, a drawing tap stages the drawing, each
+ * silently replacing the other, and both are tentative — they
+ * enter the conversation's record only inside a turn the visitor
+ * actually sends.
  *
  * The drawing feed is the read side of the [[chalk]] carriage
  * (scrollApi.ts): GET /conversation/drawings serves the caller's
@@ -54,45 +65,43 @@
  * scroll's OWN drawings on its sheet — the feed is keyed to the
  * open scroll's conversation server-side and filtered again on
  * the served provenance client-side, so a drawing from another
- * conversation never stands here (founder, 2026-11-25: the scroll
- * was showing a drawing from a previous conversation on an
- * entirely different topic). With the carriage's server flag off,
- * no drawings are made and the feed is honestly empty — the
- * unrolled scroll stands blank, with no placeholder art and no
- * invented drawings. The feed stays current without polling: it
- * re-reads when a scroll is opened or stepped back to, when a
- * conversation turn lands beside the scroll (CouncilChat's
- * onTurnSent — the carriage parses Jynx's tail server-side during
- * the turn, so a drawing made in that turn is already persisted
- * when the reply lands), and when the window regains focus or
- * visibility. A drawing that arrives while a scroll is open joins
- * its sheet in place — the sheet does not re-unroll under the
- * visitor, and the visitor's place along the sheet is not moved
- * unless they are resting with the newest drawing, in which case
- * the sheet grows with them.
+ * conversation never stands here (founder, 2026-11-25). With the
+ * carriage's server flag off, no drawings are made and the feed
+ * is honestly empty — the unrolled scroll stands blank, with no
+ * placeholder art and no invented drawings. The feed stays
+ * current without polling: it re-reads when a scroll is opened
+ * or stepped back to, when a conversation turn lands beside the
+ * scroll (CouncilChat's onTurnSent — the carriage parses Jynx's
+ * tail server-side during the turn, so a drawing made in that
+ * turn is already persisted when the reply lands), and when the
+ * window regains focus or visibility. A drawing that arrives
+ * while a scroll is open joins its sheet in place — the sheet
+ * does not re-unroll under the visitor, and the visitor's place
+ * along the sheet is not moved unless they are resting with the
+ * newest drawing, in which case the sheet grows with them.
  *
  * The open scroll is ONE continuous sheet, not pages (founder,
- * 2026-11-25): its drawings stand along it in the order they were
- * made, the earlier ones rolled up compact toward the top, fresh
- * blank parchment below the newest as working space for the next
- * drawing. Rolling moves ALONG the sheet: the founder's rollers —
- * top toward the older drawings at the top, bottom toward the
- * newer at the bottom — and the screen's Roll back / Roll forward
- * controls move the sheet's focus (scrollLogic.sheetLayout),
- * never swap sheets, and the sheet's content never unmounts. The
- * sheet unrolls only the first time a scroll is opened in this
+ * 2026-11-25): its drawings stand along it in the order they
+ * were made, the earlier ones rolled up compact toward the top,
+ * fresh blank parchment below the newest as working space for
+ * the next drawing. Rolling moves ALONG the sheet: the sheet's
+ * rollers (top toward the older drawings, bottom toward the
+ * newer) and the screen's Roll back / Roll forward controls move
+ * the sheet's focus (scrollLogic.sheetLayout), never swap
+ * sheets, and the sheet's content never unmounts. The sheet
+ * unrolls only the first time a scroll is opened in this
  * viewing; a presented drawing's ink never repaints.
  *
  * Presented-ness — which drawings have drawn themselves, which
  * scrolls have unrolled — is session state of this mounted
  * surface, keyed by drawing id / scroll key, held in memory only.
- * It survives rolling, selecting, refreshes, and stepping away to
- * the shelf and back within the surface; it does not survive the
- * surface unmounting (a page reload, leaving the seat and
- * returning), because presentation is a viewing, not a record —
- * the store records drawings, not who has watched them arrive.
- * After such a return each drawing draws itself once more on its
- * first presentation, exactly as it did the first time.
+ * It survives rolling, selecting, refreshes, and stepping away
+ * within the surface; it does not survive the surface unmounting
+ * (a page reload, leaving the seat and returning), because
+ * presentation is a viewing, not a record — the store records
+ * drawings, not who has watched them arrive. After such a return
+ * each drawing draws itself once more on its first presentation,
+ * exactly as it did the first time.
  *
  * Talk is the existing council conversation, opened with Jynx
  * (maverick). No separate chat engine. Jynx takes they/them in
@@ -110,7 +119,6 @@ import {
   markProgressAt,
   scrollChildren,
   sheetLayout,
-  shelfTopLevel,
   JYNX_PURPLE,
   type ScrollDrawing,
   type ScrollMark,
@@ -119,7 +127,31 @@ import {
   type ShelfScroll,
   type StampName,
 } from './scrollLogic'
+import {
+  CLUSTER_SHOWN,
+  DEPTH_SCALE,
+  FRAME_H,
+  FRAME_W,
+  SHEET_RECT,
+  VANISHING_POINT,
+  assignCubbies,
+  buildPenroseFabric,
+  longPressRoute,
+  popupSynopsis,
+  scrollKey,
+  scrollWidthFor,
+  tableRows,
+  trailForScroll,
+  type CubbyAssignment,
+  type FabricRhomb,
+  type PenroseFabric,
+  type TableRow,
+} from './sceneLogic'
 import scrollGround from './assets/scroll-ground.png'
+import scrollRoom from './assets/scroll-room.png'
+import scrollEnd from './assets/scroll-end.png'
+import scrollEndRight from './assets/scroll-end-right.png'
+import scrollTable from './assets/scroll-table.png'
 import stampArc from './assets/arc.png'
 import stampCaret from './assets/caret.png'
 import stampCrescent from './assets/crescent.png'
@@ -132,18 +164,27 @@ import stampTriangle from './assets/triangle.png'
 import stampWave from './assets/wave.png'
 
 const INK = '#1a1816'
-const WOOD = '#6b4a2e'
 const WOOD_DARK = '#4a3018'
 const WOOD_DEEP = '#3c2712'
-const CELL_INNER = '#2e2119'
-const NAME_INK = '#3a2c1c'
+const FRAME_WOOD = '#7c5a36'
+const FRAME_BACK = 'rgba(100,66,36,0.5)'
 
-const SCENE_W = 920
-const CASE_X = 16
-const CASE_W = SCENE_W - CASE_X * 2
-const COLS = 6
-const CELL_W = CASE_W / COLS
-const CELL_H = 104
+/** The founder's ground on its own screen: drawn at its own
+ *  aspect (1086×1448), never stretched. The parchment interior —
+ *  where drawings may land — is the sheet inside its rollers and
+ *  torn edges, as fractions of the image. In Scene 1 the sheet
+ *  component is rendered into the fixture's rect by the transform
+ *  on the room's sheet group (see RoomScene): the ground's own
+ *  rect below maps onto SHEET_RECT exactly (384/340 = 512/453). */
+const SCREEN_W = 480
+const SCREEN_CX = SCREEN_W / 2
+const SHEET_TOP = 96
+const GROUND_W = 340
+const GROUND_H = 453
+const INTERIOR = { x: 0.155, y: 0.125, w: 0.7, h: 0.75 }
+
+const UNROLL_MS = 850
+const LONG_PRESS_MS = 450
 
 /** The stencil kit, lifted: name → asset + the PNG's own pixel
  *  size (the placement math needs each stamp's true aspect). */
@@ -158,25 +199,6 @@ const STAMPS: Record<StampName, { src: string; w: number; h: number }> = {
   slash: { src: stampSlash, w: 289, h: 256 },
   triangle: { src: stampTriangle, w: 271, h: 245 },
   wave: { src: stampWave, w: 297, h: 175 },
-}
-
-/** The founder's ground on its own screen: drawn at its own
- *  aspect (1086×1448), never stretched, large in the world pane.
- *  The parchment interior — where drawings may land — is the
- *  sheet inside its rollers and torn edges, as fractions of the
- *  image. */
-const SCREEN_W = 480
-const SCREEN_CX = SCREEN_W / 2
-const SHEET_TOP = 96
-const GROUND_W = 340
-const GROUND_H = 453
-const INTERIOR = { x: 0.155, y: 0.125, w: 0.7, h: 0.75 }
-
-const UNROLL_MS = 850
-
-function letterName(title: string, max: number): string {
-  const t = (title || '').trim()
-  return t.length > max ? `${t.slice(0, max - 1)}…` : t
 }
 
 /** A refetched feed is "the same" when it carries the same
@@ -198,19 +220,38 @@ function prefersReducedMotion(): boolean {
   }
 }
 
+interface StagedAnchor {
+  /** Anchor point as percentages of the scene frame. */
+  xPct: number
+  yPct: number
+  /** Place the popup below the anchor (anchors near the top). */
+  below: boolean
+}
+
 export default function JynxScrollView() {
   const [entities, setEntities] = useState<ScrollEntities | null>(null)
   const [drawings, setDrawings] = useState<ScrollDrawing[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   /** The open scroll's trail: shelf → parent → child … The last
-   *  entry is the scroll on screen; the rest are its ancestors,
-   *  so the back step always lands on the parent it came from. */
+   *  entry is the scroll on the centre sheet; the rest are its
+   *  ancestors, so the back step always lands on the parent it
+   *  came from. */
   const [openTrail, setOpenTrail] = useState<string[]>([])
   /** The visitor's chosen place along the open sheet, as a band
    *  index — or null, resting with the newest drawing (the sheet
    *  grows under a resting visitor; an explicit place is held). */
   const [focusOverride, setFocusOverride] = useState<number | null>(null)
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null)
+  /** The tentatively staged scroll (a tap): its key, resolved
+   *  against the current shelf, and where its popup stands. The
+   *  staging is client-side state alone — nothing is written by
+   *  a tap, and it leaves this surface only inside a turn the
+   *  visitor actually sends. */
+  const [stagedKey, setStagedKey] = useState<string | null>(null)
+  const [stagedAnchor, setStagedAnchor] = useState<StagedAnchor | null>(null)
+  /** The scroll whose children stand on the worktable, by key —
+   *  or null, standing in the room. */
+  const [tableKey, setTableKey] = useState<string | null>(null)
   /** The surface's clock, in epoch ms, ticking while a scroll is
    *  open. Presentation is computed from it — which drawings are
    *  mid-arrival — never stored as per-drawing state. */
@@ -298,27 +339,35 @@ export default function JynxScrollView() {
     [entities],
   )
   const allScrolls = useMemo(() => flattenShelf(shelf), [shelf])
-  const openKey = openTrail[openTrail.length - 1] ?? null
-  const open = useMemo(
-    () => allScrolls.find((s) => `${s.kind}:${s.id}` === openKey) ?? null,
-    [allScrolls, openKey],
+  const fabric = useMemo(() => buildPenroseFabric(), [])
+  const assignments = useMemo(
+    () => (entities ? assignCubbies(shelf, fabric.rhombs) : []),
+    [entities, shelf, fabric],
   )
-  const openParent = useMemo(() => {
-    const parentKey = openTrail[openTrail.length - 2]
-    return parentKey
-      ? (allScrolls.find((s) => `${s.kind}:${s.id}` === parentKey) ?? null)
-      : null
-  }, [allScrolls, openTrail])
+  const byKey = useCallback(
+    (key: string | null) =>
+      key ? (allScrolls.find((s) => scrollKey(s) === key) ?? null) : null,
+    [allScrolls],
+  )
+  const openKey = openTrail[openTrail.length - 1] ?? null
+  const open = byKey(openKey)
   const openChildren = useMemo(
     () => (open ? scrollChildren(shelf, open) : []),
     [shelf, open],
   )
+  const staged = byKey(stagedKey)
+  const tableParent = byKey(tableKey)
+  const tableRowList = useMemo(
+    () => (tableParent ? tableRows(shelf, tableParent) : []),
+    [shelf, tableParent],
+  )
+
   /* --------------------------- chat wiring --------------------------- */
 
   // The conversation beside the scroll belongs to the open scroll
   // and NOTHING in the world pane changes it (founder, 2026-11-25):
   // not rolling, not selecting a drawing, not a drawing arriving.
-  // A selected drawing changes the conversation's SUBJECT (below),
+  // A staged subject changes the conversation's SUBJECT (below),
   // never its identity.
   const conversationId = open ? `jynx-scroll:${open.kind}:${open.id}` : 'jynx-scroll:shelf'
 
@@ -345,11 +394,30 @@ export default function JynxScrollView() {
     return sheetLayout(sheetDrawings, focusOverride ?? resting)
   }, [sheetDrawings, focusOverride])
 
+  // One staged subject at a time: a drawing first (it is the
+  // sheet's own tap), then a staged scroll, then the open scroll.
   const chatContext: Record<string, unknown> = selectedDrawing
     ? { sheet_type: 'jynx_scroll', entity_type: 'drawing', entity_id: selectedDrawing.id }
-    : open
-      ? { sheet_type: 'jynx_scroll', entity_type: open.kind, entity_id: open.id }
-      : { sheet_type: 'jynx_scroll' }
+    : staged
+      ? { sheet_type: 'jynx_scroll', entity_type: staged.kind, entity_id: staged.id }
+      : open
+        ? { sheet_type: 'jynx_scroll', entity_type: open.kind, entity_id: open.id }
+        : { sheet_type: 'jynx_scroll' }
+
+  const stagedLabel = selectedDrawing
+    ? (selectedDrawing.title ?? 'a drawing')
+    : staged
+      ? staged.title
+      : null
+
+  /** Setting the staged subject down — from the chat's chip, or
+   *  by tapping elsewhere — discards whichever staging stands,
+   *  silently. Nothing was written; nothing is unwritten. */
+  const clearStaging = useCallback(() => {
+    setSelectedDrawingId(null)
+    setStagedKey(null)
+    setStagedAnchor(null)
+  }, [])
 
   // Opening a scroll (or stepping back to one) re-reads its feed,
   // and the feed key follows the open conversation. Stepping back
@@ -442,30 +510,72 @@ export default function JynxScrollView() {
     [presented, now],
   )
 
-  /** Choosing a scroll from the shelf opens its own screen. The
-   *  drawing feed re-reads on the way in (the open-conversation
-   *  effect above) — Jynx may have drawn while this pane sat on
-   *  the shelf. The place along the new sheet starts at rest, and
-   *  no drawing is the subject until one is tapped. */
-  const choose = useCallback((scroll: ShelfScroll) => {
-    setOpenTrail([`${scroll.kind}:${scroll.id}`])
+  /* ------------------------- taps and presses ------------------------ */
+
+  /** Opening a scroll on the centre sheet, walked through its
+   *  parents: the trail deepens from the shelf, so the back step
+   *  returns through the parent it came from. The place along
+   *  the new sheet starts at rest, no drawing is the subject, and
+   *  any staging is spent. */
+  const openOnSheet = useCallback(
+    (scroll: ShelfScroll) => {
+      setOpenTrail(trailForScroll(shelf, scroll))
+      setFocusOverride(null)
+      setSelectedDrawingId(null)
+      setStagedKey(null)
+      setStagedAnchor(null)
+      setTableKey(null)
+    },
+    [shelf],
+  )
+
+  /** A tap on a scroll: its popup stands at the tap's anchor and
+   *  the scroll is staged tentatively in the chat. Nothing is
+   *  written — the tap's whole effect is this state. A staged
+   *  drawing is replaced silently (one staged subject at a time). */
+  const tapScroll = useCallback((scroll: ShelfScroll, anchor: StagedAnchor) => {
+    setSelectedDrawingId(null)
+    setStagedKey(scrollKey(scroll))
+    setStagedAnchor(anchor)
+  }, [])
+
+  /** A long-press: a scroll with children opens the worktable
+   *  standing them; a leaf opens on the sheet directly. */
+  const longPressScroll = useCallback(
+    (scroll: ShelfScroll) => {
+      if (longPressRoute(shelf, scroll) === 'table') {
+        setStagedKey(null)
+        setStagedAnchor(null)
+        setTableKey(scrollKey(scroll))
+      } else {
+        openOnSheet(scroll)
+      }
+    },
+    [shelf, openOnSheet],
+  )
+
+  /** One step back: from the table to the room; in the room, to
+   *  the parent scroll, or to the shelf. */
+  const goBack = useCallback(() => {
+    if (tableKey) {
+      setTableKey(null)
+      setStagedKey(null)
+      setStagedAnchor(null)
+      return
+    }
+    setOpenTrail((trail) => trail.slice(0, -1))
     setFocusOverride(null)
     setSelectedDrawingId(null)
-  }, [])
+  }, [tableKey])
 
   /** Opening a child from the open scroll's screen: the trail
    *  deepens, so the back step returns to this parent. */
   const openChild = useCallback((scroll: ShelfScroll) => {
-    setOpenTrail((trail) => [...trail, `${scroll.kind}:${scroll.id}`])
+    setOpenTrail((trail) => [...trail, scrollKey(scroll)])
     setFocusOverride(null)
     setSelectedDrawingId(null)
-  }, [])
-
-  /** One step back: to the parent scroll, or to the shelf. */
-  const goBack = useCallback(() => {
-    setOpenTrail((trail) => trail.slice(0, -1))
-    setFocusOverride(null)
-    setSelectedDrawingId(null)
+    setStagedKey(null)
+    setStagedAnchor(null)
   }, [])
 
   /** A turn just landed in the conversation beside the scroll.
@@ -504,9 +614,12 @@ export default function JynxScrollView() {
    *  Clicking another drawing replaces the staged subject
    *  silently; tapping the subject again, or the bare sheet,
    *  discards it silently — clicking around never buries the
-   *  chat. The talk itself does not move. */
+   *  chat. Staging a drawing sets any staged scroll down (one
+   *  staged subject at a time). The talk itself does not move. */
   const handleSelectDrawing = useCallback(
     (drawing: ScrollDrawing | null) => {
+      setStagedKey(null)
+      setStagedAnchor(null)
       setSelectedDrawingId((prev) =>
         drawing === null || drawing.id === prev ? null : drawing.id,
       )
@@ -538,40 +651,130 @@ export default function JynxScrollView() {
     )
   }
 
+  const drawingCount = layout.bands.length - 1
+  const showBack = tableParent !== null || open !== null
+
   return (
     <SplitShell
       storageKey="jynx-scroll"
       left={
         <div className="p-3 lg:p-5 space-y-3">
-          <div className="flex items-center gap-3 px-1 pb-1">
-            {open ? (
+          <div className="relative">
+            {showBack ? (
               <button
                 type="button"
+                data-testid="scene-back"
+                aria-label="Back"
                 onClick={goBack}
-                className="text-sm text-amber-200/90 hover:text-amber-100 min-h-[36px] shrink-0"
+                className="absolute left-2 top-2 z-20 flex h-10 w-10 items-center justify-center rounded-full border border-[#b09a6d]/70 bg-[#f7efdb]/90 text-xl leading-none text-[#3a2c1c] shadow"
               >
-                {openParent ? `← ${letterName(openParent.title, 30)}` : '← The shelf'}
+                ‹
               </button>
             ) : null}
-            <h1 className="text-lg font-semibold text-stone-100">
-              {open ? open.title : 'The Shelf of Scrolls'}
-            </h1>
+            {tableParent ? (
+              <TableScene
+                parent={tableParent}
+                rows={tableRowList}
+                onTapScroll={tapScroll}
+                onLongPressScroll={longPressScroll}
+                onDismiss={clearStaging}
+              />
+            ) : (
+              <RoomScene
+                fabric={fabric}
+                assignments={assignments}
+                open={open}
+                layout={layout}
+                unroll={unroll}
+                progressFor={progressFor}
+                selectedDrawingId={selectedDrawingId}
+                onSelectDrawing={handleSelectDrawing}
+                onRoll={rollBy}
+                onTapScroll={tapScroll}
+                onLongPressScroll={longPressScroll}
+                onDismiss={clearStaging}
+              />
+            )}
+            {staged && stagedAnchor ? (
+              <div
+                data-testid="scroll-popup"
+                role="button"
+                tabIndex={0}
+                aria-label={`Open ${staged.title} on the sheet`}
+                className="absolute z-10 w-60 max-w-[80%] cursor-pointer rounded-xl border border-[#b09a6d] bg-[#f7efdb] p-3 shadow-xl"
+                style={{
+                  left: `${stagedAnchor.xPct}%`,
+                  top: `${stagedAnchor.yPct}%`,
+                  transform: stagedAnchor.below
+                    ? 'translate(-50%, 18px)'
+                    : 'translate(-50%, calc(-100% - 18px))',
+                }}
+                onClick={() => openOnSheet(staged)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    openOnSheet(staged)
+                  }
+                }}
+              >
+                <p className="text-sm font-semibold text-[#3a2c1c]">{staged.title}</p>
+                {popupSynopsis(shelf, staged).map((line) => (
+                  <p key={line} className="mt-0.5 text-xs text-[#6b5636]">
+                    {line}
+                  </p>
+                ))}
+              </div>
+            ) : null}
           </div>
-          {open ? (
-            <OpenScrollScreen
-              scroll={open}
-              children={openChildren}
-              layout={layout}
-              unroll={unroll}
-              progressFor={progressFor}
-              selectedDrawingId={selectedDrawingId}
-              onOpenChild={openChild}
-              onSelectDrawing={handleSelectDrawing}
-              onRoll={rollBy}
-            />
-          ) : (
-            <ScrollScene shelf={shelf} onChoose={choose} />
-          )}
+
+          {/* roll controls — the sheet rolls from the screen's
+              chrome, never as marks on the scroll itself. There
+              are no page dots: the sheet is one sheet, and its
+              place along it is the rolled history standing at the
+              top, not a position in a stack of pages. */}
+          {!tableParent && open && drawingCount >= 1 ? (
+            <div data-testid="sheet-controls" className="flex items-center justify-center gap-3">
+              <button
+                type="button"
+                data-testid="sheet-back"
+                disabled={layout.focus === 0}
+                onClick={() => rollBy(-1)}
+                className="min-h-[40px] px-4 rounded-full border border-stone-600 text-sm text-amber-100/90 disabled:opacity-40"
+              >
+                ‹ Roll back
+              </button>
+              <button
+                type="button"
+                data-testid="sheet-forward"
+                disabled={layout.focus >= drawingCount}
+                onClick={() => rollBy(1)}
+                className="min-h-[40px] px-4 rounded-full border border-stone-600 text-sm text-amber-100/90 disabled:opacity-40"
+              >
+                Roll forward ›
+              </button>
+            </div>
+          ) : null}
+
+          {/* the open scroll's children — scrolls of their own,
+              standing beneath the room (never on the parchment) */}
+          {!tableParent && open && openChildren.length > 0 ? (
+            <div className="flex flex-wrap gap-2" data-testid="scroll-children">
+              {openChildren.map((child) => (
+                <button
+                  key={scrollKey(child)}
+                  type="button"
+                  data-child-scroll={scrollKey(child)}
+                  onClick={() => openChild(child)}
+                  className="min-h-[44px] px-4 rounded-full bg-[#efe6cc] text-[#3a2c1c] border border-[#b09a6d] text-sm font-medium shadow-sm"
+                >
+                  <span className="mr-2 text-[0.65rem] uppercase tracking-[0.14em] opacity-70">
+                    {child.kind}
+                  </span>
+                  {child.title}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       }
       right={
@@ -584,8 +787,8 @@ export default function JynxScrollView() {
               conversationId={conversationId}
               context={chatContext}
               onTurnSent={onTurnLanded}
-              stagedLabel={selectedDrawing ? (selectedDrawing.title ?? 'a drawing') : null}
-              onStagedClear={() => setSelectedDrawingId(null)}
+              stagedLabel={stagedLabel}
+              onStagedClear={clearStaging}
             />
           </div>
         </div>
@@ -595,111 +798,151 @@ export default function JynxScrollView() {
 }
 
 /* ================================================================== */
-/* The shelf — lattice case and base bin, parents + loose only         */
+/* Scene 1 — the room                                                  */
 /* ================================================================== */
 
-function ScrollScene({
-  shelf,
-  onChoose,
+/** The sheet group's transform: the sheet component's own ground
+ *  rect (SCREEN_CX − GROUND_W/2, SHEET_TOP, GROUND_W × GROUND_H)
+ *  mapped onto the fixture's sheet rect. */
+const SHEET_TRANSFORM =
+  `translate(${SHEET_RECT.x} ${SHEET_RECT.y}) ` +
+  `scale(${SHEET_RECT.w / GROUND_W}) ` +
+  `translate(${-(SCREEN_CX - GROUND_W / 2)} ${-SHEET_TOP})`
+
+function RoomScene({
+  fabric,
+  assignments,
+  open,
+  layout,
+  unroll,
+  progressFor,
+  selectedDrawingId,
+  onSelectDrawing,
+  onRoll,
+  onTapScroll,
+  onLongPressScroll,
+  onDismiss,
 }: {
-  shelf: ShelfBay[]
-  onChoose: (scroll: ShelfScroll) => void
+  fabric: PenroseFabric
+  assignments: CubbyAssignment[]
+  open: ShelfScroll | null
+  layout: SheetLayout
+  unroll: number
+  progressFor: (drawing: ScrollDrawing) => number
+  selectedDrawingId: string | null
+  onSelectDrawing: (drawing: ScrollDrawing | null) => void
+  onRoll: (delta: number) => void
+  onTapScroll: (scroll: ShelfScroll, anchor: StagedAnchor) => void
+  onLongPressScroll: (scroll: ShelfScroll) => void
+  onDismiss: () => void
 }) {
-  const { lattice, bin } = shelfTopLevel(shelf)
-
-  // Lattice geometry: at least two rows of compartments stand in
-  // the case, even when the shelf is empty — the case itself is
-  // furniture of the room; its emptiness is the honest state.
-  const cellCount = Math.max(lattice.length, COLS * 2)
-  const rows = Math.ceil(cellCount / COLS)
-  const latticeTop = 24
-  const latticeH = rows * CELL_H + CELL_H / 2
-  const latticeBottom = latticeTop + latticeH
-
-  // Bin geometry: scrolls lie in rows along the open base.
-  const BIN_PER_ROW = 8
-  const binRows = Math.max(1, Math.ceil(bin.length / BIN_PER_ROW))
-  const binTop = latticeBottom + 14
-  const binH = 30 + binRows * 44
-  const caseBottom = binTop + binH
-  const height = caseBottom + 28
-
-  const cellCenter = (index: number): { cx: number; cy: number } => {
-    const col = index % COLS
-    const row = Math.floor(index / COLS)
-    return {
-      cx: CASE_X + CELL_W / 2 + col * CELL_W,
-      cy: latticeTop + CELL_H / 2 + row * CELL_H + (col % 2 === 1 ? CELL_H / 2 : 0),
-    }
-  }
-
+  const drawingCount = layout.bands.length - 1
+  const focus = layout.focus
   return (
-    <section aria-label="Jynx — the shelf of scrolls">
-      <div className="rounded-2xl overflow-hidden border border-[#4a3018]/70 bg-[#241a12] shadow-lg">
+    <section aria-label="Jynx — the Scroll, Scene 1">
+      <div className="rounded-2xl overflow-hidden border border-[#4a3018]/70 shadow-lg">
         <svg
-          viewBox={`0 0 ${SCENE_W} ${height}`}
+          viewBox={`0 0 ${FRAME_W} ${FRAME_H}`}
           className="w-full block"
           role="img"
-          aria-label="A lattice case of rolled scrolls with an open bin at its base"
+          aria-label="A sunlit room: a wall of Penrose-tiled shelves holding rolled scrolls, the great scroll hanging at its centre"
         >
-          {Array.from({ length: cellCount }, (_, i) => {
-            const { cx, cy } = cellCenter(i)
-            return (
+          <defs>
+            <clipPath id="jynx-fabric-clip">
               <path
-                key={`cell-${i}`}
-                d={`M ${cx} ${cy - CELL_H / 2} L ${cx + CELL_W / 2} ${cy} L ${cx} ${cy + CELL_H / 2} L ${cx - CELL_W / 2} ${cy} Z`}
-                fill={CELL_INNER}
-                stroke={WOOD}
-                strokeWidth={5}
+                d={
+                  `M 105 262 H 1400 V 852 H 105 Z ` +
+                  `M 518 366 H 950 V 862 H 518 Z`
+                }
+                clipRule="evenodd"
               />
-            )
-          })}
-          {lattice.map((scroll, i) => {
-            const { cx, cy } = cellCenter(i)
-            return (
-              <RolledScroll
-                key={`${scroll.kind}:${scroll.id}`}
-                scroll={scroll}
-                cx={cx}
-                cy={cy}
-                onChoose={onChoose}
-              />
-            )
-          })}
+            </clipPath>
+            <clipPath id="jynx-table-occlusion">
+              <rect x={520} y={795} width={425} height={105} />
+            </clipPath>
+          </defs>
+          <image href={scrollRoom} x={0} y={0} width={FRAME_W} height={FRAME_H} />
+          {/* tapping the room's bare ground sets the staging down */}
           <rect
-            x={CASE_X - 6}
-            y={latticeTop - 10}
-            width={CASE_W + 12}
-            height={latticeH + 20}
-            fill="none"
-            stroke={WOOD_DARK}
-            strokeWidth={7}
+            data-testid="scene-background"
+            x={0}
+            y={0}
+            width={FRAME_W}
+            height={FRAME_H}
+            fill="#ffffff"
+            fillOpacity={0}
+            onClick={onDismiss}
           />
-          {/* the open bin at the base */}
-          <g>
-            <rect
-              x={CASE_X - 6}
-              y={binTop}
-              width={CASE_W + 12}
-              height={binH}
-              fill="#332416"
-              stroke={WOOD_DARK}
-              strokeWidth={6}
+          {/* the shelf fabric — the canonical deflation, each
+              rhomb a hollow wooden frame with the composite's
+              depth read: a back outline pulled toward the
+              vanishing point, a shaded inner reveal, the room's
+              plaster showing through the open centre */}
+          <g clipPath="url(#jynx-fabric-clip)" onClick={onDismiss}>
+            {fabric.rhombs.map((cell, i) => (
+              <FabricCell key={i} cell={cell} />
+            ))}
+          </g>
+          {/* the cubbies — one per top-level item, clusters within */}
+          {assignments.map((a) => (
+            <Cubby
+              key={scrollKey(a.unit.head)}
+              assignment={a}
+              onTapScroll={onTapScroll}
+              onLongPressScroll={onLongPressScroll}
             />
-            {bin.map((scroll, i) => {
-              const row = Math.floor(i / BIN_PER_ROW)
-              const col = i % BIN_PER_ROW
-              return (
-                <RolledScroll
-                  key={`${scroll.kind}:${scroll.id}`}
-                  scroll={scroll}
-                  cx={CASE_X + 58 + col * 100}
-                  cy={binTop + 38 + row * 44}
-                  scale={0.82}
-                  onChoose={onChoose}
-                />
-              )
-            })}
+          ))}
+          {/* the centre sheet — the founder's ground standing
+              blank, or the open scroll's sheet in its place */}
+          {open ? (
+            <g transform={SHEET_TRANSFORM}>
+              <OpenScroll
+                scroll={open}
+                layout={layout}
+                unroll={unroll}
+                progressFor={progressFor}
+                selectedDrawingId={selectedDrawingId}
+                onSelectDrawing={onSelectDrawing}
+              />
+              {drawingCount >= 1 ? (
+                <>
+                  <RollerControl
+                    testId="roller-back"
+                    label="Roll toward the older drawings"
+                    disabled={focus === 0}
+                    x={SCREEN_CX - GROUND_W / 2 - 14}
+                    y={SHEET_TOP}
+                    width={GROUND_W + 28}
+                    height={54}
+                    onRoll={() => onRoll(-1)}
+                  />
+                  <RollerControl
+                    testId="roller-forward"
+                    label="Roll toward the newer drawings"
+                    disabled={focus >= drawingCount}
+                    x={SCREEN_CX - GROUND_W / 2 - 14}
+                    y={SHEET_TOP + GROUND_H - 54}
+                    width={GROUND_W + 28}
+                    height={54}
+                    onRoll={() => onRoll(1)}
+                  />
+                </>
+              ) : null}
+            </g>
+          ) : (
+            <image
+              href={scrollGround}
+              x={SHEET_RECT.x}
+              y={SHEET_RECT.y}
+              width={SHEET_RECT.w}
+              height={SHEET_RECT.h}
+              onClick={onDismiss}
+            />
+          )}
+          {/* the room's low table stands over the sheet's foot,
+              exactly as the frozen composite composes it */}
+          <g clipPath="url(#jynx-table-occlusion)">
+            <image href={scrollRoom} x={0} y={0} width={FRAME_W} height={FRAME_H} />
           </g>
         </svg>
       </div>
@@ -707,213 +950,271 @@ function ScrollScene({
   )
 }
 
-/* ================================================================== */
-/* The open scroll's own screen                                        */
-/* ================================================================== */
-
-function OpenScrollScreen({
-  scroll,
-  children,
-  layout,
-  unroll,
-  progressFor,
-  selectedDrawingId,
-  onOpenChild,
-  onSelectDrawing,
-  onRoll,
-}: {
-  scroll: ShelfScroll
-  children: ShelfScroll[]
-  layout: SheetLayout
-  unroll: number
-  progressFor: (drawing: ScrollDrawing) => number
-  selectedDrawingId: string | null
-  onOpenChild: (scroll: ShelfScroll) => void
-  onSelectDrawing: (drawing: ScrollDrawing | null) => void
-  onRoll: (delta: number) => void
-}) {
-  const sheetBottom = SHEET_TOP + GROUND_H
-  const height = sheetBottom + 96
-  const drawingCount = layout.bands.length - 1
-  const focus = layout.focus
-  const postX = [SCREEN_CX - GROUND_W / 2 - 26, SCREEN_CX + GROUND_W / 2 + 26]
-
+/** One rhomb of the fabric: a back outline pulled toward the
+ *  vanishing point (the composite's depth reveal) and the wooden
+ *  frame itself — a single border, its centre open to the room's
+ *  plaster. */
+function FabricCell({ cell }: { cell: FabricRhomb }) {
+  const pts = (cs: { x: number; y: number }[]) => cs.map((p) => `${p.x},${p.y}`).join(' ')
+  const back = cell.corners.map((c) => ({
+    x: VANISHING_POINT.x + (c.x - VANISHING_POINT.x) * DEPTH_SCALE,
+    y: VANISHING_POINT.y + (c.y - VANISHING_POINT.y) * DEPTH_SCALE,
+  }))
   return (
-    <section aria-label={`The scroll of ${scroll.title}`}>
-      <div className="rounded-2xl overflow-hidden border border-[#4a3018]/70 bg-[#241a12] shadow-lg">
+    <g>
+      <polygon points={pts(back)} fill="none" stroke={FRAME_BACK} strokeWidth={3} />
+      <polygon points={pts(cell.corners)} fill="rgba(0,0,0,0)" stroke={FRAME_WOOD} strokeWidth={6} />
+    </g>
+  )
+}
+
+/** A cubby: the head scroll at full cell size in front, its
+ *  cluster tucked behind/below it inside the same cell. */
+function Cubby({
+  assignment,
+  onTapScroll,
+  onLongPressScroll,
+}: {
+  assignment: CubbyAssignment
+  onTapScroll: (scroll: ShelfScroll, anchor: StagedAnchor) => void
+  onLongPressScroll: (scroll: ShelfScroll) => void
+}) {
+  const { unit, cell, side } = assignment
+  const w = scrollWidthFor(unit.head, cell)
+  const childW = w * 0.55
+  const offsets = [
+    { dx: -0.3 * w, dy: 0.3 * w },
+    { dx: 0.3 * w, dy: 0.34 * w },
+    { dx: 0, dy: 0.5 * w },
+  ]
+  const shown = unit.cluster.slice(0, CLUSTER_SHOWN)
+  return (
+    <g data-cubby={scrollKey(unit.head)}>
+      {shown.map((child, i) => (
+        <SceneScroll
+          key={scrollKey(child)}
+          scroll={child}
+          cx={cell.centre.x + offsets[i].dx}
+          cy={cell.centre.y + offsets[i].dy}
+          width={childW}
+          side={side}
+          cluster
+          onTapScroll={onTapScroll}
+          onLongPressScroll={onLongPressScroll}
+        />
+      ))}
+      <SceneScroll
+        scroll={unit.head}
+        cx={cell.centre.x}
+        cy={cell.centre.y}
+        width={w}
+        side={side}
+        onTapScroll={onTapScroll}
+        onLongPressScroll={onLongPressScroll}
+      />
+    </g>
+  )
+}
+
+/* ================================================================== */
+/* The worktable — a long-press away                                   */
+/* ================================================================== */
+
+/** The table screen: the long-pressed scroll's children standing
+ *  end-on along the worktable (the founder's table scene), each
+ *  with its own cluster tucked behind it. The flip follows the
+ *  table half, as the room's flip follows the sheet. */
+function TableScene({
+  parent,
+  rows,
+  onTapScroll,
+  onLongPressScroll,
+  onDismiss,
+}: {
+  parent: ShelfScroll
+  rows: TableRow[]
+  onTapScroll: (scroll: ShelfScroll, anchor: StagedAnchor) => void
+  onLongPressScroll: (scroll: ShelfScroll) => void
+  onDismiss: () => void
+}) {
+  const n = rows.length
+  const y = 505
+  const xFor = (i: number) => (n <= 1 ? FRAME_W / 2 : 250 + (i * (FRAME_W - 500)) / (n - 1))
+  return (
+    <section aria-label={`The worktable of ${parent.title}`}>
+      <div className="rounded-2xl overflow-hidden border border-[#4a3018]/70 shadow-lg">
         <svg
-          viewBox={`0 0 ${SCREEN_W} ${height}`}
+          viewBox={`0 0 ${FRAME_W} ${FRAME_H}`}
           className="w-full block"
           role="img"
-          aria-label="An unrolled scroll, large on its stand"
+          aria-label="A worktable in the sunlit room, scrolls standing along it"
+          data-testid="worktable"
         >
-          {/* turned posts */}
-          {postX.map((px) => (
-            <g key={px}>
-              <rect x={px - 8} y={64} width={16} height={sheetBottom - 64 + 52} rx={8} fill={WOOD} stroke={WOOD_DEEP} strokeWidth={1.5} />
-              {[150, 250, 350, 450].map((ky) => (
-                <circle key={ky} cx={px} cy={ky} r={12} fill={WOOD} stroke={WOOD_DEEP} strokeWidth={1.5} />
-              ))}
-            </g>
-          ))}
-          {/* rods with their discs, behind the sheet */}
-          {[SHEET_TOP + 16, sheetBottom - 16].map((ry) => (
-            <g key={ry}>
-              <rect x={postX[0]} y={ry - 5} width={postX[1] - postX[0]} height={10} fill={WOOD_DARK} />
-              {postX.map((px) => (
-                <circle key={px} cx={px} cy={ry} r={17} fill={WOOD} stroke={WOOD_DEEP} strokeWidth={1.5} />
-              ))}
-            </g>
-          ))}
-          {/* round base */}
-          <ellipse cx={SCREEN_CX} cy={sheetBottom + 64} rx={128} ry={18} fill={WOOD} stroke={WOOD_DEEP} strokeWidth={2} />
-          <ellipse cx={SCREEN_CX} cy={sheetBottom + 58} rx={128} ry={18} fill="#7a5636" stroke={WOOD_DEEP} strokeWidth={1.5} />
-
-          <OpenScroll
-            scroll={scroll}
-            layout={layout}
-            unroll={unroll}
-            progressFor={progressFor}
-            selectedDrawingId={selectedDrawingId}
-            onSelectDrawing={onSelectDrawing}
+          <image href={scrollTable} x={0} y={0} width={FRAME_W} height={FRAME_H} />
+          <rect
+            data-testid="table-background"
+            x={0}
+            y={0}
+            width={FRAME_W}
+            height={FRAME_H}
+            fill="#ffffff"
+            fillOpacity={0}
+            onClick={onDismiss}
           />
-
-          {/* the rollers move ALONG the sheet (founder,
-              2026-11-25): the ground's top roller rolls toward
-              the older drawings rolled up at the top, its bottom
-              roller toward the newer and the blank working space
-              below — the same sheet movement the chrome controls
-              below drive. Nothing is swapped: the sheet's bands
-              all stand mounted throughout; only the layout's
-              focus moves. The hit bands lie on the rollers
-              themselves, clear of the parchment interior, and
-              carry no visible text: the rollers are the scroll's
-              furniture, not its sheet. At either end of the sheet
-              the roller is inert, as the chrome control is. */}
-          {drawingCount >= 1 ? (
-            <>
-              <RollerControl
-                testId="roller-back"
-                label="Roll toward the older drawings"
-                disabled={focus === 0}
-                x={SCREEN_CX - GROUND_W / 2 - 14}
-                y={SHEET_TOP}
-                width={GROUND_W + 28}
-                height={54}
-                onRoll={() => onRoll(-1)}
-              />
-              <RollerControl
-                testId="roller-forward"
-                label="Roll toward the newer drawings"
-                disabled={focus >= drawingCount}
-                x={SCREEN_CX - GROUND_W / 2 - 14}
-                y={SHEET_TOP + GROUND_H - 54}
-                width={GROUND_W + 28}
-                height={54}
-                onRoll={() => onRoll(1)}
-              />
-            </>
-          ) : null}
+          {rows.map((row, i) => {
+            const cx = xFor(i)
+            const side = cx < FRAME_W / 2 ? ('left' as const) : ('right' as const)
+            const w = 185
+            const childW = w * 0.55
+            const offsets = [
+              { dx: -0.34 * w, dy: 26 },
+              { dx: 0.34 * w, dy: 30 },
+              { dx: 0, dy: 48 },
+            ]
+            return (
+              <g key={scrollKey(row.scroll)} data-table-row={scrollKey(row.scroll)}>
+                {row.cluster.map((child, j) => (
+                  <SceneScroll
+                    key={scrollKey(child)}
+                    scroll={child}
+                    cx={cx + offsets[j].dx}
+                    cy={y - 44 + offsets[j].dy}
+                    width={childW}
+                    side={side}
+                    cluster
+                    onTapScroll={onTapScroll}
+                    onLongPressScroll={onLongPressScroll}
+                  />
+                ))}
+                <SceneScroll
+                  scroll={row.scroll}
+                  cx={cx}
+                  cy={y}
+                  width={w}
+                  side={side}
+                  onTapScroll={onTapScroll}
+                  onLongPressScroll={onLongPressScroll}
+                />
+              </g>
+            )
+          })}
         </svg>
       </div>
-
-      {/* roll controls — the sheet rolls from the screen's chrome,
-          never as marks on the scroll itself. There are no page
-          dots: the sheet is one sheet, and its place along it is
-          the rolled history standing at the top, not a position
-          in a stack of pages. */}
-      {drawingCount >= 1 ? (
-        <div data-testid="sheet-controls" className="mt-3 flex items-center justify-center gap-3">
-          <button
-            type="button"
-            data-testid="sheet-back"
-            disabled={focus === 0}
-            onClick={() => onRoll(-1)}
-            className="min-h-[40px] px-4 rounded-full border border-stone-600 text-sm text-amber-100/90 disabled:opacity-40"
-          >
-            ‹ Roll back
-          </button>
-          <button
-            type="button"
-            data-testid="sheet-forward"
-            disabled={focus >= drawingCount}
-            onClick={() => onRoll(1)}
-            className="min-h-[40px] px-4 rounded-full border border-stone-600 text-sm text-amber-100/90 disabled:opacity-40"
-          >
-            Roll forward ›
-          </button>
-        </div>
-      ) : null}
-
-      {/* the open scroll's children — scrolls of their own, standing
-          on the screen beneath the sheet (never on the parchment) */}
-      {children.length > 0 ? (
-        <div className="mt-4 flex flex-wrap gap-2" data-testid="scroll-children">
-          {children.map((child) => (
-            <button
-              key={`${child.kind}:${child.id}`}
-              type="button"
-              data-child-scroll={`${child.kind}:${child.id}`}
-              onClick={() => onOpenChild(child)}
-              className="min-h-[44px] px-4 rounded-full bg-[#efe6cc] text-[#3a2c1c] border border-[#b09a6d] text-sm font-medium shadow-sm"
-            >
-              <span className="mr-2 text-[0.65rem] uppercase tracking-[0.14em] opacity-70">
-                {child.kind}
-              </span>
-              {child.title}
-            </button>
-          ))}
-        </div>
-      ) : null}
     </section>
   )
 }
 
-/** One of the open scroll's rollers as a sheet-movement control:
- *  an invisible, generous hit band over the roller in the
- *  founder's ground. A button in everything but paint —
- *  focusable, labelled for assistive tech (aria labels are not
- *  visible text; the sheet stays text-free), inert at its end of
- *  the sheet. */
-function RollerControl({
-  testId,
-  label,
-  disabled,
-  x,
-  y,
+/* ================================================================== */
+/* One end-on scroll, wherever it stands                               */
+/* ================================================================== */
+
+/** The founder's end-on scroll asset (709×699): the end disc's
+ *  centre sits at (0.337, 0.342) of the image with radius 0.326
+ *  of its width (measured from the asset's dark wood), mirrored
+ *  for the right asset. The status ring band stands just inside
+ *  the disc's rim in the recorded cord colour. */
+const END_FACE = { fx: 0.337, fy: 0.342, r: 0.3 }
+
+function SceneScroll({
+  scroll,
+  cx,
+  cy,
   width,
-  height,
-  onRoll,
+  side,
+  cluster = false,
+  onTapScroll,
+  onLongPressScroll,
 }: {
-  testId: string
-  label: string
-  disabled: boolean
-  x: number
-  y: number
+  scroll: ShelfScroll
+  cx: number
+  cy: number
   width: number
-  height: number
-  onRoll: () => void
+  side: 'left' | 'right'
+  cluster?: boolean
+  onTapScroll: (scroll: ShelfScroll, anchor: StagedAnchor) => void
+  onLongPressScroll: (scroll: ShelfScroll) => void
 }) {
+  const [pressing, setPressing] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const firedRef = useRef(false)
+  const h = (width * 699) / 709
+  const ringCx = (side === 'left' ? END_FACE.fx - 0.5 : 0.5 - END_FACE.fx) * width
+  const ringCy = (END_FACE.fy - 0.5) * h
+
+  const clearTimer = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+  }
+  useEffect(() => clearTimer, [])
+
+  const anchorFor = (): StagedAnchor => ({
+    xPct: (cx / FRAME_W) * 100,
+    yPct: (cy / FRAME_H) * 100,
+    below: cy < 300,
+  })
+
   return (
     <g
-      role="button"
-      data-testid={testId}
-      aria-label={label}
-      aria-disabled={disabled}
-      tabIndex={disabled ? -1 : 0}
-      style={{ cursor: disabled ? 'default' : 'pointer' }}
-      onClick={() => {
-        if (!disabled) onRoll()
-      }}
-      onKeyDown={(e) => {
-        if (disabled) return
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onRoll()
-        }
-      }}
+      data-scroll={scrollKey(scroll)}
+      data-cluster={cluster ? 'true' : undefined}
+      transform={`translate(${cx} ${cy}) scale(${pressing ? 0.93 : 1})`}
     >
-      <rect x={x} y={y} width={width} height={height} fill="#ffffff" fillOpacity={0} />
+      <image
+        href={side === 'left' ? scrollEnd : scrollEndRight}
+        x={-width / 2}
+        y={-h / 2}
+        width={width}
+        height={h}
+      />
+      {/* the status ring band on the end face — colour from
+          recorded status only, through the cord rule */}
+      <circle
+        data-status-ring={scroll.appearance.cord}
+        cx={ringCx}
+        cy={ringCy}
+        r={END_FACE.r * width}
+        fill="none"
+        stroke={scroll.appearance.cord}
+        strokeWidth={Math.max(1.6, width * 0.04)}
+      />
+      {/* tap / long-press target */}
+      <rect
+        x={-width / 2 - 5}
+        y={-h / 2 - 5}
+        width={width + 10}
+        height={h + 10}
+        fill="#ffffff"
+        fillOpacity={0}
+        style={{ cursor: 'pointer' }}
+        onPointerDown={() => {
+          firedRef.current = false
+          setPressing(true)
+          clearTimer()
+          timerRef.current = setTimeout(() => {
+            firedRef.current = true
+            setPressing(false)
+            onLongPressScroll(scroll)
+          }, LONG_PRESS_MS)
+        }}
+        onPointerUp={() => {
+          clearTimer()
+          setPressing(false)
+        }}
+        onPointerLeave={() => {
+          clearTimer()
+          setPressing(false)
+        }}
+        onClick={(e) => {
+          e.stopPropagation()
+          if (firedRef.current) {
+            firedRef.current = false
+            return
+          }
+          onTapScroll(scroll, anchorFor())
+        }}
+      />
     </g>
   )
 }
@@ -1051,6 +1352,54 @@ function OpenScroll({
   )
 }
 
+/** One of the sheet's rollers as a sheet-movement control: an
+ *  invisible, generous hit band over the roller in the founder's
+ *  ground. A button in everything but paint — focusable, labelled
+ *  for assistive tech (aria labels are not visible text; the
+ *  sheet stays text-free), inert at its end of the sheet. */
+function RollerControl({
+  testId,
+  label,
+  disabled,
+  x,
+  y,
+  width,
+  height,
+  onRoll,
+}: {
+  testId: string
+  label: string
+  disabled: boolean
+  x: number
+  y: number
+  width: number
+  height: number
+  onRoll: () => void
+}) {
+  return (
+    <g
+      role="button"
+      data-testid={testId}
+      aria-label={label}
+      aria-disabled={disabled}
+      tabIndex={disabled ? -1 : 0}
+      style={{ cursor: disabled ? 'default' : 'pointer' }}
+      onClick={() => {
+        if (!disabled) onRoll()
+      }}
+      onKeyDown={(e) => {
+        if (disabled) return
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onRoll()
+        }
+      }}
+    >
+      <rect x={x} y={y} width={width} height={height} fill="#ffffff" fillOpacity={0} />
+    </g>
+  )
+}
+
 /** One mark arriving: a stamp fades in at its tier (the film's
  *  placing rhythm); a stroke draws itself along its path. Marks
  *  are always in the sheet — progress is their visibility, so a
@@ -1083,80 +1432,5 @@ function DrawingMark({ mark, progress }: { mark: ScrollMark; progress: number })
       fill="none"
       strokeLinecap="round"
     />
-  )
-}
-
-/* ================================================================== */
-/* A rolled scroll on the shelf                                        */
-/* ================================================================== */
-
-function RolledScroll({
-  scroll,
-  cx,
-  cy,
-  scale = 1,
-  onChoose,
-}: {
-  scroll: ShelfScroll
-  cx: number
-  cy: number
-  scale?: number
-  onChoose: (scroll: ShelfScroll) => void
-}) {
-  const r = scroll.appearance.radius * scale
-  const len = r * 3.2
-  const thick = r * 1.15
-  const fontSize = (scroll.kind === 'initiative' ? 12.5 : scroll.kind === 'task' ? 9.5 : 11) * scale
-  const maxChars = scroll.kind === 'initiative' ? 20 : scroll.kind === 'task' ? 15 : 18
-  return (
-    <g data-scroll={`${scroll.kind}:${scroll.id}`}>
-      <title>{scroll.title}</title>
-      {/* body */}
-      <rect
-        x={cx - len / 2}
-        y={cy - thick / 2}
-        width={len}
-        height={thick}
-        rx={thick / 2}
-        fill={scroll.appearance.parchment}
-        stroke="#b09a6d"
-        strokeWidth={1.2}
-      />
-      {/* the rolled end — a spiral cap */}
-      <circle cx={cx - len / 2 + thick / 2} cy={cy} r={thick / 2 - 1.5} fill="none" stroke="#a68d5c" strokeWidth={1.4} />
-      <circle cx={cx - len / 2 + thick / 2} cy={cy} r={thick / 4.5} fill="none" stroke="#a68d5c" strokeWidth={1.2} />
-      {/* binding cords — colour from recorded status only */}
-      {[-len / 4, len / 4].map((dx) => (
-        <rect
-          key={dx}
-          x={cx + dx - 1.6}
-          y={cy - thick / 2 - 1}
-          width={3.2}
-          height={thick + 2}
-          fill={scroll.appearance.cord}
-        />
-      ))}
-      {/* the name, lettered along the roll */}
-      <text
-        x={cx + thick / 4}
-        y={cy + fontSize / 3}
-        textAnchor="middle"
-        fontSize={fontSize}
-        fill={NAME_INK}
-      >
-        {letterName(scroll.title, maxChars)}
-      </text>
-      {/* tap target */}
-      <rect
-        x={cx - len / 2 - 6}
-        y={cy - thick / 2 - 7}
-        width={len + 12}
-        height={thick + 14}
-        fill="#ffffff"
-        fillOpacity={0}
-        style={{ cursor: 'pointer' }}
-        onClick={() => onChoose(scroll)}
-      />
-    </g>
   )
 }

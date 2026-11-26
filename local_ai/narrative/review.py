@@ -59,13 +59,21 @@ the identical evidence cannot be re-proposed as an equivalent
 birth/extension after rejection, while genuinely new evidence
 produces a different signature and is never barred, and
 visitor-initiated paths consult no dismissal state at all.
-Readings, fittings, revisions, oversight proposals,
-correspondences, and reconsiderations have no dismissal kind in
-DISMISSAL_KINDS and write nothing — whether they should is a
-separate decision, not settled here. The dismissal write is
-failure-isolated: it runs after the transition and the verdict
-log, and a failure is logged, never raised — the verdict has
-landed either way.
+Correspondences and fittings gained dismissal kinds in the
+coverage increment (2026-11-25, Consultation 1 disposition): a
+rejected correspondence records a ``correspondence`` dismissal
+over the relation it proposed between its threads on its cited
+evidence, and a rejected fitting records a ``fitting`` dismissal
+over its lens placement on its cited evidence — the signatures
+recognition consults at its proposal-write path (``is_dismissed``
+in propose_all). Readings (deferred — interpretation-equivalence
+is not reliable in the current representation), revisions,
+oversight proposals (no interpretive dismissal kind — a system
+condition, not an interpretation), and reconsiderations have no
+dismissal kind in DISMISSAL_KINDS and write nothing. The
+dismissal write is failure-isolated: it runs after the transition
+and the verdict log, and a failure is logged, never raised — the
+verdict has landed either way.
 
 Point-in-time preservation (non-foreclosure, Phase 1 only):
 this module implements NO snapshot capture and NO abstention
@@ -118,8 +126,10 @@ from dataclasses import dataclass
 from .currency import derive_currency
 from .derivation import (
     birth_signature_from_keys,
+    correspondence_signature_from_fields,
     dismiss_proposal,
     extension_signature_from_keys,
+    fitting_signature_from_keys,
 )
 from .store import NarrativeStore
 
@@ -460,6 +470,44 @@ def _birth_dismissal_signature(
     return None
 
 
+def _correspondence_evidence_keys(
+    store: NarrativeStore, user_id: str, corr
+) -> list[str]:
+    """The cited evidence's content keys ("<kind>:<id>") for a
+    correspondence, whose refs span threads.
+
+    Scans the correspondence's own threads first; a ref that does
+    not resolve there is looked for across the user's threads
+    (the same full scan correspondence._resolve_evidence_threads
+    performs). Unresolvable refs (evidence since deleted) are
+    simply absent from the grounds — never invented.
+    """
+    wanted = set(corr.evidence_refs or [])
+    keys_by_row_id: dict[str, str] = {}
+
+    def _scan(thread_id: str) -> None:
+        for row in store.evidence_for(user_id, thread_id):
+            if row.id in wanted:
+                keys_by_row_id[row.id] = (
+                    f"{row.ref_kind}:{row.ref_id}"
+                )
+
+    for thread_id in corr.thread_ids or []:
+        _scan(thread_id)
+    if len(keys_by_row_id) < len(wanted):
+        for thread in store.threads_for(user_id, limit=None):
+            if len(keys_by_row_id) >= len(wanted):
+                break
+            if thread.id in (corr.thread_ids or []):
+                continue
+            _scan(thread.id)
+    return [
+        keys_by_row_id[cited_id]
+        for cited_id in (corr.evidence_refs or [])
+        if cited_id in keys_by_row_id
+    ]
+
+
 def _record_rejection_dismissal(
     store: NarrativeStore,
     user_id: str,
@@ -474,8 +522,14 @@ def _record_rejection_dismissal(
     A birth maps to ``thread_birth``; a change — the movement
     record of an extension proposal — maps to ``extension`` over
     exactly the evidence rows the change cites, which is the set
-    derivation's extension check fingerprints. Every other review
-    kind has no dismissal kind and writes nothing.
+    derivation's extension check fingerprints. A fitting maps to
+    ``fitting`` over its lens placement (thread + lens) on the
+    evidence it cites; a correspondence maps to
+    ``correspondence`` over the relation it proposed between its
+    threads on the evidence it cites — in both cases the
+    signature recognition's proposal-write check rebuilds.
+    Every other review kind has no dismissal kind and writes
+    nothing.
 
     Failure-isolated by design: this runs after the verdict's
     transition and log entry have landed, and a dismissal-write
@@ -519,6 +573,56 @@ def _record_rejection_dismissal(
                 kind="extension",
                 signature=extension_signature_from_keys(
                     item.thread_id, keys
+                ),
+            )
+        elif kind == "fitting":
+            fitting = next(
+                (
+                    row
+                    for row in store.fittings_for(
+                        user_id, item.thread_id
+                    )
+                    if row.id == row_id
+                ),
+                None,
+            )
+            if fitting is None or not fitting.evidence_refs:
+                return
+            keys_by_row_id = {
+                row.id: f"{row.ref_kind}:{row.ref_id}"
+                for row in store.evidence_for(user_id, item.thread_id)
+            }
+            keys = [
+                keys_by_row_id[cited_id]
+                for cited_id in fitting.evidence_refs
+                if cited_id in keys_by_row_id
+            ]
+            if not keys:
+                return
+            dismiss_proposal(
+                store,
+                user_id,
+                kind="fitting",
+                signature=fitting_signature_from_keys(
+                    item.thread_id, fitting.lens_id, keys
+                ),
+            )
+        elif kind == "correspondence":
+            corr = store.get_correspondence(user_id, row_id)
+            if corr is None or not corr.evidence_refs:
+                return
+            keys = _correspondence_evidence_keys(store, user_id, corr)
+            if not keys:
+                return
+            dismiss_proposal(
+                store,
+                user_id,
+                kind="correspondence",
+                signature=correspondence_signature_from_fields(
+                    corr.thread_ids,
+                    corr.proposed_relationship,
+                    corr.mapping,
+                    keys,
                 ),
             )
     except Exception:

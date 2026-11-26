@@ -816,6 +816,7 @@ def build_voice_prompt(
     round_context: str | None = None,
     subject_context: str | None = None,
     preparation_context: str | None = None,
+    room_context: str | None = None,
     # Canonical instruction tier (Level 1, 2026-11-10): the four
     # standing instruction lines, carried once as a single uncapped
     # section immediately before extra_instructions. Meetings only
@@ -1348,6 +1349,18 @@ def build_voice_prompt(
         # without a selection — and every meeting — is
         # byte-identical to before.
         prompt += ["", preparation_context.strip()]
+    if room_context:
+        # The room the guardian keeps (Palace pass): Talk only,
+        # passed only for the guardian on the Living Palace sheet
+        # with a resolved selected subject (see
+        # local_ai/conversation/palace_room.py). Its own section,
+        # immediately after the preparation section: the room's
+        # instruments and their recorded state, the subject's
+        # pending items and accepted readings, its guest objects —
+        # all fenced as record data. Absent (None) = section absent,
+        # so every other conversation — and every meeting — is
+        # byte-identical to before.
+        prompt += ["", room_context.strip()]
     if round_context:
         # Firebrand lightning round (S1): champion-only, Talk only.
         # Its own section, after the evidence section and before
@@ -1441,6 +1454,7 @@ def generate_voice_reply(
     round_context: str | None = None,
     subject_context: str | None = None,
     preparation_context: str | None = None,
+    room_context: str | None = None,
     conversation_id: str | None = None,
     # Canonical instruction tier (Level 1, 2026-11-10): passed
     # through to build_voice_prompt. Meetings only; Talk and demo
@@ -1473,6 +1487,7 @@ def generate_voice_reply(
         round_context=round_context,
         subject_context=subject_context,
         preparation_context=preparation_context,
+        room_context=room_context,
         conversation_id=conversation_id,
         canonical_tier=canonical_tier,
     )

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 /**
  * The Living Palace — jsdom render verification against a stubbed
- * API (the same routes the product uses: the Vision Execution entity
- * lists, capacity profiles, core profiles; the strand resolve and
- * the permission home for the boundaries panel).
+ * API (the same routes the product uses: the Vision Execution
+ * entity lists, capacity profiles, core profiles, and the shared
+ * attributed read).
  *
  * The fixture body of work: one initiative with two floors, one
  * loose project, one loose task, one undeveloped idea. The suite
@@ -12,21 +12,34 @@
  * carriage; that a room's furniture is earned (the dependency
  * window's reading, the mandala only at convergence) while the
  * affordance instruments stand unpopulated (empty scales, plain
- * vessel); and that the boundaries panel composes ONLY from records
- * the stubbed API serves — plus its honest statement that no
- * per-subject boundary record exists. CouncilChat is stubbed — the
- * chat seam is covered by its own suite.
+ * vessel); and — the Palace pass (chat-is-the-work, founder rulings
+ * 2026-11-25 13:44/13:56 PT) — that the panel/button forms are
+ * GONE (no boundaries panel, no pending section, no weighing
+ * panel, no review acts anywhere), that a furniture tap STAGES its
+ * object in the chat context tentatively (palace_focus rides the
+ * context; staging performs zero writes; navigation or setting it
+ * down discards it silently), and that a landed chat turn re-reads
+ * the subject. CouncilChat is stubbed — the chat seam is covered
+ * by its own suite.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import * as React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 
-const chatProps: { conversationId?: string | null; context?: Record<string, unknown> }[] = []
+const chatProps: {
+  conversationId?: string | null
+  context?: Record<string, unknown>
+  onTurnSent?: () => void
+}[] = []
 vi.mock('../chat/CouncilChat', async () => {
   const ReactMod = await import('react')
   return {
-    default: (props: { conversationId?: string | null; context?: Record<string, unknown> }) => {
+    default: (props: {
+      conversationId?: string | null
+      context?: Record<string, unknown>
+      onTurnSent?: () => void
+    }) => {
       chatProps.push(props)
       return ReactMod.createElement('div', {
         'data-testid': 'maeve-chat',
@@ -118,9 +131,11 @@ const EMPTY_READ = {
 }
 let attributedPayload: unknown = EMPTY_READ
 
-/** Every POST the view makes, recorded by the fetch stub: the
- *  verdict door's acts are asserted against the real routes. */
-const posts: { url: string; body: unknown }[] = []
+/** Every non-GET the view makes, recorded by the fetch stub: the
+ *  Palace pass surface must make NONE, ever — staging included. */
+const writes: { url: string; method: string }[] = []
+/** Attributed-read GETs, counted: a landed chat turn re-reads. */
+let attributedGets = 0
 
 function installFetchStub() {
   const routes: Record<string, unknown> = {
@@ -138,42 +153,22 @@ function installFetchStub() {
       { person_id: 'per1', weekly_capacity_hours: 20, created_at: '2026-05-01T00:00:00', updated_at: '2026-05-01T00:00:00' },
     ],
     '/vision-execution/core-profiles': [CORE_PROFILE],
-    '/settings/permissions/home': {
-      enabled: true,
-      consent: { given: true, version: '1', at: null },
-      intents: [
-        {
-          id: 'remember',
-          groups: [
-            { id: 'memory', state: 'ask_me', sync: 'synced', writable_states: ['on', 'off', 'ask_me'], has_rows: true, controls: [], diagnostics: null },
-          ],
-          granular: [],
-        },
-      ],
-      learn: { kind: 'none' },
-      outside_zenaf: { always_asks: [], never_coverable_classes: [], standing_consents: [] },
-    },
   }
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: unknown, init?: { method?: string; body?: string }) => {
       const url = String(input)
-      if (init?.method === 'POST') {
-        posts.push({ url, body: init.body ? JSON.parse(init.body) : undefined })
+      const method = init?.method ?? 'GET'
+      if (method !== 'GET') {
+        writes.push({ url, method })
         return jsonResponse({})
       }
-      if (url.includes('/attributed-read/')) return jsonResponse(attributedPayload)
+      if (url.includes('/attributed-read/')) {
+        attributedGets += 1
+        return jsonResponse(attributedPayload)
+      }
       for (const [path, body] of Object.entries(routes)) {
         if (url.endsWith(path)) return jsonResponse(body)
-      }
-      const strand = url.match(/\/conversation\/strand\/(\w+)/)
-      if (strand) {
-        return jsonResponse({
-          strand_key: strand[1],
-          strand_name: strand[1] === 'hands' ? 'Hands' : strand[1],
-          boundaries: strand[1] === 'hands' ? [{ id: 'b1', topic: 'pricing', created_at: '2026-05-01T00:00:00' }] : [],
-          sources: [],
-        })
       }
       return jsonResponse([])
     }),
@@ -211,9 +206,16 @@ function lastChat() {
   return chatProps[chatProps.length - 1]
 }
 
+async function descendToGamma() {
+  await click('palace-building-i1')
+  await click('palace-floor-p1')
+  await click('palace-room-tc')
+}
+
 beforeEach(() => {
   chatProps.length = 0
-  posts.length = 0
+  writes.length = 0
+  attributedGets = 0
   attributedPayload = EMPTY_READ
   installFetchStub()
 })
@@ -275,9 +277,7 @@ describe('Living Palace view', () => {
 
   it('a room carries its earned furniture and its unpopulated instruments', async () => {
     await render()
-    await click('palace-building-i1')
-    await click('palace-floor-p1')
-    await click('palace-room-tc')
+    await descendToGamma()
     // Gamma waits on Beta: the window stands with its reading.
     expect(container.querySelector('[data-testid="palace-room-window"]')).not.toBeNull()
     // Affordance instruments stand unpopulated in every room.
@@ -301,18 +301,6 @@ describe('Living Palace view', () => {
     expect(container.querySelector('[data-testid="palace-room-mandala"]')).not.toBeNull()
   })
 
-  it('the boundaries panel composes only from served records, and says what does not exist', async () => {
-    await render()
-    await click('palace-building-i1')
-    await click('palace-floor-p1')
-    await click('palace-boundaries-button')
-    const panel = container.querySelector('[data-testid="palace-boundaries-panel"]')
-    expect(panel).not.toBeNull()
-    expect(panel!.textContent).toContain('No work on Sundays.')
-    expect(panel!.textContent).toContain('pricing')
-    expect(panel!.textContent).toContain('No boundary is recorded against this room itself')
-  })
-
   it('an idea on the drawing table becomes the chat’s subject', async () => {
     await render()
     await click('palace-idea-id1')
@@ -326,7 +314,7 @@ describe('Living Palace view', () => {
 })
 
 /* ------------------------------------------------------------------ */
-/* the attributed read — Thresholds-1 / Kintsugi-1 / Guests-1          */
+/* the attributed read — the seam and the guest objects                */
 /* ------------------------------------------------------------------ */
 
 const READ_WITH_MATERIAL = {
@@ -381,12 +369,6 @@ const READ_WITH_MATERIAL = {
   },
 }
 
-async function descendToGamma() {
-  await click('palace-building-i1')
-  await click('palace-floor-p1')
-  await click('palace-room-tc')
-}
-
 describe('Living Palace — the attributed read', () => {
   it('an empty read leaves the room exactly as it stood: plain vessel, no guests', async () => {
     await render()
@@ -397,25 +379,20 @@ describe('Living Palace — the attributed read', () => {
     expect(container.querySelector('[data-testid="palace-room-guest-champion"]')).toBeNull()
   })
 
-  it('Kintsugi-1: accepted supersession gilds the seam; the vessel opens the held questions', async () => {
+  it('Kintsugi-1: accepted supersession gilds the seam — drawn, not paneled', async () => {
     attributedPayload = READ_WITH_MATERIAL
     await render()
     await descendToGamma()
     const vessel = container.querySelector('[data-testid="palace-room-vessel"]')
     expect(vessel!.innerHTML).toContain('#d4af37')
+    // The vessel's substance lives in Maeve's conversation now:
+    // no panel opens, and the held questions appear nowhere here.
     await click('palace-room-vessel')
-    const panel = container.querySelector('[data-testid="palace-vessel-panel"]')
-    expect(panel).not.toBeNull()
-    // The seam marks a corrected INTERPRETATION — and says so.
-    expect(panel!.textContent).toContain('an understanding restored')
-    expect(panel!.textContent).toContain('It does not claim the thing itself is mended')
-    // The tension is held as an open question, never as damage.
-    expect(panel!.textContent).toContain('Sundays keep colliding with deliveries')
-    expect(panel!.textContent).toContain('A tension held is not damage done')
-    expect(panel!.textContent).toContain('The vessel does not crack for it')
+    expect(container.querySelector('[data-testid="palace-vessel-panel"]')).toBeNull()
+    expect(container.textContent).not.toContain('Sundays keep colliding with deliveries')
   })
 
-  it('Guests-1: attending seats stand as guest objects; the cup opens its two doors', async () => {
+  it('Guests-1: attending seats stand as guest objects; the cup opens its slim doors', async () => {
     attributedPayload = READ_WITH_MATERIAL
     await render()
     await descendToGamma()
@@ -424,15 +401,15 @@ describe('Living Palace — the attributed read', () => {
     // A seat that does not attend does not stand.
     expect(container.querySelector('[data-testid="palace-room-guest-skeptic"]')).toBeNull()
     await click('palace-room-guest-ambassador')
-    const panel = container.querySelector('[data-testid="palace-guest-panel"]')
-    expect(panel).not.toBeNull()
-    expect(panel!.textContent).toContain("Lucian's cup")
-    expect(panel!.textContent).toContain('Lucian has a reading on this room')
-    expect(panel!.textContent).toContain('none of it is copied into the Palace')
-    // Door (i) stands; Lucian has no world, so door (ii) is honestly absent.
+    const strip = container.querySelector('[data-testid="palace-guest-strip"]')
+    expect(strip).not.toBeNull()
+    expect(strip!.textContent).toContain("Lucian's cup")
+    // Slim: the two doors and the honest note — no prose panel.
+    expect(container.querySelector('[data-testid="palace-guest-panel"]')).toBeNull()
     expect(container.querySelector('[data-testid="palace-guest-explore"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="palace-guest-follow"]')).toBeNull()
-    expect(panel!.textContent).toContain('Lucian has no world of his own yet')
+    expect(strip!.textContent).toContain('Lucian has no world of his own yet')
+    expect(strip!.textContent).not.toContain('none of it is copied')
   })
 
   it('Guests-1: the follow door hands the seat to the seat-landing navigation', async () => {
@@ -441,78 +418,17 @@ describe('Living Palace — the attributed read', () => {
     await render({ onFollowGuest: (seat: string) => followed.push(seat) })
     await descendToGamma()
     await click('palace-room-guest-champion')
-    const panel = container.querySelector('[data-testid="palace-guest-panel"]')
-    expect(panel!.textContent).toContain('Valen has spoken of this room in conversation')
     await click('palace-guest-follow')
     expect(followed).toEqual(['champion'])
-  })
-
-  it('Thresholds-1: the boundaries panel gains the subject’s states, proposed in pencil', async () => {
-    attributedPayload = READ_WITH_MATERIAL
-    await render()
-    await click('palace-building-i1')
-    await click('palace-floor-p1')
-    await click('palace-room-tc')
-    await click('palace-boundaries-button')
-    const panel = container.querySelector('[data-testid="palace-boundaries-panel"]')
-    expect(panel).not.toBeNull()
-    expect(panel!.textContent).toContain("At this room's own threshold")
-    expect(panel!.textContent).toContain('Proposed — readings, in pencil')
-    expect(panel!.textContent).toContain('Severine')
-    expect(panel!.textContent).toContain('Sundays keep colliding with deliveries')
-    expect(panel!.textContent).toContain('not a boundary established')
-    expect(panel!.textContent).toContain('Established')
-    expect(panel!.textContent).toContain('No Sunday deliveries, ever.')
-    // The standing honesty remains: no per-subject boundary record exists.
-    expect(panel!.textContent).toContain('No boundary is recorded against this room itself')
   })
 })
 
 /* ------------------------------------------------------------------ */
-/* the verdict door — Slice 1                                          */
+/* the Palace pass — the panels are gone; taps stage                   */
 /* ------------------------------------------------------------------ */
 
 const READ_WITH_PENDING = {
-  ...EMPTY_READ,
-  steward_gate_open: true,
-  boundaries: {
-    ...EMPTY_READ.boundaries,
-    proposed: [
-      {
-        thread_id: 'th1',
-        thread_title: 'The boundary thread',
-        reading_id: 'ra',
-        author: 'steward',
-        author_name: 'The Steward',
-        status: 'accepted',
-        placement: 'current',
-        currency_labels: [],
-        tensions: ['The old yard reading stands.'],
-        open_questions: [],
-      },
-    ],
-  },
-  kintsugi: {
-    threads: [
-      {
-        thread_id: 'th1',
-        thread_title: 'The boundary thread',
-        readings: [
-          {
-            reading_id: 'ra',
-            author: 'steward',
-            status: 'accepted',
-            placement: 'current',
-            currency_labels: [],
-            tensions: ['The old yard reading stands.'],
-            open_questions: [],
-          },
-        ],
-        reconsiderations: [],
-      },
-    ],
-    restoration_of_understanding: false,
-  },
+  ...READ_WITH_MATERIAL,
   pending: [
     {
       item_id: 'reading:rp',
@@ -527,124 +443,116 @@ const READ_WITH_PENDING = {
         currency: { placement: 'current', labels: [] },
       },
     },
-    {
-      item_id: 'correspondence:c1',
-      item_kind: 'correspondence',
-      thread_id: 'th1',
-      surface: 'queue_card',
-      status: 'proposed',
-      title: 'The boundary thread',
-      payload: {
-        thread_ids: ['th1', 'th2'],
-        structural_tension: 'patience vs avoidance',
-        proposed_relationship: '',
-        limitations: '',
-        evidence_refs: [],
-      },
-    },
   ],
 }
 
-describe('Living Palace — the verdict door', () => {
-  it('pending items rest at the threshold with their evidence — and nowhere else', async () => {
+describe('Living Palace — chat-is-the-work', () => {
+  it('no panel forms remain: no boundaries, pending, vessel, weighing, or review acts', async () => {
     attributedPayload = READ_WITH_PENDING
     await render()
     await descendToGamma()
-    // Not on the world, not in any other panel: only at the door.
+    // The header carries no Boundaries button anymore.
+    expect(container.querySelector('[data-testid="palace-boundaries-button"]')).toBeNull()
+    // Nothing on this surface renders the pending material or any
+    // act upon it — it rests for Maeve's conversation, not here.
     expect(container.textContent).not.toContain('A tension awaiting your word')
-    await click('palace-boundaries-button')
-    const section = container.querySelector('[data-testid="palace-pending-section"]')
-    expect(section).not.toBeNull()
-    expect(section!.textContent).toContain('A tension awaiting your word')
-    expect(section!.textContent).toContain('Grounded in: event:evt-9')
-    expect(section!.textContent).toContain('Currency: current')
-    expect(section!.textContent).toContain('patience vs avoidance')
-    expect(
-      container.querySelector('[data-testid="palace-pending-item-threshold-reading:rp"]'),
-    ).not.toBeNull()
-    // No counts, no badges — resting material is not a backlog.
+    expect(container.querySelector('[data-testid="palace-pending-section"]')).toBeNull()
+    expect(container.querySelector('[data-testid="palace-boundaries-panel"]')).toBeNull()
+    expect(container.querySelector('[data-testid="palace-vessel-panel"]')).toBeNull()
+    expect(container.querySelector('[data-testid="palace-weighing-panel"]')).toBeNull()
+    expect(container.querySelector('[data-testid="palace-held-panel"]')).toBeNull()
+    expect(container.querySelector('[data-testid="palace-idea-panel"]')).toBeNull()
+    expect(container.querySelector('[data-testid*="palace-review-"]')).toBeNull()
+    expect(container.querySelector('[data-testid*="palace-reconsider-"]')).toBeNull()
+    expect(container.querySelector('[data-testid*="palace-weighing-"]')).toBeNull()
     expect(container.querySelector('[data-testid*="badge"]')).toBeNull()
     expect(container.querySelector('[data-testid*="count"]')).toBeNull()
-    expect(section!.textContent).not.toMatch(/\d+\s+(undecided|pending|awaiting)/i)
   })
 
-  it('each act posts to its own route of the one mechanism', async () => {
-    attributedPayload = READ_WITH_PENDING
+  it('a floor scales tap stages the scales in the chat — and writes nothing', async () => {
     await render()
-    await descendToGamma()
-    await click('palace-boundaries-button')
-    // Endorse is a reading annotation: offered on the reading,
-    // never on the correspondence.
-    expect(container.querySelector('[data-testid="palace-review-endorse-reading:rp"]')).not.toBeNull()
-    expect(container.querySelector('[data-testid="palace-review-endorse-correspondence:c1"]')).toBeNull()
-    await click('palace-review-accept-reading:rp')
-    await click('palace-review-reject-correspondence:c1')
-    await click('palace-review-unresolve-reading:rp')
-    await click('palace-review-endorse-reading:rp')
-    const urls = posts.map((p) => p.url)
-    expect(urls.some((u) => u.endsWith('/steward/review/reading/rp/accept'))).toBe(true)
-    expect(urls.some((u) => u.endsWith('/steward/review/correspondence/c1/reject'))).toBe(true)
-    expect(urls.some((u) => u.endsWith('/steward/review/reading/rp/unresolve'))).toBe(true)
-    const endorse = posts.find((p) => p.url.endsWith('/steward/review/reading/rp/endorse'))
-    expect(endorse?.body).toEqual({ stance: 'endorsed', note: '' })
-  })
-
-  it('explore carries the item into the strand thread the visitor chooses', async () => {
-    attributedPayload = READ_WITH_PENDING
-    await render()
-    await descendToGamma()
-    await click('palace-boundaries-button')
-    await click('palace-review-explore-correspondence:c1')
-    expect(
-      container.querySelector('[data-testid="palace-explore-strands-correspondence:c1"]'),
-    ).not.toBeNull()
-    await click('palace-explore-strand-correspondence:c1-hands')
-    const explore = posts.find((p) => p.url.includes('/explore'))
-    expect(explore?.url).toContain('/steward/review/correspondence/c1/explore')
-    expect(explore?.body).toEqual({ strand_key: 'hands' })
-  })
-
-  it('the vessel holds the readings’ share, and the ask sends his words verbatim', async () => {
-    attributedPayload = READ_WITH_PENDING
-    await render()
-    await descendToGamma()
-    await click('palace-room-vessel')
-    const vesselPanel = container.querySelector('[data-testid="palace-vessel-panel"]')
-    expect(vesselPanel).not.toBeNull()
-    const door = container.querySelector('[data-testid="palace-vessel-pending"]')
-    expect(door).not.toBeNull()
-    expect(
-      container.querySelector('[data-testid="palace-pending-item-vessel-reading:rp"]'),
-    ).not.toBeNull()
-    // The correspondence rests at the threshold, not at the vessel.
-    expect(door!.textContent).not.toContain('patience vs avoidance')
-    // The ask: his cause, in his own words, sent exactly as written.
-    await click('palace-reconsider-open-ra')
-    const ta = container.querySelector(
-      '[data-testid="palace-reconsider-text-ra"]',
-    ) as HTMLTextAreaElement
-    expect(ta).not.toBeNull()
-    const setter = Object.getOwnPropertyDescriptor(
-      window.HTMLTextAreaElement.prototype,
-      'value',
-    )!.set!
-    await act(async () => {
-      setter.call(ta, 'The facts moved on Tuesday.')
-      ta.dispatchEvent(new Event('input', { bubbles: true }))
+    await click('palace-building-i1')
+    await click('palace-floor-p1')
+    await click('palace-floor-scales')
+    const line = container.querySelector('[data-testid="palace-staged-line"]')
+    expect(line).not.toBeNull()
+    expect(line!.textContent).toContain('the scales')
+    expect(lastChat().context).toEqual({
+      sheet_type: 'living_palace',
+      entity_type: 'project',
+      entity_id: 'p1',
+      palace_focus: 'scales',
     })
-    await click('palace-reconsider-send-ra')
-    const ask = posts.find((p) => p.url.includes('/reconsider'))
-    expect(ask?.url).toContain('/steward/review/reading/ra/reconsider')
-    expect(ask?.body).toEqual({ reason: 'The facts moved on Tuesday.' })
+    // Tentative: not one write left this surface.
+    expect(writes).toEqual([])
   })
 
-  it('an empty read opens no door: no pending section, the vessel keeps its toast', async () => {
+  it('staging replaces, sets down, and navigation discards it silently', async () => {
     await render()
     await descendToGamma()
-    await click('palace-boundaries-button')
-    expect(container.querySelector('[data-testid="palace-pending-section"]')).toBeNull()
     await click('palace-room-vessel')
-    expect(container.querySelector('[data-testid="palace-vessel-panel"]')).toBeNull()
-    expect(container.querySelector('[data-testid="palace-toast"]')).not.toBeNull()
+    expect(lastChat().context).toMatchObject({ palace_focus: 'vessel' })
+    // Another tap replaces the staged object.
+    await click('palace-room-chest')
+    expect(lastChat().context).toMatchObject({ palace_focus: 'chest' })
+    expect(container.querySelector('[data-testid="palace-staged-line"]')!.textContent).toContain('the chest')
+    // Setting it down clears the context back to the bare subject.
+    await click('palace-staged-clear')
+    expect(container.querySelector('[data-testid="palace-staged-line"]')).toBeNull()
+    expect(lastChat().context).toEqual({
+      sheet_type: 'living_palace',
+      entity_type: 'task',
+      entity_id: 'tc',
+    })
+    // Stage again, then navigate (through the window, to the room
+    // Gamma waits on): the staging is discarded.
+    await click('palace-room-scales')
+    expect(lastChat().context).toMatchObject({ palace_focus: 'scales' })
+    await click('palace-room-window')
+    expect(lastChat().context).toEqual({
+      sheet_type: 'living_palace',
+      entity_type: 'task',
+      entity_id: 'tb',
+    })
+    expect(container.querySelector('[data-testid="palace-staged-line"]')).toBeNull()
+    expect(writes).toEqual([])
+  })
+
+  it('the hearth stages when the fire is brought; the threshold stages too', async () => {
+    await render()
+    await descendToGamma()
+    await click('palace-room-hearth')
+    expect(lastChat().context).toMatchObject({ palace_focus: 'hearth' })
+    await click('palace-room-threshold')
+    expect(lastChat().context).toMatchObject({ palace_focus: 'threshold' })
+    expect(writes).toEqual([])
+  })
+
+  it('exploring a guest object stages it as guest:<seat> and closes the strip', async () => {
+    attributedPayload = READ_WITH_MATERIAL
+    await render()
+    await descendToGamma()
+    await click('palace-room-guest-ambassador')
+    await click('palace-guest-explore')
+    expect(container.querySelector('[data-testid="palace-guest-strip"]')).toBeNull()
+    expect(lastChat().context).toMatchObject({ palace_focus: 'guest:ambassador' })
+    expect(container.querySelector('[data-testid="palace-staged-line"]')!.textContent).toContain("Lucian's cup")
+    expect(writes).toEqual([])
+  })
+
+  it('a landed chat turn re-reads the subject (the Scroll #431 precedent)', async () => {
+    await render()
+    await descendToGamma()
+    const before = attributedGets
+    expect(before).toBeGreaterThan(0)
+    const onTurnSent = lastChat().onTurnSent
+    expect(onTurnSent).toBeTypeOf('function')
+    await act(async () => {
+      onTurnSent!()
+    })
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(attributedGets).toBeGreaterThan(before)
   })
 })

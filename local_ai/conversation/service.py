@@ -47,6 +47,19 @@ from .noting import (
 from .reply import GENERATION_MANIFEST_KEY, VoiceReply, generate_voice_reply
 from .chalk_tail import ChalkParseResult, parse_chalk_tail
 from .declaration_tail import DeclarationParseResult, parse_declaration_tail
+from .palace_room import (
+    VERDICT_INSTRUCTION as _PALACE_VERDICT_INSTRUCTION,
+    WEIGHING_INSTRUCTION as _PALACE_WEIGHING_INSTRUCTION,
+    build_room_state_context,
+    validated_palace_focus,
+)
+from .palace_tails import (
+    VerdictParseResult,
+    WeighingParseResult,
+    parse_verdict_tail,
+    parse_weighing_tail,
+    visitor_settles,
+)
 from .sketch_tail import ParseResult, parse_sketch_tail
 from . import round as weaver_round
 from . import upload_round
@@ -494,6 +507,8 @@ class ConversationService:
         champion_pencil_context_provider: Callable[..., Any] | None = None,
         noting_writer: Any | None = None,
         obligation_gate: Any | None = None,
+        palace_verdict_executor: Any | None = None,
+        palace_weighing_executor: Any | None = None,
     ) -> None:
         self.store = store
         self._generate_fn = generate_fn
@@ -506,6 +521,16 @@ class ConversationService:
         # everywhere); with capture off it is never called and no
         # noting code runs on the turn at all.
         self._noting_writer = noting_writer
+        # Palace pass (chat-is-the-work, 2026-11-25): the guardian's
+        # conversational verdict and weighing executors
+        # (local_ai/conversation/palace_tails.py), wired by the
+        # routes like the noting writer — the service never imports
+        # the narrative package. Consulted only at the request tail
+        # of a guardian turn on the Living Palace sheet whose tails
+        # parsed; with no executor wired, parsed acts are dropped
+        # with the tails (the strip still happens — hygiene first).
+        self._palace_verdict_executor = palace_verdict_executor
+        self._palace_weighing_executor = palace_weighing_executor
         # V4 obligation-block gate (governing §10): an optional gate
         # object (local_ai/narrative/obligation_gate.py, wired by the
         # routes like V1's noting writer — the service never imports
@@ -643,6 +668,22 @@ class ConversationService:
         strand_key = self._validated_strand_key(
             user_id, conversation_id, arch_id, context
         )
+
+        # Palace tentative population (founder ruling 2026-11-25
+        # 13:56 PT): a Palace tap stages an object in the chat
+        # tentatively — the staged focus rides the turn's context
+        # and joins the ledger only through this message's own
+        # context snapshot when the visitor sends a turn while it is
+        # staged. Client-supplied and never trusted: only the closed
+        # focus kinds (and guest stagings naming a real guest seat)
+        # survive; anything else is scrubbed before the snapshot,
+        # never honored, never an error (the strand_key discipline).
+        if context is not None and "palace_focus" in context:
+            focus = validated_palace_focus(context.get("palace_focus"))
+            if focus is None:
+                context.pop("palace_focus", None)
+            else:
+                context["palace_focus"] = focus
 
         user_msg = self.store.append_message(
             user_id, conversation_id, arch_id, "user", message,
@@ -872,6 +913,24 @@ class ConversationService:
             conversation_store=self.store,
         )
 
+        # The room Maeve keeps (Palace pass, founder's live session
+        # 2026-11-25 13:38 PT): the subject block's sibling at the
+        # same seam, guardian + Living Palace sheet only — her own
+        # interface state (the room's instruments and their recorded
+        # state, the subject's pending items itemized, its accepted
+        # readings, its guest objects, and any staged focus from a
+        # tap), composed from the attributed read. The assembler
+        # gates on sheet + resolution itself and never raises; no
+        # room (or another seat, or another sheet) yields no block,
+        # and the prompt assembles byte-identically to before. The
+        # two conversational-act instructions ride only when the
+        # room block rides (below, in the extra_instructions tuple).
+        room_context = None
+        if arch_id == "guardian":
+            room_context = build_room_state_context(
+                user_id, context, conversation_store=self.store
+            )
+
         # Capability C S5: first joining turn only. If a pending,
         # unexpired invitation exists for this (user, conversation,
         # seat) at turn start, the turn carries its evidence +
@@ -1049,6 +1108,7 @@ class ConversationService:
             evidence_context=evidence_context,
             subject_context=subject_context,
             preparation_context=preparation_context,
+            room_context=room_context,
             invitation_context=invitation_context,
             execution_context=execution_context,
             round_context=round_context,
@@ -1111,6 +1171,13 @@ class ConversationService:
                     and str(context.get("sheet_type") or "").strip()
                     == "campaign_board"
                     else None,
+                    # Palace pass: the guardian's conversational
+                    # verdict + weighing instructions — present
+                    # exactly when her room block rides this turn
+                    # (guardian, Living Palace sheet, resolved
+                    # subject), absent entirely otherwise.
+                    _PALACE_VERDICT_INSTRUCTION if room_context else None,
+                    _PALACE_WEIGHING_INSTRUCTION if room_context else None,
                 )
                 if block
             )
@@ -1289,6 +1356,67 @@ class ConversationService:
                     logger.exception(
                         "declaration seam: actuation failed; turn continues"
                     )
+        # Palace pass — THE SEAM (the chalk seam's shape): for
+        # guardian turns on the Living Palace sheet only, immediately
+        # after generation (and after the noting seam, so a reply
+        # carrying both a trailer and a tail loses both), parse the
+        # [[verdict]] and [[weighing]] tails and replace the reply
+        # text with the stripped body. Every downstream consumer
+        # reads the stripped text, so no tail can reach persistence,
+        # the route response, or later history on any path.
+        # Strip-always within the gate: the parsers run whether or
+        # not a tail was expected; the instruction blocks above ride
+        # only when the room block rode. The parsers are fail-closed
+        # and do not raise on text input; the guard is
+        # belt-and-braces — on an unexpected error the fallback
+        # strips from the first standalone delimiter line. A
+        # tail-only generation (empty stripped body) is treated as
+        # malformed, exactly as at the chalk seam: its acts drop
+        # whole. Execution happens at the request tail (below),
+        # through the injected executors, behind the subject-match
+        # and settle-language gates.
+        palace_verdict_parsed: VerdictParseResult | None = None
+        palace_weighing_parsed: WeighingParseResult | None = None
+        palace_sheet = (
+            arch_id == "guardian"
+            and str(context.get("sheet_type") or "").strip() == "living_palace"
+        )
+        if palace_sheet:
+            try:
+                palace_verdict_parsed = parse_verdict_tail(voice_reply.reply)
+                if (
+                    palace_verdict_parsed.status == "ok"
+                    and not palace_verdict_parsed.body.strip()
+                ):
+                    palace_verdict_parsed.acts = []
+                    palace_verdict_parsed.diagnostics = [
+                        *palace_verdict_parsed.diagnostics,
+                        "semantic_drop: tail-only generation (empty body) "
+                        "treated as malformed",
+                    ]
+                voice_reply.reply = palace_verdict_parsed.body
+                palace_weighing_parsed = parse_weighing_tail(voice_reply.reply)
+                if (
+                    palace_weighing_parsed.status == "ok"
+                    and not palace_weighing_parsed.body.strip()
+                ):
+                    palace_weighing_parsed.figures = {}
+                    palace_weighing_parsed.diagnostics = [
+                        *palace_weighing_parsed.diagnostics,
+                        "semantic_drop: tail-only generation (empty body) "
+                        "treated as malformed",
+                    ]
+                voice_reply.reply = palace_weighing_parsed.body
+            except Exception:
+                logger.exception("palace seam: parse failed; hygiene fallback strip")
+                kept = []
+                for line in voice_reply.reply.split("\n"):
+                    if line.strip() in ("[[verdict]]", "[[weighing]]"):
+                        break
+                    kept.append(line)
+                voice_reply.reply = "\n".join(kept).rstrip("\n")
+                palace_verdict_parsed = None
+                palace_weighing_parsed = None
 
         # Firebrand lightning round (S1): record the plan's effects
         # now that generation succeeded. The marker rides the
@@ -1760,6 +1888,66 @@ class ConversationService:
                 logger.exception(
                     "noting capture: writer failed; turn unaffected"
                 )
+
+        # Palace pass — the execution hand-off, at the request tail
+        # (the noting hand-off's pattern): the parsed tails reach
+        # their executors only here, fully guarded — an execution
+        # failure never breaks the turn, and its diagnostics ride the
+        # server log, never the chat. The verdict executor enforces
+        # the subject-match gate against the staged subject's own
+        # attributed read; the weighing executor runs ONLY when the
+        # visitor's own words this turn settled the figures
+        # (visitor_settles) — exploration, however figure-filled the
+        # reply, writes nothing.
+        if palace_sheet and (
+            palace_verdict_parsed is not None or palace_weighing_parsed is not None
+        ):
+            palace_entity_type = str(context.get("entity_type") or "").strip().lower()
+            palace_entity_id = str(context.get("entity_id") or "").strip()
+            if palace_verdict_parsed is not None and palace_verdict_parsed.acts:
+                if palace_verdict_parsed.diagnostics:
+                    logger.info(
+                        "palace verdict: %s",
+                        "; ".join(palace_verdict_parsed.diagnostics),
+                    )
+                if self._palace_verdict_executor is not None:
+                    try:
+                        for diag in self._palace_verdict_executor.execute(
+                            user_id=user_id,
+                            entity_type=palace_entity_type,
+                            entity_id=palace_entity_id,
+                            acts=palace_verdict_parsed.acts,
+                        ):
+                            logger.info("palace verdict: %s", diag)
+                    except Exception:
+                        logger.exception(
+                            "palace verdict: executor failed; turn unaffected"
+                        )
+            if palace_weighing_parsed is not None and palace_weighing_parsed.figures:
+                if palace_weighing_parsed.diagnostics:
+                    logger.info(
+                        "palace weighing: %s",
+                        "; ".join(palace_weighing_parsed.diagnostics),
+                    )
+                if not visitor_settles(message):
+                    logger.info(
+                        "palace weighing: tail dropped — the visitor's "
+                        "words did not settle the figures (exploration "
+                        "writes nothing)"
+                    )
+                elif self._palace_weighing_executor is not None:
+                    try:
+                        for diag in self._palace_weighing_executor.execute(
+                            user_id=user_id,
+                            entity_type=palace_entity_type,
+                            entity_id=palace_entity_id,
+                            figures=palace_weighing_parsed.figures,
+                        ):
+                            logger.info("palace weighing: %s", diag)
+                    except Exception:
+                        logger.exception(
+                            "palace weighing: executor failed; turn unaffected"
+                        )
         return result
 
     def _validated_strand_key(

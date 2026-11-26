@@ -4,27 +4,22 @@ import {
   buildOverview,
   buildRoutes,
   computePxPerDay,
-  createHold,
-  createRiverFromSignal,
-  createRiverWindow,
   dateAtFraction,
   declareTerrain,
   deriveCapacityPicture,
+  deriveDeclarations,
   deriveObstacles,
   deriveSignalMarkers,
   estimateLabelWidth,
   fractionForDate,
   groupOverviewByInitiative,
   layoutBoardLabels,
-  moveHold,
   projectSpan,
-  removeHold,
   riverBand,
-  setRiverWindow,
   shortDate,
   signalsForProject,
   stripWaypointLabels,
-  withdrawRiver,
+  type BoardDecisionRow,
   type BoardLabelItem,
   type BoardSignal,
   type BoardWaypoint,
@@ -402,37 +397,70 @@ describe('deriveCapacityPicture', () => {
   })
 })
 
-describe('river + hold declarations', () => {
-  const span = projectSpan(project({ start_date: '2026-06-01', end_date: '2026-06-30' }), [], NOW)
+describe('river + hold declarations — derived from decision records', () => {
+  // Decision rows arrive newest-first from GET /decisions; the fold
+  // replays them oldest-first, exactly as the backend fold does.
+  const decision = (partial: Partial<BoardDecisionRow>): BoardDecisionRow => ({
+    id: 'd1',
+    entity_type: 'project',
+    entity_id: 'p1',
+    decision_type: 'river_declaration',
+    final_values_snapshot: null,
+    created_at: '2026-06-01T00:00:00Z',
+    ...partial,
+  })
 
-  it('declares a river from a signal: window opens on the recorded date, default length', () => {
-    const river = createRiverFromSignal('river-1', 'p1', signal({}), span)
-    expect(river.source).toEqual({ type: 'signal', signalId: 's1', signalTitle: 'Venue closed for repairs' })
-    expect(new Date(river.startMs).getDate()).toBe(10)
-    expect((river.endMs - river.startMs) / 86_400_000).toBe(3)
-    const band = riverBand(span, river)
+  it('folds a river declaration into the band geometry', () => {
+    const span = projectSpan(project({ start_date: '2026-06-01', end_date: '2026-06-30' }), [], NOW)
+    const { rivers, holds } = deriveDeclarations([
+      decision({ id: 'd1', final_values_snapshot: { start: '2026-06-10', end: '2026-06-13' } }),
+    ])
+    expect(holds).toHaveLength(0)
+    expect(rivers).toHaveLength(1)
+    expect(rivers[0].id).toBe('d1')
+    const band = riverBand(span, rivers[0])
     expect(band.startFraction).toBeCloseTo(9 / 29, 2)
     expect(band.endFraction).toBeCloseTo(12 / 29, 2)
     expect(band.endFraction).toBeGreaterThan(band.startFraction)
   })
 
-  it('declares a river window directly, mid-span, and re-windows or withdraws it', () => {
-    const river = createRiverWindow('river-2', 'p1', span)
-    expect(river.source).toEqual({ type: 'window' })
-    const moved = setRiverWindow([river], 'river-2', river.startMs + 86_400_000, river.endMs + 86_400_000)
-    expect(moved[0].startMs).toBe(river.startMs + 86_400_000)
-    // An inverted window is refused, not stored.
-    expect(setRiverWindow([river], 'river-2', river.endMs, river.startMs)).toEqual([river])
-    expect(withdrawRiver(moved, 'river-2')).toHaveLength(0)
+  it('latest river event wins; a withdrawal supersedes; a later declaration re-stands', () => {
+    const rows = [
+      decision({ id: 'd3', decision_type: 'river_declaration', final_values_snapshot: { start: '2026-07-01', end: '2026-07-03' }, created_at: '2026-06-03T00:00:00Z' }),
+      decision({ id: 'd2', decision_type: 'river_withdrawal', created_at: '2026-06-02T00:00:00Z' }),
+      decision({ id: 'd1', decision_type: 'river_declaration', final_values_snapshot: { start: '2026-06-10', end: '2026-06-13' }, created_at: '2026-06-01T00:00:00Z' }),
+    ]
+    const { rivers } = deriveDeclarations(rows)
+    expect(rivers).toHaveLength(1)
+    expect(rivers[0].id).toBe('d3')
+    // Without the re-declaration, the withdrawal leaves no river.
+    expect(deriveDeclarations(rows.slice(1)).rivers).toHaveLength(0)
   })
 
-  it('places a hold, moves it clamped to the line, and removes it', () => {
-    const hold = createHold('hold-1', 'p1')
-    expect(hold.fraction).toBe(0.5)
-    const moved = moveHold([hold], 'hold-1', 1.7)
-    expect(moved[0].fraction).toBe(0.98)
-    expect(moveHold([hold], 'hold-1', -1)[0].fraction).toBe(0.02)
-    expect(removeHold(moved, 'hold-1')).toHaveLength(0)
+  it('holds are placed, moved and removed by decision id, sorted by standing date', () => {
+    const rows = [
+      decision({ id: 'd4', decision_type: 'hold_removed', final_values_snapshot: { hold_id: 'd2' }, created_at: '2026-06-04T00:00:00Z' }),
+      decision({ id: 'd3', decision_type: 'hold_moved', final_values_snapshot: { hold_id: 'd1', at: '2026-06-20' }, created_at: '2026-06-03T00:00:00Z' }),
+      decision({ id: 'd2', decision_type: 'hold_placed', final_values_snapshot: { at: '2026-06-12' }, created_at: '2026-06-02T00:00:00Z' }),
+      decision({ id: 'd1', decision_type: 'hold_placed', final_values_snapshot: { at: '2026-06-08' }, created_at: '2026-06-01T00:00:00Z' }),
+    ]
+    const { holds } = deriveDeclarations(rows)
+    expect(holds).toHaveLength(1)
+    expect(holds[0].id).toBe('d1')
+    expect(new Date(holds[0].atMs).getDate()).toBe(20)
+  })
+
+  it('ignores other decision types, other entities and malformed rows', () => {
+    const rows = [
+      decision({ id: 'd9', decision_type: 'scales_weighing', final_values_snapshot: { start: '2026-06-10', end: '2026-06-13' } }),
+      decision({ id: 'd8', entity_id: 'p2', final_values_snapshot: { start: '2026-06-10', end: '2026-06-13' } }),
+      decision({ id: 'd7', final_values_snapshot: { start: 'not-a-date', end: '2026-06-13' } }),
+      decision({ id: 'd6', entity_type: 'task', final_values_snapshot: { start: '2026-06-10', end: '2026-06-13' } }),
+    ]
+    const { rivers, holds } = deriveDeclarations(rows)
+    expect(rivers.map((r) => r.projectId)).toEqual(['p2'])
+    expect(holds).toHaveLength(0)
+    expect(deriveDeclarations([])).toEqual({ rivers: [], holds: [] })
   })
 })
 

@@ -22,11 +22,9 @@
  * terrain doctrine (2026-11-17) terrain is derived from VE content,
  * understood through conversation with Valen, and FIXED BY THE USER'S
  * DECLARATION. A River (an immovable window) and a Hold (a review
- * checkpoint) are declared by the user — from a signal, from a chosen
- * window, or placed directly on the line. Declarations are
- * PROVISIONAL, session-local state: the declaration-binding standard
- * is deferred, so they are stored nowhere and can be withdrawn.
- * See the Declarations section below.
+ * checkpoint) are declared by the user in conversation with Valen
+ * and recorded as VE decisions; the board derives their current
+ * state from those records. See the Declarations section below.
  */
 import type { CapacityProfile, Person, Project, Task } from '../vision-execution/types'
 import { capacityDerived } from '../vision-execution/capacityDerived'
@@ -743,89 +741,120 @@ export function deriveCapacityPicture(
 }
 
 /* ------------------------------------------------------------------ */
-/* Declarations — Rivers and Holds (PROVISIONAL, session-local)        */
+/* Declarations — Rivers and Holds (recorded, derived from decisions)  */
 /* ------------------------------------------------------------------ */
 
 /**
  * Declarations are the user's own fixings of the terrain (founder
  * doctrine 2026-11-17: terrain is derived, conversed, and DECLARED).
- * They are provisional interface state: held in the board session
- * only, stored in no record, and withdrawable at any time. The
- * declaration-binding standard that would persist them is deferred.
+ * Since the Board interaction pass (2026-11-25) they are made in
+ * conversation with Valen and recorded as Vision Execution DECISIONS
+ * (dedicated decision types; see local_ai/vision_execution/
+ * declarations.py). The board only READS them: current state is
+ * derived here by folding the project's declaration decisions in
+ * recorded order — the mirror of the backend fold, over the same
+ * rows. One River per project (the latest river event wins; a
+ * withdrawal clears it); Holds are many, keyed by their placing
+ * decision's id, moved and removed by later decisions naming it.
  */
 
 export interface RiverDeclaration {
+  /** The river_declaration decision's id. */
   id: string
   projectId: string
-  /** Where the declaration came from: a signal the user declared a
-   *  River, or a window the user chose directly. */
-  source:
-    | { type: 'signal'; signalId: string; signalTitle: string }
-    | { type: 'window' }
   startMs: number
   endMs: number
 }
 
 export interface HoldDeclaration {
+  /** The hold_placed decision's id — the hold's name in the record. */
   id: string
   projectId: string
-  fraction: number
+  /** Where the checkpoint stands, as a recorded moment. Its place
+   *  on the line is derived against the current span at render. */
+  atMs: number
 }
 
-/** Default length of a freshly declared river window. */
-export const RIVER_DEFAULT_DAYS = 3
-
-function startOfDayMs(ms: number): number {
-  const d = new Date(ms)
-  d.setHours(0, 0, 0, 0)
-  return d.getTime()
+/** A decision row as returned by GET /decisions (owner-scoped). */
+export interface BoardDecisionRow {
+  id: string
+  entity_type: string
+  entity_id: string
+  decision_type: string
+  final_values_snapshot: Record<string, unknown> | null
+  created_at: string
 }
 
-/** Declare a River from a signal: the window opens on the signal's
- *  recorded date and runs RIVER_DEFAULT_DAYS — the user can re-window
- *  it afterwards from the river's own popup. */
-export function createRiverFromSignal(
-  id: string,
-  projectId: string,
-  signal: BoardSignal,
-  span: BoardSpan,
-): RiverDeclaration {
-  const created = parseDateMs(signal.created_at)
-  const startMs = created != null ? startOfDayMs(created) : startOfDayMs(dateAtFraction(span, 0.5).getTime())
-  return {
-    id,
-    projectId,
-    source: { type: 'signal', signalId: signal.id, signalTitle: signal.title },
-    startMs,
-    endMs: startMs + RIVER_DEFAULT_DAYS * DAY_MS,
+export interface ProjectDeclarations {
+  river: RiverDeclaration | null
+  holds: HoldDeclaration[]
+}
+
+const DECLARATION_TYPES = new Set([
+  'river_declaration',
+  'river_withdrawal',
+  'hold_placed',
+  'hold_moved',
+  'hold_removed',
+])
+
+function snapshotMs(snap: Record<string, unknown> | null, key: string): number | null {
+  if (!snap) return null
+  const v = snap[key]
+  return typeof v === 'string' ? parseDateMs(v) : null
+}
+
+/**
+ * Fold decision rows (any order — the API returns newest first)
+ * into per-project declaration state. The replay is oldest-first,
+ * mirroring the backend fold over the same rows: a malformed row
+ * degrades to no declaration, never to a broken board.
+ */
+export function deriveDeclarations(decisions: BoardDecisionRow[]): {
+  rivers: RiverDeclaration[]
+  holds: HoldDeclaration[]
+} {
+  const byProject = new Map<string, { river: RiverDeclaration | null; holds: Map<string, HoldDeclaration> }>()
+  const rows = [...decisions].reverse()
+  for (const row of rows) {
+    if (!DECLARATION_TYPES.has(row.decision_type)) continue
+    if (row.entity_type !== 'project' || !row.entity_id) continue
+    let entry = byProject.get(row.entity_id)
+    if (!entry) {
+      entry = { river: null, holds: new Map() }
+      byProject.set(row.entity_id, entry)
+    }
+    const snap = row.final_values_snapshot
+    if (row.decision_type === 'river_declaration') {
+      const startMs = snapshotMs(snap, 'start')
+      const endMs = snapshotMs(snap, 'end')
+      if (startMs != null && endMs != null) {
+        entry.river = { id: row.id, projectId: row.entity_id, startMs, endMs }
+      }
+    } else if (row.decision_type === 'river_withdrawal') {
+      entry.river = null
+    } else if (row.decision_type === 'hold_placed') {
+      const atMs = snapshotMs(snap, 'at')
+      if (atMs != null && row.id) {
+        entry.holds.set(row.id, { id: row.id, projectId: row.entity_id, atMs })
+      }
+    } else if (row.decision_type === 'hold_moved') {
+      const holdId = typeof snap?.hold_id === 'string' ? snap.hold_id : ''
+      const atMs = snapshotMs(snap, 'at')
+      const hold = entry.holds.get(holdId)
+      if (hold && atMs != null) entry.holds.set(holdId, { ...hold, atMs })
+    } else if (row.decision_type === 'hold_removed') {
+      const holdId = typeof snap?.hold_id === 'string' ? snap.hold_id : ''
+      entry.holds.delete(holdId)
+    }
   }
-}
-
-/** Declare a River by choosing a window directly: opens mid-span at
- *  the default length, ready to be re-windowed from its popup. */
-export function createRiverWindow(id: string, projectId: string, span: BoardSpan): RiverDeclaration {
-  const startMs = startOfDayMs(dateAtFraction(span, 0.45).getTime())
-  return {
-    id,
-    projectId,
-    source: { type: 'window' },
-    startMs,
-    endMs: startMs + RIVER_DEFAULT_DAYS * DAY_MS,
+  const rivers: RiverDeclaration[] = []
+  const holds: HoldDeclaration[] = []
+  for (const entry of byProject.values()) {
+    if (entry.river) rivers.push(entry.river)
+    holds.push(...[...entry.holds.values()].sort((a, b) => a.atMs - b.atMs))
   }
-}
-
-export function setRiverWindow(
-  rivers: RiverDeclaration[],
-  id: string,
-  startMs: number,
-  endMs: number,
-): RiverDeclaration[] {
-  if (!(endMs > startMs)) return rivers
-  return rivers.map((r) => (r.id === id ? { ...r, startMs, endMs } : r))
-}
-
-export function withdrawRiver(rivers: RiverDeclaration[], id: string): RiverDeclaration[] {
-  return rivers.filter((r) => r.id !== id)
+  return { rivers, holds }
 }
 
 /** The river's band on the line: span fractions for its window,
@@ -839,19 +868,6 @@ export function riverBand(
   let end = Math.min(0.99, Math.max(0.03, raw(river.endMs)))
   if (end - start < 0.02) end = Math.min(0.99, start + 0.02)
   return { startFraction: start, endFraction: end }
-}
-
-export function createHold(id: string, projectId: string, fraction = 0.5): HoldDeclaration {
-  return { id, projectId, fraction: Math.min(0.98, Math.max(0.02, fraction)) }
-}
-
-export function moveHold(holds: HoldDeclaration[], id: string, fraction: number): HoldDeclaration[] {
-  const clamped = Math.min(0.98, Math.max(0.02, fraction))
-  return holds.map((h) => (h.id === id ? { ...h, fraction: clamped } : h))
-}
-
-export function removeHold(holds: HoldDeclaration[], id: string): HoldDeclaration[] {
-  return holds.filter((h) => h.id !== id)
 }
 
 /* ------------------------------------------------------------------ */

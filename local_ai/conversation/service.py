@@ -46,6 +46,7 @@ from .noting import (
 )
 from .reply import GENERATION_MANIFEST_KEY, VoiceReply, generate_voice_reply
 from .chalk_tail import ChalkParseResult, parse_chalk_tail
+from .declaration_tail import DeclarationParseResult, parse_declaration_tail
 from .sketch_tail import ParseResult, parse_sketch_tail
 from . import round as weaver_round
 from . import upload_round
@@ -167,6 +168,37 @@ _CHALK_INSTRUCTION_BLOCK = (
     "are gesture in your own hand — the words of your reply carry the "
     "meaning; a drawing never claims to be a picture of the thing "
     "discussed."
+)
+
+#: The Board declaration instruction block (Board interaction pass,
+#: 2026-11-25): the closed [[declare]] grammar, the commitment rule
+#: (a tail actuates only what the visitor has actually settled in
+#: the message just sent — never a possibility discussed, never a
+#: date the visitor did not settle), and the bookkeeping-never-
+#: speech rule. Champion-gated and campaign-board-context-gated:
+#: the block is sent only on a champion turn whose live context is
+#: the Campaign Board; the seam below still strips any tail that
+#: appears on a champion turn, board or not.
+_DECLARATION_INSTRUCTION_BLOCK = (
+    "The board's declarations — a project's River (its declared window) and "
+    "its Holds (review checkpoints you place together) — are recorded from "
+    "this conversation, and the selected subject's record above carries the "
+    "project's current declaration state, including each standing hold's id. "
+    "When, and only when, the visitor has clearly committed in the message "
+    "you are answering — they have settled the act and its dates — record it "
+    "by ending your reply with a declaration tail: a line containing only "
+    "[[declare]], then one line per act: "
+    "'declare-window | project=<project-id> | start=<YYYY-MM-DD> | end=<YYYY-MM-DD>', "
+    "'withdraw-window | project=<project-id>', "
+    "'place-hold | project=<project-id> | at=<YYYY-MM-DD>', "
+    "'move-hold | hold=<hold-id> | at=<YYYY-MM-DD>', or "
+    "'remove-hold | hold=<hold-id>'. The project is the one staged in this "
+    "conversation; a hold is named by the id the record gives it. Use the "
+    "dates the visitor settled, in ISO form; if they have not settled exact "
+    "dates, talk it through — never invent a date, and never record an act "
+    "the visitor has not committed to. Most turns need no tail. The tail is "
+    "bookkeeping, never speech: your reply must be complete before it, and "
+    "you never mention the tail."
 )
 
 #: The sketch summary's cap and label in the live-context hint
@@ -1068,6 +1100,17 @@ class ConversationService:
                     # otherwise (the baseline arm stays byte-identical
                     # to production).
                     NOTING_INSTRUCTION if noting_on else None,
+                    # Board interaction pass (2026-11-25): the
+                    # declaration instruction joins the same tuple,
+                    # champion-gated and board-context-gated. On any
+                    # other turn the block is never sent; the seam
+                    # below still strips any tail that appears on a
+                    # champion turn.
+                    _DECLARATION_INSTRUCTION_BLOCK
+                    if arch_id == "champion"
+                    and str(context.get("sheet_type") or "").strip()
+                    == "campaign_board"
+                    else None,
                 )
                 if block
             )
@@ -1182,6 +1225,70 @@ class ConversationService:
                     kept.append(line)
                 voice_reply.reply = "\n".join(kept).rstrip("\n")
                 noting_parsed = None
+
+        # Board declarations — THE SEAM (Board interaction pass,
+        # 2026-11-25, the chalk seam's shape): for champion turns
+        # only, immediately after the noting seam and before any
+        # other post-generation effect, parse the [[declare]] tail
+        # and replace the reply text with the stripped body, so no
+        # declaration markup can reach persistence, the route
+        # response, or later history on any path. Strip-always for
+        # champion turns; ACTUATION is narrower — the parsed acts are
+        # honored only when this turn's live context is the Campaign
+        # Board with a staged project (the context this turn's user
+        # message was snapshotted with — the visitor's commitment
+        # point), and each act is validated against the staged
+        # project and the visitor's own derived declaration state by
+        # the actuator. A store failure never breaks the turn.
+        declaration_parsed: DeclarationParseResult | None = None
+        if arch_id == "champion":
+            try:
+                declaration_parsed = parse_declaration_tail(voice_reply.reply)
+                voice_reply.reply = declaration_parsed.body
+            except Exception:
+                logger.exception(
+                    "declaration seam: parse failed; hygiene fallback strip"
+                )
+                lines = voice_reply.reply.split("\n")
+                kept = []
+                for line in lines:
+                    if line.strip() == "[[declare]]":
+                        break
+                    kept.append(line)
+                voice_reply.reply = "\n".join(kept).rstrip("\n")
+                declaration_parsed = None
+            if (
+                declaration_parsed is not None
+                and declaration_parsed.status == "ok"
+                and declaration_parsed.acts
+                and str(context.get("sheet_type") or "").strip()
+                == "campaign_board"
+            ):
+                try:
+                    from local_ai.vision_execution.declarations import (
+                        apply_declaration_act,
+                    )
+                    from local_ai.vision_execution import storage as _ve
+
+                    staged_project_id: str | None = None
+                    _etype = str(context.get("entity_type") or "").strip().lower()
+                    _eid = str(context.get("entity_id") or "").strip()
+                    if _etype == "project" and _eid:
+                        if _ve.get_project(_eid, user_id):
+                            staged_project_id = _eid
+                    elif _etype == "task" and _eid:
+                        _task = _ve.get_task(_eid, user_id)
+                        if _task and _task.get("project_id"):
+                            staged_project_id = str(_task["project_id"])
+                    if staged_project_id:
+                        for act in declaration_parsed.acts:
+                            apply_declaration_act(
+                                user_id, staged_project_id, act
+                            )
+                except Exception:
+                    logger.exception(
+                        "declaration seam: actuation failed; turn continues"
+                    )
 
         # Firebrand lightning round (S1): record the plan's effects
         # now that generation succeeded. The marker rides the

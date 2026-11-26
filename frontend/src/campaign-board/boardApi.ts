@@ -7,10 +7,12 @@
  * circumstance entity, open rows only — the Radar's own filter) and
  * GET /capacity-profiles (weekly capacity; committed hours are
  * derived in boardLogic by the Radar's rule). Writes go ONLY
- * through the existing VE PATCH endpoints: a task's due_date, a
- * project's start/end date. No route storage, no new endpoints,
- * no new records. River/Hold declarations are session-local and
- * are never written anywhere.
+ * through the existing VE PATCH endpoints: a task's due_date. No
+ * route storage, no new endpoints, no new records. River/Hold
+ * declarations are READ here, never written: they are recorded as
+ * VE decisions in conversation with Valen (Board interaction pass,
+ * 2026-11-25) and folded from the owner's decision records by
+ * boardLogic.deriveDeclarations.
  */
 import {
   VISION_EXECUTION_API,
@@ -20,7 +22,7 @@ import {
   type Task,
 } from '../vision-execution/types'
 import { fetchVisionMapEntities } from '../vision-map/veMapApi'
-import type { BoardSignal } from './boardLogic'
+import type { BoardDecisionRow, BoardSignal } from './boardLogic'
 
 export interface BoardEntities {
   initiatives: { id: string; title: string }[]
@@ -29,6 +31,9 @@ export interface BoardEntities {
   persons: Person[]
   signals: BoardSignal[]
   capacityProfiles: CapacityProfile[]
+  /** The owner's decision records for projects — the declaration
+   *  fold's input (Rivers and Holds ride among them). */
+  decisions: BoardDecisionRow[]
 }
 
 /** Circumstance reads degrade to empty rather than failing the board:
@@ -46,10 +51,11 @@ async function fetchArrayOrEmpty<T>(path: string): Promise<T[]> {
 }
 
 export async function fetchBoardEntities(): Promise<BoardEntities> {
-  const [all, signals, capacityProfiles] = await Promise.all([
+  const [all, signals, capacityProfiles, decisions] = await Promise.all([
     fetchVisionMapEntities(),
     fetchArrayOrEmpty<BoardSignal>('/signals?status_not=resolved,dismissed'),
     fetchArrayOrEmpty<CapacityProfile>('/capacity-profiles'),
+    fetchArrayOrEmpty<BoardDecisionRow>('/decisions?entity_type=project&limit=500'),
   ])
   return {
     initiatives: all.initiatives.map((i) => ({ id: i.id, title: i.title })),
@@ -58,6 +64,7 @@ export async function fetchBoardEntities(): Promise<BoardEntities> {
     persons: all.persons,
     signals,
     capacityProfiles,
+    decisions,
   }
 }
 
@@ -80,11 +87,3 @@ export function patchTaskDueDate(taskId: string, dueDateLocal: string): Promise<
   return apiPatch<Task>(`/tasks/${taskId}`, { due_date: dueDateLocal })
 }
 
-/** Set the project's recorded start or finish date (FINISH may be dated
- *  first, so the rest of the timeline has context). */
-export function patchProjectDates(
-  projectId: string,
-  patch: { start_date?: string; end_date?: string },
-): Promise<Project> {
-  return apiPatch<Project>(`/projects/${projectId}`, patch)
-}

@@ -18,13 +18,26 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import * as React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
+import { readFileSync } from 'node:fs'
+
+/** The latest props the board handed CouncilChat — the staging pins
+ *  read the conversation context from here. */
+const chatProps = vi.hoisted(() => ({
+  current: null as null | { context?: Record<string, unknown> },
+}))
 
 vi.mock('../chat/CouncilChat', async () => {
   const ReactMod = await import('react')
   return {
-    default: () => ReactMod.createElement('div', { 'data-testid': 'valen-chat' }),
+    default: (props: { context?: Record<string, unknown> }) => {
+      chatProps.current = props
+      return ReactMod.createElement('div', { 'data-testid': 'valen-chat' })
+    },
   }
 })
+
+/** Every fetch the board makes, in order — the write pins read it. */
+const fetchLog: { url: string; method: string }[] = []
 
 import CampaignBoardView from './CampaignBoardView'
 
@@ -79,14 +92,29 @@ function stubFetch(overrides: Record<string, unknown> = {}) {
     '/vision-execution/assets': [],
     '/vision-execution/signals?status_not=resolved,dismissed': [],
     '/vision-execution/capacity-profiles': [],
+    '/vision-execution/decisions?entity_type=project&limit=500': [],
     ...overrides,
   }
-  return vi.fn(async (url: string) => ({
-    ok: true,
-    status: 200,
-    json: async () => data[url] ?? [],
-    text: async () => '',
-  }))
+  return vi.fn(async (url: string, options?: { method?: string; body?: string }) => {
+    const method = options?.method ?? 'GET'
+    fetchLog.push({ url, method })
+    if (method === 'PATCH') {
+      const body = JSON.parse(options?.body ?? '{}') as { due_date?: string }
+      const task = TASKS.find((t) => url.endsWith(`/${t.id}`))
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ...task, due_date: body.due_date }),
+        text: async () => '',
+      }
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => data[url] ?? [],
+      text: async () => '',
+    }
+  })
 }
 
 const PERSON = {
@@ -108,6 +136,8 @@ describe('CampaignBoardView', () => {
   let root: Root
 
   beforeEach(() => {
+    fetchLog.length = 0
+    chatProps.current = null
     vi.stubGlobal('fetch', stubFetch())
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -184,7 +214,21 @@ describe('CampaignBoardView', () => {
     expect(container.textContent).toContain('← All projects')
   })
 
-  it('draws the linked blocker signal + overcapacity, and declares River and Hold from the map', async () => {
+  it('draws the linked blocker signal + overcapacity; declarations render from the record, never from surface forms', async () => {
+    const decisions = [
+      {
+        id: 'dec-hold-1', entity_type: 'project', entity_id: 'p1',
+        decision_type: 'hold_placed',
+        final_values_snapshot: { at: isoDaysFromNow(5) },
+        created_at: '2026-05-02T00:00:00Z',
+      },
+      {
+        id: 'dec-river-1', entity_type: 'project', entity_id: 'p1',
+        decision_type: 'river_declaration',
+        final_values_snapshot: { start: isoDaysFromNow(-2), end: isoDaysFromNow(3) },
+        created_at: '2026-05-01T00:00:00Z',
+      },
+    ]
     vi.stubGlobal(
       'fetch',
       stubFetch({
@@ -194,6 +238,7 @@ describe('CampaignBoardView', () => {
           { person_id: 'per1', weekly_capacity_hours: 10, created_at: '2026-05-01T00:00:00', updated_at: '2026-05-01T00:00:00' },
         ],
         '/vision-execution/signals?status_not=resolved,dismissed': [SIGNAL],
+        '/vision-execution/decisions?entity_type=project&limit=500': decisions,
       }),
     )
     await act(async () => {
@@ -215,7 +260,14 @@ describe('CampaignBoardView', () => {
     expect(container.textContent).toContain('Pat · 14/10h')
     expect(container.textContent).toContain('over')
 
-    // Open the signal: standing is reported, and the River can be declared from it.
+    // The recorded declarations stand on the board from load: the
+    // River band and the Hold, folded from the decision records.
+    expect(container.textContent).toContain('The River')
+    expect(container.textContent).toContain('Hold')
+
+    // Tapping the signal stages it tentatively — and summons NO
+    // card: no standing prose, no detail text, no declare form.
+    // Explanation is Valen's, in the chat.
     const marker = [...container.querySelectorAll('g')].find((g) =>
       g.textContent?.includes('Venue closed for repair'),
     )
@@ -223,43 +275,89 @@ describe('CampaignBoardView', () => {
     await act(async () => {
       marker!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.textContent).toContain('standing: reported')
-    expect(container.textContent).toContain('The hall is shut until the roof is fixed.')
-    const declareBtn = [...container.querySelectorAll('button')].find((b) =>
-      b.textContent?.includes('Declare a River'),
-    )
-    expect(declareBtn).toBeTruthy()
-    await act(async () => {
-      declareBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    // The declared River crosses the map and its popup names its source.
-    expect(container.textContent).toContain('The River')
-    expect(container.textContent).toContain('Declared from signal: “Venue closed for repairs”')
+    await flush()
+    expect(container.textContent).not.toContain('standing: reported')
+    expect(container.textContent).not.toContain('The hall is shut until the roof is fixed.')
+    expect(container.textContent).not.toContain('Declare a River')
+    // The tap wrote nothing.
+    expect(fetchLog.filter((f) => f.method !== 'GET')).toHaveLength(0)
 
-    // Withdrawing the declaration removes the River.
-    const withdrawBtn = [...container.querySelectorAll('button')].find((b) =>
-      b.textContent?.includes('Withdraw declaration'),
-    )
-    expect(withdrawBtn).toBeTruthy()
-    await act(async () => {
-      withdrawBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    expect(container.textContent).not.toContain('The River')
+    // No declaration forms or header declaration controls exist.
+    for (const banned of ['＋ River', '＋ Hold', 'Set window', 'Withdraw declaration', 'Remove hold', 'Set date']) {
+      expect(container.textContent).not.toContain(banned)
+    }
+    expect(
+      [...container.querySelectorAll('button')].some((b) => b.textContent?.includes('River')),
+    ).toBe(false)
+  })
 
-    // Place a Hold from the header control: it renders on the line and
-    // its popup names it as user-placed.
-    const holdBtn = [...container.querySelectorAll('button')].find((b) =>
-      b.textContent?.includes('＋ Hold'),
-    )
-    expect(holdBtn).toBeTruthy()
+  it('a waypoint drag reschedules and stages nothing; a tap stages tentatively and writes nothing', async () => {
+    // jsdom has no pointer capture; the board's handlers call it.
+    ;(Element.prototype as unknown as { setPointerCapture: () => void }).setPointerCapture = () => {}
     await act(async () => {
-      holdBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      root.render(React.createElement(CampaignBoardView))
     })
-    expect(container.textContent).toContain('placed by you')
-    const removeBtn = [...container.querySelectorAll('button')].find((b) =>
-      b.textContent?.includes('Remove hold'),
-    )
-    expect(removeBtn).toBeTruthy()
+    await flush()
+    await flush()
+    await openGround('i1')
+    await clickRoute()
+
+    const waypoint = () =>
+      [...container.querySelectorAll('g')].find((g) =>
+        g.textContent?.includes('Confirm the print run'),
+      )
+    expect(waypoint()).toBeTruthy()
+    const pointer = (type: string, clientX: number) =>
+      new MouseEvent(type, { bubbles: true, clientX })
+
+    // DRAG: press, move well past the threshold, release. The due
+    // date PATCH fires; the conversation context still names the
+    // PROJECT — nothing was staged, no card summoned. Each event
+    // dispatches in its own act so drag state settles between them.
+    const g1 = waypoint()!
+    await act(async () => { g1.dispatchEvent(pointer('pointerdown', 100)) })
+    await act(async () => { g1.dispatchEvent(pointer('pointermove', 320)) })
+    await act(async () => { g1.dispatchEvent(pointer('pointerup', 320)) })
+    await flush()
+    const patches = fetchLog.filter((f) => f.method === 'PATCH')
+    expect(patches).toHaveLength(1)
+    expect(patches[0].url).toContain('/vision-execution/tasks/t1')
+    expect(chatProps.current?.context).toMatchObject({ entity_type: 'project', entity_id: 'p1' })
+
+    // TAP: press and release without moving. The waypoint stages —
+    // the context now names the TASK — and the fetch log gains no
+    // write of any kind.
+    fetchLog.length = 0
+    const g2 = waypoint()!
+    await act(async () => { g2.dispatchEvent(pointer('pointerdown', 100)) })
+    await act(async () => { g2.dispatchEvent(pointer('pointerup', 100)) })
+    await flush()
+    expect(chatProps.current?.context).toMatchObject({ entity_type: 'task', entity_id: 't1' })
+    expect(fetchLog.filter((f) => f.method !== 'GET')).toHaveLength(0)
+  })
+
+  it('board sources carry no session-local declaration state, no popup forms, no project-date write', () => {
+    // (jsdom env: import.meta.url is not a file URL here, so the
+    // sources are read relative to the frontend root vitest runs in.)
+    const view = readFileSync('src/campaign-board/CampaignBoardView.tsx', 'utf8')
+    const logic = readFileSync('src/campaign-board/boardLogic.ts', 'utf8')
+    const api = readFileSync('src/campaign-board/boardApi.ts', 'utf8')
+    for (const banned of [
+      'FocusPopup',
+      'createRiverFromSignal',
+      'createRiverWindow',
+      'createHold',
+      'setRiverWindow',
+      'withdrawRiver',
+      'moveHold',
+      'removeHold',
+      'useState<RiverDeclaration',
+      'useState<HoldDeclaration',
+      'patchProjectDates',
+      'session-local',
+    ]) {
+      expect(view + logic + api, banned).not.toContain(banned)
+    }
   })
 
   it('renders ONE shared map with projects nested under their initiatives, undated projects unspanned', async () => {

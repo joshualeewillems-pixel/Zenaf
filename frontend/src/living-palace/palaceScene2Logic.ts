@@ -2,8 +2,10 @@
  * Palace Scene 2 — the building as an Apollonian circle, nested in
  * the dome shell. Ported to TypeScript.
  *
- * The building layer's ground is the founder's empty dome shell
- * (assets/palace-shell.jpg) and the building's floors stand as
+ * The building layer's frame is the founder's empty dome shell
+ * (assets/palace-shell.webp, its white surround cut to alpha,
+ * standing on the Zenaf background plate) and the building's
+ * floors stand as
  * circles INSIDE its cavity, in Apollonian fashion, under the law
  * the founder ruled across 2026-11-26 12:53–13:33 PT — the study
  * builder (rendering-test-assets/maeve-palace-study/scene-2/

@@ -107,6 +107,7 @@ describe('scene geometry scan', () => {
     }))
     expect(building.length, 'building').toBeGreaterThan(800)
     expect(building, 'building').not.toMatch(/NaN|undefined/)
+    expect(building).toContain('palace-zenaf-background')
     expect(building).toContain('palace-shell')
     expect(building).toContain('palace-floor-p1')
     expect(building).toContain('palace-building-hearth')

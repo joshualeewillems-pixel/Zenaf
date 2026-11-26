@@ -319,6 +319,8 @@ describe('JynxScrollView', () => {
     expect(roomImg, 'the room ground').toBeTruthy()
     // The fabric stands as the builder's single raster.
     expect(container.querySelectorAll('[data-testid="scene-fabric"]')).toHaveLength(1)
+    // The wall behind the shelves stands darkened.
+    expect(container.querySelectorAll('[data-testid="scene-wall-dark"]')).toHaveLength(1)
     // Top-level cubbies: the initiative, the unanchored project,
     // the loose task, the idea.
     for (const [kind, id] of [

@@ -340,19 +340,24 @@ export function assignCubbies(bays: ShelfBay[], rhombs: FabricRhomb[]): CubbyAss
     if (t !== 0) return t
     return `${a.head.kind}:${a.head.id}`.localeCompare(`${b.head.kind}:${b.head.id}`)
   })
-  // Cells inside the wall band — inset far enough that a standing
-  // scroll (sized by its face to the cell, cluster and all) never
-  // reaches the floor or spills past the wall's side edges — are
-  // exhausted first, crowded cells included, before any cell
-  // outside the band is considered. The founder caught a scroll
-  // standing on the floorboards twice (2026-11-26); the band is a
-  // hard preference, not a sort key. Outside cells remain only as
-  // the never-drop last resort.
+  // Which cells may hold a scroll, in order (founder, 2026-11-26:
+  // "fit within the rhombi — specifically only the large rhombi"):
+  // LARGE (thick) rhombi inside the wall band first — the band
+  // inset far enough that a standing scroll never reaches the
+  // floor or spills past the wall's side edges, a hard preference
+  // since the founder caught a scroll on the floorboards twice —
+  // then large rhombi outside the band, and only as the
+  // never-drop last resort the thin rhombi. Within each pool,
+  // spaced cells before crowded ones.
   const inBand = (c: FabricRhomb) =>
     c.centre.x >= 175 && c.centre.x <= 1330 && c.centre.y >= 290 && c.centre.y <= 780
   const priority = cellPriorityOrder(rhombs)
-  const inCells = priority.filter(inBand)
-  const outCells = priority.filter((c) => !inBand(c))
+  const pools = [
+    priority.filter((c) => c.thick && inBand(c)),
+    priority.filter((c) => c.thick && !inBand(c)),
+    priority.filter((c) => !c.thick && inBand(c)),
+    priority.filter((c) => !c.thick && !inBand(c)),
+  ]
   const taken: FabricRhomb[] = []
   const chosen: FabricRhomb[] = []
   const spaced = (c: FabricRhomb) =>
@@ -360,11 +365,13 @@ export function assignCubbies(bays: ShelfBay[], rhombs: FabricRhomb[]): CubbyAss
       (t) => Math.hypot(t.centre.x - c.centre.x, t.centre.y - c.centre.y) >= CUBBY_MIN_SEPARATION,
     )
   for (let i = 0; i < units.length; i++) {
-    const cell =
-      inCells.find((c) => !taken.includes(c) && spaced(c)) ??
-      inCells.find((c) => !taken.includes(c)) ??
-      outCells.find((c) => !taken.includes(c) && spaced(c)) ??
-      outCells.find((c) => !taken.includes(c))
+    let cell: FabricRhomb | undefined
+    for (const pool of pools) {
+      cell =
+        pool.find((c) => !taken.includes(c) && spaced(c)) ??
+        pool.find((c) => !taken.includes(c))
+      if (cell) break
+    }
     if (!cell) break
     taken.push(cell)
     chosen.push(cell)
@@ -376,15 +383,92 @@ export function assignCubbies(bays: ShelfBay[], rhombs: FabricRhomb[]): CubbyAss
   }))
 }
 
-/** A scroll's standing width in its cell. The scroll is sized by
- *  its END FACE (the founder's ruling: the scrolls must read in
- *  their cubbies): the end disc is 0.6 of the end-on asset's width
- *  (END_FACE in the view), and the disc stands at 98% of the
- *  cell's inscribed diameter — the largest disc the frame holds.
- *  Recorded size keeps its role where the brief puts it: it orders
- *  the assignment, so bigger items take bigger cells first. */
-export function scrollWidthFor(_scroll: ShelfScroll, cell: FabricRhomb): number {
-  return (cellInDiameter(cell) * 0.98) / 0.6
+/** The end-on asset's silhouette contour: 48 points around the
+ *  asset's opaque shape (alpha > 128), measured from the asset
+ *  itself (scroll-end.png, 709×699) as offsets from the asset's
+ *  centre in units of the asset's width. The shape is not its
+ *  bounding box — the corners are empty parchment-free air, the
+ *  tag protrudes below — so the fit works from the silhouette,
+ *  not the rectangle. The right-side asset is the mirror image;
+ *  the fit mirrors the contour's x with it. */
+export const SCROLL_CONTOUR: [number, number][] = [
+  [0.4006, 0.0], [0.3384, 0.0446], [0.2684, 0.0719], [0.215, 0.0891],
+  [0.1759, 0.1016], [0.1477, 0.1133], [0.1217, 0.1217], [0.0996, 0.1298],
+  [0.079, 0.1368], [0.0599, 0.1446], [0.0405, 0.1512], [0.0208, 0.158],
+  [0.0, 0.165], [-0.0219, 0.1664], [-0.0383, 0.143], [-0.1981, 0.4782],
+  [-0.2715, 0.4703], [-0.3555, 0.4633], [-0.378, 0.378], [-0.3726, 0.2859],
+  [-0.3664, 0.2116], [-0.3623, 0.1501], [-0.3638, 0.0975], [-0.4111, 0.0541],
+  [-0.4471, 0.0], [-0.4726, -0.0622], [-0.4864, -0.1303], [-0.4847, -0.2008],
+  [-0.4678, -0.2701], [-0.4386, -0.3366], [-0.392, -0.392], [-0.3357, -0.4375],
+  [-0.2694, -0.4666], [-0.1986, -0.4795], [-0.127, -0.4741], [-0.0596, -0.4531],
+  [-0.0, -0.4288], [0.0532, -0.4041], [0.1029, -0.3842], [0.1517, -0.3662],
+  [0.2038, -0.353], [0.2584, -0.3368], [0.3172, -0.3172], [0.386, -0.2962],
+  [0.4593, -0.2652], [0.4887, -0.2024], [0.4796, -0.1285], [0.4559, -0.06],
+]
+
+/** The fit margin: a scroll's silhouette is fitted inside the
+ *  rhomb shrunk to this fraction of itself about its centre, so
+ *  the scroll stands clear of the frame's wood on every side. */
+export const SCROLL_FIT_MARGIN = 0.94
+
+/** Is a point inside a convex quad (corners in cyclic order)?
+ *  Consistent cross-product signs — boundary counts as inside. */
+function pointInConvexQuad(p: Pt, quad: Pt[]): boolean {
+  let sign = 0
+  for (let i = 0; i < 4; i++) {
+    const a = quad[i]
+    const b = quad[(i + 1) % 4]
+    const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
+    if (cross !== 0) {
+      if (sign === 0) sign = Math.sign(cross)
+      else if (Math.sign(cross) !== sign) return false
+    }
+  }
+  return true
+}
+
+/** A scroll's placement in its cell (founder, 2026-11-26: "Scale
+ *  and move the scrolls until they fit within the rhombi"). The
+ *  asset's measured silhouette is scaled as large as it can be
+ *  while every contour point stands inside the rhomb (shrunk by
+ *  SCROLL_FIT_MARGIN), and its centre may shift within the cell
+ *  to win size: candidate offsets are tried nearest-first, a
+ *  shift is kept only when it buys real width. Deterministic:
+ *  fixed offset grid, fixed binary search. Recorded size keeps
+ *  its role where the brief puts it: it orders the assignment,
+ *  so bigger items take earlier cells. */
+export function scrollPlacementFor(
+  cell: FabricRhomb,
+  side: 'left' | 'right',
+): { width: number; cx: number; cy: number } {
+  const target = cell.corners.map((c) => ({
+    x: cell.centre.x + (c.x - cell.centre.x) * SCROLL_FIT_MARGIN,
+    y: cell.centre.y + (c.y - cell.centre.y) * SCROLL_FIT_MARGIN,
+  }))
+  const flip = side === 'right' ? -1 : 1
+  const fits = (cx: number, cy: number, w: number) =>
+    SCROLL_CONTOUR.every(([dx, dy]) =>
+      pointInConvexQuad({ x: cx + flip * dx * w, y: cy + dy * w }, target),
+    )
+  const maxWidthAt = (cx: number, cy: number) => {
+    let lo = 1
+    let hi = 240
+    for (let i = 0; i < 24; i++) {
+      const mid = (lo + hi) / 2
+      if (fits(cx, cy, mid)) lo = mid
+      else hi = mid
+    }
+    return lo
+  }
+  const offsets = [0, -6, 6, -12, 12]
+    .flatMap((dx) => [0, -6, 6, -12, 12].map((dy) => ({ dx, dy })))
+    .sort((a, b) => Math.abs(a.dx) + Math.abs(a.dy) - (Math.abs(b.dx) + Math.abs(b.dy)))
+  let best = { width: 0, cx: cell.centre.x, cy: cell.centre.y }
+  for (const { dx, dy } of offsets) {
+    const w = maxWidthAt(cell.centre.x + dx, cell.centre.y + dy)
+    if (w > best.width + 0.5) best = { width: w, cx: cell.centre.x + dx, cy: cell.centre.y + dy }
+  }
+  return best
 }
 
 /* ------------------------------------------------------------------ */

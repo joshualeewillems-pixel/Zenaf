@@ -137,7 +137,7 @@ import {
   longPressRoute,
   popupSynopsis,
   scrollKey,
-  scrollWidthFor,
+  scrollPlacementFor,
   tableRows,
   trailForScroll,
   type CubbyAssignment,
@@ -146,6 +146,7 @@ import {
   type TableRow,
 } from './sceneLogic'
 import scrollFabric from './assets/scroll-fabric.png'
+import scrollRoomDark from './assets/scroll-room-dark.png'
 import scrollGround from './assets/scroll-ground.png'
 import scrollRoom from './assets/scroll-room.png'
 import scrollEnd from './assets/scroll-end.png'
@@ -859,6 +860,21 @@ function RoomScene({
             </clipPath>
           </defs>
           <image href={scrollRoom} x={0} y={0} width={FRAME_W} height={FRAME_H} />
+          {/* the wall behind the shelves, half as dark (founder,
+              2026-11-26): the room at 50% brightness, clipped to
+              exactly the shelf region — the fabric's own clip — so
+              the plaster inside the frames and around them sits in
+              shade while the rest of the room keeps its light */}
+          <g clipPath="url(#jynx-fabric-clip)">
+            <image
+              data-testid="scene-wall-dark"
+              href={scrollRoomDark}
+              x={0}
+              y={0}
+              width={FRAME_W}
+              height={FRAME_H}
+            />
+          </g>
           {/* tapping the room's bare ground sets the staging down */}
           <rect
             data-testid="scene-background"
@@ -972,12 +988,18 @@ function Cubby({
   onLongPressScroll: (scroll: ShelfScroll) => void
 }) {
   const { unit, cell, side } = assignment
-  const w = scrollWidthFor(unit.head, cell)
-  const childW = w * 0.5
+  // The head scroll stands FITTED inside its rhomb (scale + move,
+  // scrollPlacementFor); the cluster tucks inside the head's own
+  // footprint — children at 0.42 of its width, offsets small
+  // enough that no child crosses the head's rectangle, so the
+  // whole cubby stays within the frame.
+  const place = scrollPlacementFor(cell, side)
+  const w = place.width
+  const childW = w * 0.42
   const offsets = [
-    { dx: -0.26 * w, dy: 0.16 * w },
-    { dx: 0.26 * w, dy: 0.18 * w },
-    { dx: 0, dy: 0.3 * w },
+    { dx: -0.16 * w, dy: 0.08 * w },
+    { dx: 0.16 * w, dy: 0.1 * w },
+    { dx: 0, dy: 0.18 * w },
   ]
   const shown = unit.cluster.slice(0, CLUSTER_SHOWN)
   return (
@@ -986,8 +1008,8 @@ function Cubby({
         <SceneScroll
           key={scrollKey(child)}
           scroll={child}
-          cx={cell.centre.x + offsets[i].dx}
-          cy={cell.centre.y + offsets[i].dy}
+          cx={place.cx + offsets[i].dx}
+          cy={place.cy + offsets[i].dy}
           width={childW}
           side={side}
           cluster
@@ -997,8 +1019,8 @@ function Cubby({
       ))}
       <SceneScroll
         scroll={unit.head}
-        cx={cell.centre.x}
-        cy={cell.centre.y}
+        cx={place.cx}
+        cy={place.cy}
         width={w}
         side={side}
         onTapScroll={onTapScroll}

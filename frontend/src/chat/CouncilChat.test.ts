@@ -18,6 +18,7 @@ import * as React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import CouncilChat from './CouncilChat'
+import { INVITATIONS_CHANGED_EVENT } from './InvitationList'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -92,15 +93,25 @@ let root: Root
 let calls: Array<{ url: string; init?: RequestInit }>
 let hydrations: Record<string, Deferred>
 let turnBodies: Array<Record<string, unknown>>
+let invitationPayload: unknown[]
+let invitationFetches: number
 
 function installFetch() {
   calls = []
   hydrations = {}
   turnBodies = []
+  invitationPayload = []
+  invitationFetches = 0
   const fetchMock = vi.fn((url: string, init?: RequestInit) => {
     calls.push({ url, init })
     if (url.includes('/council/archetypes/status')) {
       return Promise.resolve(ok({ archetypes: [] }))
+    }
+    if (url.includes('/conversation/invitations')) {
+      invitationFetches += 1
+      return Promise.resolve(
+        ok({ conversation_id: A, invitations: invitationPayload }),
+      )
     }
     if (url.includes('/conversation/round/item-state')) {
       return Promise.resolve(
@@ -580,5 +591,132 @@ describe('staged chip — tentative staging made visible in the chat', () => {
     expect(turnBodies).toHaveLength(1)
     expect(chip()).not.toBeNull()
     expect(chip()!.textContent).toContain('the scales')
+  })
+})
+
+describe('invitations in chat (Capability C)', () => {
+  const invitation = (id: string, seat: string, reason: string) => ({
+    id,
+    conversation_id: A,
+    seat,
+    reason,
+    status: 'pending',
+    created_at: '2026-11-20T00:00:00.000Z',
+    expires_at: '2026-11-27T00:00:00.000Z',
+    evidence: {},
+  })
+
+  const rowButton = () => container.querySelector('button[aria-expanded]')
+  const thread = () => container.querySelector('[aria-live="polite"]')!
+  const talkButton = () =>
+    Array.from(container.querySelectorAll('button')).find(
+      (b) => (b.textContent ?? '').trim() === 'Talk to guardian',
+    )
+
+  async function renderWithInvitations(environment: 'sheet' | 'workspace' = 'sheet') {
+    renderChat({ environment, conversationId: A, initialArchetypeId: 'mentor' })
+    await flush()
+    hydrations[A].resolve(ok({ conversation_id: A, messages: [], total: 0 }))
+    await flush()
+  }
+
+  it('(a) renders the list inside the chat pane, above the thread', async () => {
+    invitationPayload = [invitation('inv-1', 'guardian', 'a quiet reason')]
+    await renderWithInvitations()
+    expect(
+      calls.some((c) => c.url.includes(`/conversation/invitations?conversation_id=${A}`)),
+    ).toBe(true)
+    const row = rowButton()
+    expect(row).not.toBeNull()
+    expect(row!.textContent).toContain('a quiet reason')
+    // Inside this chat's pane, outside the thread, and before the
+    // thread in document order.
+    const pane = container.querySelector(`[data-conversation="${A}"]`)!
+    expect(pane.contains(row)).toBe(true)
+    expect(thread().contains(row)).toBe(false)
+    expect(
+      row!.compareDocumentPosition(thread()) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('(d) zero rows render no invitation rows', async () => {
+    invitationPayload = []
+    await renderWithInvitations('workspace')
+    expect(calls.some((c) => c.url.includes('/conversation/invitations'))).toBe(true)
+    expect(rowButton()).toBeNull()
+    expect(talkButton()).toBeUndefined()
+    // Workspace (seat-world) mounts are quiet when empty: no
+    // empty-state line stands in the pane (hideWhenEmpty), so a chat
+    // with no invitations carries no invitation furniture at all.
+    // The sheet mount keeps its standing empty state (pinned in
+    // TreeTalkSheet's suite).
+    expect(container.textContent).not.toContain('No pending invitations')
+  })
+
+  it('(b)+(e) selecting a row makes the invited seat the addressee; selection alone sends and consumes nothing', async () => {
+    invitationPayload = [invitation('inv-1', 'guardian', 'a quiet reason')]
+    await renderWithInvitations()
+    await click(rowButton()!)
+    const talk = talkButton()
+    expect(talk).toBeDefined()
+    await click(talk!)
+    // Selection alone: no turn posted, no mutation call of any kind,
+    // and the row stands unconsumed.
+    expect(turnBodies).toHaveLength(0)
+    expect(calls.some((c) => c.init?.method === 'POST')).toBe(false)
+    expect(container.textContent).toContain('a quiet reason')
+    // The next sent turn addresses the invited seat.
+    typeText('hello guardian')
+    await click(sendButton())
+    expect(turnBodies).toHaveLength(1)
+    expect(turnBodies[0].archetype_id).toBe('guardian')
+  })
+
+  it('(b) selection collapses a choose-multiple selection to just the invited seat', async () => {
+    invitationPayload = [invitation('inv-1', 'guardian', 'a quiet reason')]
+    await renderWithInvitations()
+    const cm = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('choose multiple'),
+    )!
+    await click(cm)
+    expect(
+      container.querySelector('[aria-label="Choose which seats answer"]'),
+    ).not.toBeNull()
+    await click(rowButton()!)
+    await click(talkButton()!)
+    // Checkbox mode is gone; the send addresses the one seat.
+    expect(container.querySelector('[aria-label="Choose which seats answer"]')).toBeNull()
+    typeText('just you')
+    await click(sendButton())
+    expect(turnBodies).toHaveLength(1)
+    expect(turnBodies[0].archetype_id).toBe('guardian')
+  })
+
+  it('(c) a completed turn refetches the list; a vanished row dispatches the invitations-changed event', async () => {
+    invitationPayload = [invitation('inv-1', 'guardian', 'a quiet reason')]
+    const changed = vi.fn()
+    window.addEventListener(INVITATIONS_CHANGED_EVENT, changed)
+    try {
+      await renderWithInvitations()
+      expect(invitationFetches).toBe(1)
+      expect(container.textContent).toContain('a quiet reason')
+      // The join lands server-side: the next refetch returns no row.
+      invitationPayload = []
+      typeText('hello mentor')
+      await click(sendButton())
+      expect(turnBodies).toHaveLength(1)
+      expect(invitationFetches).toBe(2)
+      expect(container.textContent).not.toContain('a quiet reason')
+      expect(changed).toHaveBeenCalled()
+    } finally {
+      window.removeEventListener(INVITATIONS_CHANGED_EVENT, changed)
+    }
+  })
+
+  it('no conversationId mounts no list and fetches no invitations', async () => {
+    renderChat({ environment: 'workspace' })
+    await flush()
+    expect(calls.some((c) => c.url.includes('/conversation/invitations'))).toBe(false)
+    expect(rowButton()).toBeNull()
   })
 })

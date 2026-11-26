@@ -18,6 +18,7 @@ import * as React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import TreeTalkSheet, { newTalkId } from './TreeTalkSheet'
+import { INVITATIONS_CHANGED_EVENT } from './InvitationList'
 import { getTalkIdentity, TALK_IDENTITY_STORAGE_KEY, TALK_PALETTE } from './talkIdentity'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -76,6 +77,7 @@ let root: Root
 let calls: string[]
 let requests: Array<{ url: string; method: string; body: string | null }>
 let listBehavior: 'ok' | 'fail' | 'fail-seat'
+let sheetInvitations: unknown[]
 
 const KNOWN_IDS = new Set([
   TALK_MENTOR,
@@ -89,6 +91,7 @@ const KNOWN_IDS = new Set([
 function installFetch() {
   calls = []
   requests = []
+  sheetInvitations = []
   const fetchMock = vi.fn((url: string, init?: { method?: string; body?: string }) => {
     calls.push(url)
     requests.push({
@@ -140,7 +143,24 @@ function installFetch() {
       return Promise.resolve(ok({ conversations }))
     }
     if (url.includes('/conversation/invitations')) {
-      return Promise.resolve(ok({ conversation_id: CONV_OVERRIDE, invitations: [] }))
+      return Promise.resolve(
+        ok({ conversation_id: CONV_OVERRIDE, invitations: sheetInvitations }),
+      )
+    }
+    if (url.includes('/conversation/turn')) {
+      const body = JSON.parse(init?.body ?? '{}') as Record<string, unknown>
+      return Promise.resolve(
+        ok({
+          reply: 'sheet turn reply',
+          conversation_id: body.conversation_id,
+          message_id: 'm-turn',
+          archetype_id: body.archetype_id,
+          display_name: 'Guardian',
+          mode_used: 'trained',
+          has_training: false,
+          round_item: null,
+        }),
+      )
     }
     if (url.includes('/conversation?')) {
       const id = new URL(url, 'http://x').searchParams.get('conversation_id') ?? ''
@@ -786,5 +806,74 @@ describe('override mount conversation-list return path (C2)', () => {
     })
     await flush()
     expect(seen2).toContain(TALK_MENTOR)
+  })
+})
+
+describe('invitations in the sheet chat (Capability C, 2026-11-25)', () => {
+  const overrideProps = {
+    seatKey: 'mentor',
+    displayName: 'Gardener',
+    conversationOverride: { conversationId: CONV_OVERRIDE, seat: 'guardian' },
+  }
+
+  function typeText(text: string) {
+    const input = container.querySelector('textarea')
+    if (!input) throw new Error('composer input not found')
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      'value',
+    )?.set
+    act(() => {
+      setter?.call(input, text)
+      input.dispatchEvent(new window.Event('input', { bubbles: true }))
+    })
+  }
+
+  it('exactly one invitation list serves the sheet', async () => {
+    renderSheet(overrideProps)
+    await flush()
+    // One list → one invitations fetch for the open conversation,
+    // and the component's empty state appears exactly once.
+    const fetches = calls.filter((u) => u.includes('/conversation/invitations'))
+    expect(fetches).toHaveLength(1)
+    expect(
+      (container.textContent ?? '').split('No pending invitations in this conversation.'),
+    ).toHaveLength(2)
+  })
+
+  it('the invitations-changed event dispatches when a row disappears after a completed turn', async () => {
+    sheetInvitations = [
+      {
+        id: 'inv-1',
+        conversation_id: CONV_OVERRIDE,
+        seat: 'mentor',
+        reason: 'a quiet reason',
+        status: 'pending',
+        created_at: '2026-11-20T00:00:00.000Z',
+        expires_at: '2026-11-27T00:00:00.000Z',
+        evidence: {},
+      },
+    ]
+    const changed = vi.fn()
+    window.addEventListener(INVITATIONS_CHANGED_EVENT, changed)
+    try {
+      renderSheet(overrideProps)
+      await flush()
+      expect(container.textContent).toContain('a quiet reason')
+      // The row is joined/cleared server-side; the completed turn's
+      // refetch observes its absence and signals the Tree.
+      sheetInvitations = []
+      typeText('hello guardian')
+      await click(buttonByText('Send'))
+      expect(
+        requests.some(
+          (r) => r.method === 'POST' && r.url.includes('/conversation/turn'),
+        ),
+      ).toBe(true)
+      expect(container.textContent).not.toContain('a quiet reason')
+      expect(changed).toHaveBeenCalled()
+    } finally {
+      window.removeEventListener(INVITATIONS_CHANGED_EVENT, changed)
+    }
   })
 })

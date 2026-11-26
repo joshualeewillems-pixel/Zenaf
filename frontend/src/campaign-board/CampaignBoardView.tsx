@@ -766,9 +766,10 @@ function FocusBoard({
    * each label's natural anchor (the positions it would have had);
    * the pass returns placements that never overlap and stay on the
    * map. Rendering below reads the placement back as an offset inside
-   * each label's own group, so handlers and structure are unchanged,
-   * and a dragged waypoint's label follows the same drag override its
-   * dot follows. */
+   * each label's own group, so handlers and structure are unchanged.
+   * The anchors are committed fractions only (drag-stability fix,
+   * 2026-11-25): during a drag the whole layout stands frozen and
+   * the dragged waypoint's label rides its dot at the frozen offset. */
   const waypointTitle = (w: BoardWaypoint): string =>
     w.task.title.length > 26 ? `${w.task.title.slice(0, 25)}…` : w.task.title
   const obstacleLabelText = (ob: BoardObstacle): string =>
@@ -798,7 +799,17 @@ function FocusBoard({
       height: 14,
     })),
     ...allWaypoints.map(({ w, bandY, index }) => {
-      const f = drag && drag.taskId === w.task.id ? drag.fraction : w.fraction
+      // The label layout is a property of the COMMITTED board: its
+      // anchors are the recorded fractions only, never the drag's
+      // provisional one. Feeding the live drag fraction in here made
+      // the de-overlap pass re-solve every label on every pointer
+      // move — neighbours shoved, swapped sides, and cascaded while
+      // one node was dragged (founder report 2026-11-25). The
+      // dragged node's label instead follows its node rigidly, at
+      // the offset this frozen layout gave it (see the waypoint
+      // render below); the layout re-solves once, at release, when
+      // the commit lands — like every other data change.
+      const f = w.fraction
       const tier = index % 2 === 0 ? 30 : 46
       const sub = w.done ? 'done' : shortDate(dateAtFraction(span, f))
       return {
@@ -1090,7 +1101,13 @@ function FocusBoard({
             const y = waypointY(bandY, index)
             const labelTier = index % 2 === 0 ? 30 : 46
             const lp = placedLabel(`waypoint:${bandY}:${w.task.id}`)
-            const labelX = lp ? lp.x - x : 0
+            // The placement is read against the node's COMMITTED
+            // anchor, so the label's offset from its node is
+            // constant: at rest x IS the committed anchor and this
+            // reads exactly as before; during a drag the label rides
+            // the node rigidly at its frozen offset rather than
+            // being re-solved against the provisional position.
+            const labelX = lp ? lp.x - xForFraction(w.fraction) : 0
             const titleY = lp ? lp.top + 11 - y : labelTier
             const subY = lp ? lp.top + 24 - y : labelTier + 13
             return (

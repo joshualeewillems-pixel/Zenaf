@@ -27,6 +27,9 @@
  *   - one hearth, at the bottom centre: a stone-ring disc reserved
  *     on the bottom arc; nothing overlaps it. (The per-circle
  *     hearths of study v4 were a misread and do not ship.)
+ *   - each floor circle's interior is one of the founder's three
+ *     unfurnished room plates, assigned by size rank cycling
+ *     rose → spiral → tiers (addendum 2026-11-26 13:16 PT).
  *   - the fill ladder is the study's (0.66 → 0.54). Live data can
  *     be denser than any study, so below the ladder the port keeps
  *     stepping the fill down (to 0.30), then scales every radius
@@ -94,11 +97,22 @@ export interface Scene2Circle {
   r: number
 }
 
+/** The founder's three unfurnished room plates (addendum
+ *  2026-11-26 13:16 PT). A floor circle's interior is one plate,
+ *  assigned by SIZE RANK cycling rose → spiral → tiers: the
+ *  largest floor stands in the rose room, the next in the spiral
+ *  room, the next in the tiers room, then the cycle repeats. */
+export type RoomPlate = 'rose' | 'spiral' | 'tiers'
+export const ROOM_PLATE_CYCLE: RoomPlate[] = ['rose', 'spiral', 'tiers']
+
 export interface PlacedFloor extends Scene2Circle {
   key: string
   roomCount: number
   /** The floor's share of the building's rooms (0..1). */
   share: number
+  /** The room plate for this floor's interior, by size rank —
+   *  floors pack largest first, so placement order IS size rank. */
+  plate: RoomPlate
 }
 
 export interface BuildingSceneLayout {
@@ -188,7 +202,15 @@ function tryPack(sized: SizedFloor[]): PlacedFloor[] | null {
       if (best === null || score > best.score) best = { score, x, y }
     }
     if (best === null) return null
-    placed.push({ key: f.key, roomCount: f.roomCount, share: f.share, x: best.x, y: best.y, r })
+    placed.push({
+      key: f.key,
+      roomCount: f.roomCount,
+      share: f.share,
+      x: best.x,
+      y: best.y,
+      r,
+      plate: ROOM_PLATE_CYCLE[placed.length % ROOM_PLATE_CYCLE.length],
+    })
   }
   return placed
 }

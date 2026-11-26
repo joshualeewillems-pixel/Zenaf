@@ -97,6 +97,25 @@ describe('Palace Scene 2 — the Apollonian building law', () => {
     }
   })
 
+  it('room plates cycle rose → spiral → tiers by size rank', () => {
+    const layout = planBuildingScene(LIVE_SHAPE)
+    // layout.floors is in placement order = size rank, largest first:
+    // tier6 (18) rose, tier4 (9) spiral, then the 7-room pair in
+    // input order — tier0 tiers, tier2 rose — and so on down.
+    expect(layout.floors.map((f) => [f.key, f.plate])).toEqual([
+      ['tier6', 'rose'],
+      ['tier4', 'spiral'],
+      ['tier0', 'tiers'],
+      ['tier2', 'rose'],
+      ['tier1', 'spiral'],
+      ['tier3', 'tiers'],
+      ['tier5', 'rose'],
+      ['seven', 'spiral'],
+    ])
+    // a single floor stands in the rose room
+    expect(planBuildingScene([floor('only', 3)]).floors[0].plate).toBe('rose')
+  })
+
   it('share monotonicity: more rooms never means a smaller circle', () => {
     for (const [, shape] of SHAPES) {
       const layout = planBuildingScene(shape)

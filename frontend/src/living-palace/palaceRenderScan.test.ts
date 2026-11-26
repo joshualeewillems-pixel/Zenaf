@@ -108,5 +108,8 @@ describe('scene geometry scan', () => {
     expect(building).toContain('palace-floor-p1')
     expect(building).toContain('palace-building-hearth')
     expect(building).toContain('palace-fire')
+    // floor interiors are the founder's room plates (addendum
+    // 2026-11-26 13:16 PT), assigned by size rank
+    expect(building).toContain('palace-room-')
   })
 })

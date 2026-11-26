@@ -44,11 +44,14 @@ import {
   type SceneStructureInput,
   type SubjectInteraction,
 } from './palaceSceneLogic'
-import { SCENE2_FRAME, planBuildingScene } from './palaceScene2Logic'
+import { SCENE2_FRAME, planBuildingScene, type RoomPlate } from './palaceScene2Logic'
 import { useTintedMaster } from './palaceTint'
 import planImage from './assets/palace-plan.jpg'
 import frontWallImage from './assets/palace-front-wall.png'
 import fireImage from './assets/palace-fire.png'
+import roomRoseImage from './assets/palace-room-rose.jpg'
+import roomSpiralImage from './assets/palace-room-spiral.jpg'
+import roomTiersImage from './assets/palace-room-tiers.jpg'
 import { SEAT_COLORS, type SeatId } from '../council/colors'
 
 /* The prototype's material palette. */
@@ -639,8 +642,11 @@ export function CompoundScene({
 /* share of the building's rooms, the composition fills the          */
 /* circle with descending filler circles, and ONE hearth — the       */
 /* founder's flame in its stone ring — stands at the bottom          */
-/* centre. Plain positioned DOM throughout (the Scene 1 lesson):     */
-/* no SVG transform stacks, no per-element SVG images.               */
+/* centre. Each floor circle's interior is one of the founder's      */
+/* three unfurnished room plates, by size rank cycling rose →        */
+/* spiral → tiers (addendum 2026-11-26 13:16 PT), its name on a      */
+/* parchment plaque over the art. Plain positioned DOM throughout    */
+/* (the Scene 1 lesson): no SVG transform stacks.                    */
 /*                                                                     */
 /* A tap does what it always did here: it descends into that         */
 /* floor, with the same chat subject carriage. A floor's earned      */
@@ -658,6 +664,15 @@ const SCENE2_CIRCLE = '#e7cda4'
 const SCENE2_RING = '#927046'
 const SCENE2_RING_INNER = '#b29268'
 const SCENE2_HEARTH_FILL = '#e2cfaa'
+
+/** The founder's unfurnished room plates — each floor circle's
+ *  interior (addendum 2026-11-26 13:16 PT), assigned by size rank
+ *  in palaceScene2Logic. */
+const ROOM_PLATE_IMAGES: Record<RoomPlate, string> = {
+  rose: roomRoseImage,
+  spiral: roomSpiralImage,
+  tiers: roomTiersImage,
+}
 
 /** The flame's height inside the hearth disc (frame units — the
  *  study's 96 in its 1024 frame; aspect from the shipped asset,
@@ -744,7 +759,7 @@ export function BuildingScene({
               onClick={() => onOpenFloor(floor.project.id)}
               onMouseEnter={() => onAttend(floor.project.id)}
               onMouseLeave={() => onAttend(null)}
-              className="absolute block cursor-pointer rounded-full p-0"
+              className="absolute block cursor-pointer overflow-hidden rounded-full p-0"
               style={{
                 left: pct(p.x - p.r),
                 top: pct(p.y - p.r),
@@ -755,35 +770,64 @@ export function BuildingScene({
                 boxShadow: attended ? '0 0 0 3px rgba(172, 124, 91, 0.35)' : undefined,
               }}
             >
+              {/* the floor's room — the founder's unfurnished plate
+                  for its size rank, clipped to the circle */}
+              <img
+                src={ROOM_PLATE_IMAGES[p.plate]}
+                alt=""
+                draggable={false}
+                className="pointer-events-none absolute inset-0 block h-full w-full object-cover"
+              />
+              {/* a soft parchment wash over the art, so the room
+                  reads as the building's interior, not a picture */}
+              <span
+                className="pointer-events-none absolute inset-0 rounded-full"
+                style={{
+                  background:
+                    'radial-gradient(circle at 50% 42%, rgba(243, 234, 214, 0.30), rgba(243, 234, 214, 0.06) 72%)',
+                }}
+              />
               <span
                 className="pointer-events-none absolute rounded-full"
                 style={{ inset: '4.5%', border: `1px solid ${SCENE2_RING_INNER}` }}
               />
-              <span className="absolute inset-0 flex flex-col items-center justify-center px-[11%] text-center">
+              <span className="absolute inset-0 flex items-center justify-center px-[11%] text-center">
                 <span
+                  className="flex flex-col items-center"
                   style={{
-                    fontSize: `max(1.3cqw, ${p.r * 0.0234}cqw)`,
-                    fontWeight: 600,
-                    color: PAL.ink,
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
+                    background: 'rgba(247, 241, 227, 0.86)',
+                    border: `1px solid ${SCENE2_RING_INNER}`,
+                    borderRadius: 10,
+                    padding: '3px 8px 4px',
+                    maxWidth: '92%',
                   }}
                 >
-                  {floor.project.title}
-                </span>
-                <span style={{ fontSize: `max(1.05cqw, ${p.r * 0.0186}cqw)`, color: PAL.inkSoft }}>
-                  {sharePct}% · {floor.roomCount} room{floor.roomCount === 1 ? '' : 's'}
-                  {floor.released ? ' · released' : ''}
+                  <span
+                    style={{
+                      fontSize: `max(1.3cqw, ${p.r * 0.0234}cqw)`,
+                      fontWeight: 600,
+                      color: PAL.ink,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {floor.project.title}
+                  </span>
+                  <span style={{ fontSize: `max(1.05cqw, ${p.r * 0.0186}cqw)`, color: PAL.inkSoft }}>
+                    {sharePct}% · {floor.roomCount} room{floor.roomCount === 1 ? '' : 's'}
+                    {floor.released ? ' · released' : ''}
+                  </span>
                 </span>
               </span>
               {/* the floor's balcony plant, earned by its rooms —
-                  a small marker standing on the circle's rim */}
+                  a small marker standing on the circle's rim (just
+                  inside it: the button clips its interior now) */}
               {floor.plant && (
                 <span
                   className="pointer-events-none absolute"
-                  style={{ left: '50%', top: 0, width: '18%', transform: 'translate(-50%, -32%)' }}
+                  style={{ left: '50%', top: 0, width: '18%', transform: 'translate(-50%, 4%)' }}
                 >
                   <svg viewBox="-20 -40 40 42" className="block h-auto w-full" aria-hidden>
                     <PlantGlyph x={0} base={0} state={floor.plant} scale={0.8} />

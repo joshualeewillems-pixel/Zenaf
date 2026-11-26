@@ -49,7 +49,8 @@ import { useTintedMaster } from './palaceTint'
 import planImage from './assets/palace-plan.jpg'
 import frontWallImage from './assets/palace-front-wall.png'
 import fireImage from './assets/palace-fire.png'
-import shellImage from './assets/palace-shell.jpg'
+import shellImage from './assets/palace-shell.webp'
+import plateImage from '../assets/living-sky/plate.webp'
 import roomRoseImage from './assets/palace-room-rose.jpg'
 import roomSpiralImage from './assets/palace-room-spiral.jpg'
 import roomTiersImage from './assets/palace-room-tiers.jpg'
@@ -638,7 +639,12 @@ export function CompoundScene({
 /*                                                                     */
 /* The building layer IS the Apollonian circle now, nested in the   */
 /* founder's dome shell (his ruling, 2026-11-26 13:33 PT: "It needs  */
-/* to nest In this geometry"): the shell art is the scene's ground   */
+/* to nest In this geometry"), and the dome stands on the Zenaf      */
+/* background (his ruling, 2026-11-26 13:44 PT: "We need the Zenaf   */
+/* background also (no tree, just the background)"): the Living      */
+/* Sky's plate — parchment sky, mountains, waterfalls, strata,       */
+/* imported not copied — is the scene's ground, and the shell        */
+/* (its white surround cut to alpha) stands in that landscape.       */
 /* and the composition stands inside its cavity under the placement  */
 /* law (palaceScene2Logic): each floor's AREA is its percentage      */
 /* share of the building's rooms, the composition fills the          */
@@ -720,9 +726,19 @@ export function BuildingScene({
         role="img"
         aria-label={`Inside ${model.initiative.title}`}
       >
-        {/* the dome shell — the founder's art is the scene's
-            ground, the whole 1254 frame; the composition nests
-            in its cavity */}
+        {/* the Zenaf background — the Living Sky's plate (no
+            tree), cover over the scene box, behind everything */}
+        <img
+          data-testid="palace-zenaf-background"
+          src={plateImage}
+          alt=""
+          draggable={false}
+          className="absolute inset-0 block h-full w-full object-cover"
+        />
+
+        {/* the dome shell — the founder's art (alpha cutout)
+            standing in the landscape, the whole 1254 frame; the
+            composition nests in its cavity */}
         <img
           data-testid="palace-shell"
           src={shellImage}

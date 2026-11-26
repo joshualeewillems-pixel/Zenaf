@@ -782,17 +782,6 @@ def test_anonymous_patch_signal_401_row_unchanged(ve_ctx, two_users):
     assert tuple(_row(ve_ctx, "signals", sig_a["id"])) == before
 
 
-def test_anonymous_radar_items_401_no_mutation(ve_ctx, two_users):
-    before = ve_ctx.execute("SELECT COUNT(*) FROM radar_feed").fetchone()[0]
-    app = _make_app()
-    status, body = _run_asgi(
-        app, "POST", "/vision-execution/radar/items",
-        {"title": "anon", "detail": "x"},
-    )
-    assert status == 401, body
-    assert ve_ctx.execute("SELECT COUNT(*) FROM radar_feed").fetchone()[0] == before
-
-
 def test_anonymous_401_precedes_service_access(ve_ctx, two_users, monkeypatch):
     """Spy variant: with the service rigged to raise, an anonymous
     request still returns 401 — auth runs before service/storage."""
@@ -802,16 +791,12 @@ def test_anonymous_401_precedes_service_access(ve_ctx, two_users, monkeypatch):
     monkeypatch.setattr(ve_routes.SigS, "create_signals", _boom)
     monkeypatch.setattr(ve_routes.SigS, "list_signals", _boom)
     monkeypatch.setattr(ve_routes.SigS, "update_signal", _boom)
-    monkeypatch.setattr(ve_routes.S, "create_radar_item", _boom)
     app = _make_app()
     assert _run_asgi(app, "GET", "/vision-execution/signals")[0] == 401
     assert _run_asgi(app, "POST", "/vision-execution/signals", [_signal_payload()])[0] == 401
     assert _run_asgi(
         app, "PATCH", f"/vision-execution/signals/{two_users['sig_a']['id']}",
         {"status": "resolved"},
-    )[0] == 401
-    assert _run_asgi(
-        app, "POST", "/vision-execution/radar/items", {"title": "anon"}
     )[0] == 401
 
 

@@ -737,14 +737,10 @@ def list_coordination_execution_flow_readings(user_id: str, entity_type: str, en
     return list_execution_flow_summaries_for_entity(user_id, et, eid, limit=limit)
 
 
-# Radar (orientation summary + optional feed items e.g. meeting signals)
+# Radar (computed orientation summary over initiatives/projects/tasks/capacity/signals)
 def get_radar(user_id: str):
     from . import radar as R
     return R.get_radar(user_id)
-
-
-def create_radar_item(data: M.RadarFeedCreate):
-    return S.create_radar_item(data)
 
 
 # Content briefs

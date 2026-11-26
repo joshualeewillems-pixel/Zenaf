@@ -254,19 +254,6 @@ CREATE TABLE IF NOT EXISTS decisions (
   created_at TEXT NOT NULL
 );
 
--- Radar feed items (e.g. meeting-extraction signals: attention, risk, opportunity, blocker).
--- Merged into GET /radar under "signals" for display.
-CREATE TABLE IF NOT EXISTS radar_feed (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL DEFAULT '',
-  detail TEXT NOT NULL DEFAULT '',
-  severity TEXT NOT NULL DEFAULT 'medium',
-  source TEXT NOT NULL DEFAULT 'meeting-extraction',
-  source_excerpt TEXT,
-  kind TEXT NOT NULL DEFAULT 'attention',
-  created_at TEXT NOT NULL
-);
-
 -- Canonical Signal entity (Layer 1). Radar is a view over signals.
 CREATE TABLE IF NOT EXISTS signals (
   id TEXT PRIMARY KEY,

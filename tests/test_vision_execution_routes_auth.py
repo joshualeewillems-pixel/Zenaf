@@ -6,8 +6,7 @@ protected; unauthorized requests cannot invoke side effects; authenticated
 workflows remain functional. Deterministic only; no live requests, no
 model calls, no real credentials.
 
-Covers the 19 Track B endpoints (POST /radar/items is Track A's and is
-not re-tested here):
+Covers the 19 Track B endpoints:
 - 11 Tier 1 (§2.1): persons x5, assets x5, PUT /capacity-profiles.
 - 3 legacy extract routes (§2.2) + 1 pick-directory route (§2.4):
   conditional registration — absent (404) with ZENAF_PROD=1, present and

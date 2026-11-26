@@ -9306,55 +9306,6 @@ def migrate_decisions_user_created_index(connection: sqlite3.Connection | None =
     conn.commit()
 
 
-# --- Radar feed (meeting signals, etc.) ---
-
-def create_radar_item(data: M.RadarFeedCreate) -> dict[str, Any]:
-    from local_ai.activity import log_activity_simple
-
-    conn = get_connection()
-    pid = M.new_id()
-    now = _now()
-    conn.execute(
-        """INSERT INTO radar_feed (id, title, detail, severity, source, source_excerpt, kind, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            pid,
-            data.title or "",
-            data.detail or "",
-            data.severity or "medium",
-            data.source or "meeting-extraction",
-            data.source_excerpt or "",
-            data.kind or "attention",
-            now,
-        ),
-    )
-    conn.commit()
-    out = M.row_to_radar_feed(
-        (pid, data.title or "", data.detail or "", data.severity or "medium", data.source or "meeting-extraction", data.source_excerpt or "", data.kind or "attention", now)
-    )
-    # Log a simple activity event for signal creation (using radar feed as proxy for now).
-    try:
-        from local_ai.activity import ActivityType, ActivityEntityType
-        log_activity_simple(
-            type=ActivityType.SIGNAL_CREATED.value,
-            entity_type=ActivityEntityType.SIGNAL.value,
-            entity_id=pid,
-            source=data.source or "meeting-extraction",
-            detail=f"kind={data.kind or 'attention'} title={data.title or ''}",
-        )
-    except Exception:
-        pass
-    return out
-
-
-def list_radar_feed() -> list[dict[str, Any]]:
-    conn = get_connection()
-    cur = conn.execute(
-        "SELECT id, title, detail, severity, source, source_excerpt, kind, created_at FROM radar_feed ORDER BY created_at DESC"
-    )
-    return [M.row_to_radar_feed(tuple(r)) for r in cur.fetchall()]
-
-
 # --- Content briefs ---
 
 def list_content_briefs(user_id: str) -> list[dict[str, Any]]:

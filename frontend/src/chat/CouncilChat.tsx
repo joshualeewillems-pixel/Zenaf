@@ -5,6 +5,7 @@ import { isCoarsePointer } from '../components/isCoarsePointer'
 import { WeaveText } from '../components/VoiceWeave'
 import { voiceColor } from '../council/colors'
 import SeatChips, { SEAT_ORDER, useSeatMeta } from './SeatChips'
+import InvitationList, { INVITATIONS_CHANGED_EVENT } from './InvitationList'
 import TaskProposalCards from './TaskProposalCards'
 import RoundProposalCard, { type RoundItem } from './RoundProposalCard'
 import UploadRoundCard, { type UploadRoundItem } from './UploadRoundCard'
@@ -213,8 +214,10 @@ export default function CouncilChat({
   /** Capability C visible-UX slice: invoked on SUCCESS arms of the send
    *  handler only (council-results and single-seat), after the reply
    *  lands — never on 'auth', never in the catch arm, never on a
-   *  target-mismatch early return. The sheet uses it to refetch the
-   *  invitation list, observing a join by the entry disappearing. */
+   *  target-mismatch early return. CouncilChat bumps its own
+   *  invitation-list refresh from the same seam; consumers use the
+   *  callback for their own post-turn refreshes (the sheet refetches
+   *  its conversation strip). */
   onTurnSent?: () => void
   /** Tentative staging (founder, 2026-11-25): the plain name of the
    *  thing a tap in the seat's world has staged into this
@@ -526,6 +529,32 @@ export default function CouncilChat({
     }
   }
 
+  /** Invitation list refresh (Capability C): bumped from the send
+   *  handler's success arms — the same seam that fires onTurnSent —
+   *  so the list below refetches after a completed turn and observes
+   *  a join by the accepted row disappearing. */
+  const [inviteRefreshKey, setInviteRefreshKey] = useState(0)
+  /** A list refetch dropped a previously present invitation row
+   *  (joined, expired, or cleared — absence is absence): signal the
+   *  Tree to refetch attention. The signal's only effect is a data
+   *  refresh — never navigation, never a state transition. */
+  const dispatchInvitationsChanged = useCallback(() => {
+    window.dispatchEvent(new CustomEvent(INVITATIONS_CHANGED_EVENT))
+  }, [])
+  /** "Talk to this seat" on an invitation row: the invited seat
+   *  becomes the composer's active seat — the seat-chip selection
+   *  path, composer draft swap included — except that a "choose
+   *  multiple" selection collapses to just the invited seat:
+   *  joining is a turn addressed to that seat alone. Selection
+   *  consumes nothing; the send performs the join. */
+  const selectInvitedSeat = (seat: string) => {
+    swapComposer(seat)
+    setActiveId(seat)
+    setCouncilMode(false)
+    setChooseMultiple(false)
+    setCheckedSeatIds([])
+  }
+
   const activeName =
     displayName ?? (activeId ? names[activeId] ?? activeId : null) ?? 'a voice'
 
@@ -667,6 +696,7 @@ export default function CouncilChat({
           ...prev,
           ...results.filter((x): x is ConversationMessage => x !== 'auth'),
         ])
+        setInviteRefreshKey((k) => k + 1)
         onTurnSent()
       } else if (activeId) {
         const reply = await askSeat(activeId, text)
@@ -678,6 +708,7 @@ export default function CouncilChat({
           return
         }
         setMessages((prev) => [...prev, reply])
+        setInviteRefreshKey((k) => k + 1)
         onTurnSent()
       }
     } catch {
@@ -741,6 +772,22 @@ export default function CouncilChat({
       )}
       {conversationId && hydrating && (
         <p className="text-xs text-stone-500">Loading conversation…</p>
+      )}
+
+      {/* Pending seat invitations for this conversation (Capability
+          C): the list lives in the shared chat so it stands in every
+          conversation — the seat worlds and the Tree sheet alike —
+          above the thread, where it stood above the sheet's chat.
+          Store-backed mounts only (no conversation, no invitations),
+          and never in a locked chat, whose addressee cannot change
+          and so cannot act on an invitation. */}
+      {conversationId && !lockArchetypeId && (
+        <InvitationList
+          conversationId={conversationId}
+          onInviteSelected={selectInvitedSeat}
+          refreshKey={inviteRefreshKey}
+          onRowDisappeared={dispatchInvitationsChanged}
+        />
       )}
 
       {/* The persistent thread. */}

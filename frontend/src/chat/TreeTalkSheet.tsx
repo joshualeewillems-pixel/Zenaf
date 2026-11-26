@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiBase } from '../apiBase'
 import { voiceColor } from '../council/colors'
 import CouncilChat from './CouncilChat'
-import InvitationList, { INVITATIONS_CHANGED_EVENT } from './InvitationList'
 import SeatChips, { useSeatMeta } from './SeatChips'
 import { symbolUrl, SYMBOL_COUNT } from '../assets/symbols/symbols'
 import {
@@ -314,9 +313,6 @@ export default function TreeTalkSheet({
   const [talks, setTalks] = useState<TalkListItem[]>([])
   const [talksFetched, setTalksFetched] = useState(false)
   const [nonce, setNonce] = useState(0)
-  /** Bumped after every completed turn so the invitation list
-      refetches — joining is observed by the entry disappearing. */
-  const [inviteRefreshKey, setInviteRefreshKey] = useState(0)
   /** Per-conversation color + symbol (localStorage; see talkIdentity). */
   const { identities, setIdentity, clearIdentity } = useTalkIdentities()
   /** The seat's conversation strip (the rail): this seat's
@@ -365,7 +361,7 @@ export default function TreeTalkSheet({
     return () => {
       cancelled = true
     }
-  }, [base, mode, railSeat, railNonce, inviteRefreshKey])
+  }, [base, mode, railSeat, railNonce])
   /** The "+" disposition flow (founder, 2026-11-12): choose a
       disposition → (archive / keep open) the save-as logo step, or
       (delete) one explicit confirmation. Cancel at any step writes
@@ -403,11 +399,6 @@ export default function TreeTalkSheet({
       cancelled = true
     }
   }, [base, mode, nonce])
-  /** Stable signal for the Tree: a list refetch dropped a row. The
-      Tree refetches attention; nothing navigates, nothing transitions. */
-  const dispatchInvitationsChanged = useCallback(() => {
-    window.dispatchEvent(new CustomEvent(INVITATIONS_CHANGED_EVENT))
-  }, [])
   /** Mount-time override (captured once). The override is consumed
       at mount (initial state above + the mount effect's early
       return); startNew and list/pick transitions never re-read it,
@@ -1031,27 +1022,22 @@ export default function TreeTalkSheet({
       )}
       {chatId && (
         <>
-          <InvitationList
-            conversationId={chatId}
-            onInviteSelected={(seat) => {
-              // Makes the invited seat the active seat; the user's
-              // send does the rest. Tapping the already-active seat
-              // is a no-op (key unchanged). Remounting CouncilChat
-              // rehydrates messages from GET /conversation; the
-              // outgoing composer draft is preserved in the draft
-              // store under its own key (navigation correction §3).
-              setChatSeat(seat)
-            }}
-            refreshKey={inviteRefreshKey}
-            onRowDisappeared={dispatchInvitationsChanged}
-          />
+          {/* The invitation list renders inside CouncilChat now
+              (Capability C, 2026-11-25): exactly one list per chat,
+              here and in the seat worlds alike. Selecting an
+              invitation is an in-chat act there — like a seat-chip
+              tap, it switches the mounted chat's active seat without
+              remounting it and without moving chatSeat, so the strip
+              keeps the sheet's seat. The post-turn signal survives
+              for the strip alone: a completed turn changes this
+              seat's conversation list, so it refetches. */}
           <CouncilChat
             key={`${chatId}:${chatSeat ?? ''}`}
             environment="sheet"
             conversationId={chatId}
             initialArchetypeId={chatSeat}
             displayName={displayName}
-            onTurnSent={() => setInviteRefreshKey((k) => k + 1)}
+            onTurnSent={() => setRailNonce((n) => n + 1)}
           />
         </>
       )}

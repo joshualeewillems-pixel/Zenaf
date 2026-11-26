@@ -179,7 +179,7 @@ describe('Scene 1 harness render', () => {
     writeFileSync(outRoom, standalone(inlineAssets(scene!.outerHTML), 'Scene 1 — the room'))
 
     // Open the build tree's first tier project on the sheet:
-    // tap its cluster scroll in the cubby, then the popup.
+    // a tap on its cluster scroll in the cubby loads it there.
     const hit = [...build!.querySelectorAll('[data-scroll="project:bp0"] rect')].find(
       (r) => r.getAttribute('fill-opacity') === '0',
     )
@@ -187,13 +187,10 @@ describe('Scene 1 harness render', () => {
       hit!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flush()
-    const popup = container.querySelector('[data-testid="scroll-popup"]')
-    expect(popup).not.toBeNull()
-    await act(async () => {
-      popup!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    await flush()
     expect(container.querySelector('[data-open-scroll="project:bp0"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="sheet-load"]')!.textContent).toContain(
+      'T0 — foundations',
+    )
     // Let the sheet's one unroll run its course before the page
     // is serialized — the render shows the scroll standing open.
     await act(async () => {

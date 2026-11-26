@@ -51,15 +51,19 @@
  *    parent's at full cell size in front, up to THREE children at
  *    ~55% tucked behind it (projects first, then tasks, in shelf
  *    order). The rest of the nest lives on the table and in the
- *    popup's "…and N more within" line.
+ *    sheet load's "…and N more within" line.
  *
- *  - THE POPUP's synopsis is composed from recorded fields only:
- *    kind, status, a project's declared window, counts within,
- *    a task's estimate and due date. No generated prose.
+ *  - THE SHEET LOAD's synopsis is composed from recorded fields
+ *    only: kind, status, a project's declared window, counts
+ *    within, a task's estimate and due date. No generated prose.
+ *    It is the ink a tapped scroll loads onto the sheet with its
+ *    name (founder, 2026-11-26: the pop-up is gone — the data
+ *    loads on the scroll).
  *
  *  - THE TABLE (long-press): a scroll with children opens the
- *    worktable standing its children end-on, each with its own
- *    cluster; a leaf scroll opens on the sheet directly.
+ *    worktable (stage 2) standing its children as task piles on
+ *    the desk; a leaf's long-press is its tap — it loads on the
+ *    sheet.
  */
 import {
   scrollChildren,
@@ -497,12 +501,12 @@ function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`
 }
 
-/** The popup card's lines for one scroll: kind and status; a
+/** The sheet load's lines for one scroll: kind and status; a
  *  project's declared window; the counts within; a task's
  *  estimate and due date; and, when the cubby's cluster cannot
  *  show the whole nest, the "…and N more within" line. Every word
  *  is a recorded field or a count of recorded fields. */
-export function popupSynopsis(bays: ShelfBay[], scroll: ShelfScroll): string[] {
+export function sheetSynopsis(bays: ShelfBay[], scroll: ShelfScroll): string[] {
   const lines: string[] = []
   lines.push(
     scroll.status
@@ -546,9 +550,9 @@ export function scrollKey(scroll: ShelfScroll): string {
 }
 
 /** The open trail that lands on a scroll through its parents:
- *  shelf → … → the scroll itself. Opening from a popup or the
- *  table walks this trail, so the back step always lands on the
- *  parent it came from (the trail the open screen already uses). */
+ *  shelf → … → the scroll itself. A tap that loads a scroll on
+ *  the centre sheet walks this trail, so the back step always
+ *  lands on the parent it came from. */
 export function trailForScroll(bays: ShelfBay[], target: ShelfScroll): string[] {
   const parent = new Map<string, ShelfScroll>()
   for (const bay of bays) {
@@ -589,7 +593,10 @@ export interface TableRow {
 /** What stands on the worktable for a parent: its children in
  *  shelf order (scrollChildren — an initiative's projects, a
  *  project's top-level tasks, a task's subtasks), each carrying
- *  its own cluster. */
+ *  its own cluster. Stage 2 stands the children themselves as
+ *  the desk's task piles (taskPileLayout); the cluster field is
+ *  kept for the record — a row's own children open their own
+ *  table on a long-press, they are not stood on this desk. */
 export function tableRows(bays: ShelfBay[], parentScroll: ShelfScroll): TableRow[] {
   return scrollChildren(bays, parentScroll).map((s) => ({
     scroll: s,
@@ -598,7 +605,128 @@ export function tableRows(bays: ShelfBay[], parentScroll: ShelfScroll): TableRow
 }
 
 /** The long-press route: a scroll with children opens the table;
- *  a leaf opens on the sheet directly. */
+ *  a leaf's long-press is its tap — it loads on the sheet. */
 export function longPressRoute(bays: ShelfBay[], scroll: ShelfScroll): 'table' | 'sheet' {
   return scrollChildren(bays, scroll).length > 0 ? 'table' : 'sheet'
+}
+
+/* ------------------------------------------------------------------ */
+/* Stage 2 — the worktable (the founder's wall photo, 1284×856)        */
+/* ------------------------------------------------------------------ */
+
+/** Stage 2's composition frame: the founder's wall photo. The
+ *  scene renders through a tighter window onto it (founder,
+ *  2026-11-26: "the second page view should look more like
+ *  this") — the desk spans the window's full width, the sheet
+ *  stands large, the top beam at the window's top, the desk's
+ *  apron at its bottom. The window is a crop, never a move:
+ *  every element stands in the photo's own coordinates (study
+ *  v12, build_study_v12.py). */
+export const TABLE_FRAME_W = 1284
+export const TABLE_FRAME_H = 856
+export const TABLE_WINDOW = { x: 150, y: 35, w: 985, h: 821 }
+
+/** The hanging sheet (study v12): the founder's ground at width
+ *  644 standing at (295, 96) — sized by its parchment's MINIMUM
+ *  opaque fraction, so the parchment covers the pine scroll's
+ *  parchment (x 420–795) with clear margin on every side and
+ *  stands centred on the pine (x 607). Its height is the
+ *  ground's own aspect. */
+export const TABLE_SHEET = { x: 295, y: 96, w: 644, h: (644 * 1448) / 1086 }
+
+/** The desk: the founder's desk at 985 wide standing at
+ *  (150, 470), its legs cropped by the frame's bottom edge.
+ *  Height from the cutout's own aspect (1024×855). */
+export const TABLE_DESK = { x: 150, y: 470, w: 985, h: (985 * 855) / 1024 }
+
+/** The fabric on the stage-2 wall: the same raster Scene 1
+ *  hangs (assets/scroll-fabric.png, the full 1536×1024 frame
+ *  image), laid at uniform cover scale so its own field —
+ *  (105,262)–(1400,852) in its frame — covers this wall's field
+ *  (x 48–1236, y 98–792: under the top beam to the floor line,
+ *  post to post — the same stopping points as Scene 1). */
+export const TABLE_FABRIC = { x: -241, y: -210, w: 1804, h: 1202 }
+export const TABLE_FABRIC_FIELD = { x: 48, y: 98, w: 1188, h: 694 }
+/** The fabric's cuts, in frame coordinates: the hanging sheet's
+ *  exclusion (its visual rect + ~20, as Scene 1's exclusion
+ *  margins its sheet), then the floor-prop boxes — the photo's
+ *  props stand IN FRONT of the shelves. */
+export const TABLE_FABRIC_CUTS = [
+  { x: 327, y: 88, w: 581, h: 704 },
+  { x: 30, y: 630, w: 300, h: 170 },
+  { x: 875, y: 720, w: 115, h: 80 },
+  { x: 960, y: 630, w: 230, h: 170 },
+]
+
+/** The task scroll on the desk: the founder's horizontal scroll
+ *  at 158 wide (study v12), its height the asset's own aspect
+ *  (1272×478). */
+export const TASK_SCROLL_W = 158
+export const TASK_SCROLL_H = (TASK_SCROLL_W * 478) / 1272
+
+export interface PilePlacement {
+  /** The child's index in the parent's row order. */
+  index: number
+  /** Which pile (0-based) the scroll stands in. */
+  pile: number
+  /** The pile row: 0 bottom, 1 middle, 2 top. */
+  row: number
+  cx: number
+  baseY: number
+  flipped: boolean
+}
+
+const PILE_ROWS = [
+  { baseY: 695, slots: 3 },
+  { baseY: 665, slots: 2 },
+  { baseY: 635, slots: 1 },
+] as const
+
+/** The task piles (founder, 2026-11-26): a parent's children
+ *  stand on the desk as horizontal scrolls stacked END-ON in
+ *  triangle piles of six — bottom 3, middle 2, top 1. The first
+ *  pile stands on the LEFT of the desk; the overflow past six
+ *  forms a second pile on the RIGHT, flipped horizontally.
+ *  Beyond twelve, the piles alternate sides inward, each
+ *  flipped relative to the previous (the builder's extension of
+ *  the founder's two-pile rule). A partial row centres its
+ *  scrolls on the pile's centre. Returned in DRAW order: later
+ *  piles first (they stand behind), and within a pile the top
+ *  row first — back-to-front, as the study draws them. */
+export function taskPileLayout(count: number): PilePlacement[] {
+  const perPile: PilePlacement[][] = []
+  for (let start = 0; start < count; start += 6) {
+    const pile = perPile.length
+    const pair = Math.floor(pile / 2)
+    const onRight = pile % 2 === 1
+    const centre = onRight ? 965 - 215 * pair : 330 + 215 * pair
+    const inPile = Math.min(6, count - start)
+    const rowCounts = [
+      Math.min(3, inPile),
+      Math.min(2, Math.max(0, inPile - 3)),
+      inPile > 5 ? 1 : 0,
+    ]
+    const placements: PilePlacement[] = []
+    let j = 0
+    for (let row = 0; row < PILE_ROWS.length; row++) {
+      const k = rowCounts[row]
+      for (let i = 0; i < k; i++) {
+        placements.push({
+          index: start + j,
+          pile,
+          row,
+          cx: centre + (i - (k - 1) / 2) * 90,
+          baseY: PILE_ROWS[row].baseY,
+          flipped: onRight,
+        })
+        j++
+      }
+    }
+    perPile.push(placements)
+  }
+  const drawOrder: PilePlacement[] = []
+  for (let p = perPile.length - 1; p >= 0; p--) {
+    drawOrder.push(...[...perPile[p]].sort((a, b) => b.row - a.row))
+  }
+  return drawOrder
 }

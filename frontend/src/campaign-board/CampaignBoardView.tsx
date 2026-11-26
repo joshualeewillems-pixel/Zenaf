@@ -280,6 +280,37 @@ export default function CampaignBoardView() {
       }
     : { sheet_type: 'campaign_board' }
 
+  /* The staged selection's plain name, carried by the chat's
+   * staging chip while the selection stands: the record's own
+   * title where the selection is a record, and the board's own
+   * names for the rest — the River, a Hold and its day, the Start
+   * and Finish, the keeper of a load. */
+  const stagedLabel = ((): string | null => {
+    if (!selection || !focus) return null
+    switch (selection.kind) {
+      case 'waypoint':
+        return focus.projectTasks.find((t) => t.id === selection.taskId)?.title ?? null
+      case 'obstacle':
+        return focus.obstacles.find((o) => o.id === selection.obstacleId)?.label ?? null
+      case 'terrain':
+        return selection.feature.sourceLabel
+      case 'signal':
+        return focus.signalMarkers.find((m) => m.signal.id === selection.signalId)?.signal.title ?? null
+      case 'river':
+        return 'The River'
+      case 'hold': {
+        const hold = focus.holds.find((h) => h.id === selection.holdId)
+        return hold ? `Hold · ${shortDate(new Date(hold.atMs))}` : null
+      }
+      case 'capacity':
+        return focus.capacity.find((c) => c.personId === selection.personId)?.name ?? null
+      case 'start':
+        return `Start · ${shortDate(new Date(focus.span.startMs))}`
+      case 'finish':
+        return `Finish · ${shortDate(new Date(focus.span.endMs))}`
+    }
+  })()
+
   /* ------------------------------ render ----------------------------- */
 
   if (loadError) {
@@ -343,6 +374,8 @@ export default function CampaignBoardView() {
               initialArchetypeId="champion"
               conversationId={conversationId}
               context={chatContext}
+              stagedLabel={stagedLabel}
+              onStagedClear={() => setSelection(null)}
             />
           </div>
         </div>

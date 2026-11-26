@@ -490,3 +490,95 @@ describe('choose multiple (checkbox fan-out)', () => {
     expect(turnBodies[0].archetype_id).toBe('mentor')
   })
 })
+
+describe('staged chip — tentative staging made visible in the chat', () => {
+  const thread = () => container.querySelector('[aria-live="polite"]')!
+  const chip = () => container.querySelector('[data-testid="staged-chip"]')
+
+  async function renderStaged(stagedLabel: string | null, onStagedClear?: () => void) {
+    renderChat({
+      environment: 'workspace',
+      conversationId: A,
+      initialArchetypeId: 'guardian',
+      stagedLabel,
+      onStagedClear,
+    })
+    await flush()
+  }
+
+  async function hydrateTwo() {
+    hydrations[A].resolve(
+      ok({
+        conversation_id: A,
+        messages: [u('m1', 'hello A'), v('m2', 'reply A')],
+        total: 2,
+      }),
+    )
+    await flush()
+  }
+
+  it('renders iff stagedLabel is non-null, directly above the composer, outside the thread', async () => {
+    await renderStaged(null, () => {})
+    await hydrateTwo()
+    expect(chip()).toBeNull()
+
+    await renderStaged('the gathering table', () => {})
+    const el = chip()
+    expect(el).not.toBeNull()
+    expect(el!.textContent).toContain('the gathering table')
+    // In the chat pane, but never a message in the thread.
+    expect(thread().contains(el)).toBe(false)
+    // Directly above the composer: the chip is the composer block's
+    // immediate previous sibling.
+    const composerBlock = container.querySelector('textarea')!.parentElement!.parentElement!
+    expect(el!.nextElementSibling).toBe(composerBlock)
+  })
+
+  it('the dismissal invokes onStagedClear exactly once per tap; without a handler none is offered', async () => {
+    const onStagedClear = vi.fn()
+    await renderStaged('the scales', onStagedClear)
+    await hydrateTwo()
+    const clear = container.querySelector('[data-testid="staged-chip-clear"]')
+    expect(clear).not.toBeNull()
+    await click(clear!)
+    expect(onStagedClear).toHaveBeenCalledTimes(1)
+    await click(clear!)
+    expect(onStagedClear).toHaveBeenCalledTimes(2)
+
+    await renderStaged('the scales', undefined)
+    expect(chip()).not.toBeNull()
+    expect(container.querySelector('[data-testid="staged-chip-clear"]')).toBeNull()
+  })
+
+  it('render, replace, and clear write nothing — no network, no ledger messages', async () => {
+    const onStagedClear = vi.fn()
+    await renderStaged('the gathering table', onStagedClear)
+    await hydrateTwo()
+    const callsAfterHydrate = calls.length
+    const threadChildren = thread().childElementCount
+    const threadText = thread().textContent
+
+    await renderStaged('the scales', onStagedClear)
+    expect(chip()!.textContent).toContain('the scales')
+    expect(calls.length).toBe(callsAfterHydrate)
+    expect(thread().childElementCount).toBe(threadChildren)
+    expect(thread().textContent).toBe(threadText)
+
+    await click(container.querySelector('[data-testid="staged-chip-clear"]')!)
+    expect(onStagedClear).toHaveBeenCalledTimes(1)
+    expect(calls.length).toBe(callsAfterHydrate)
+    expect(turnBodies).toHaveLength(0)
+    expect(thread().childElementCount).toBe(threadChildren)
+    expect(thread().textContent).toBe(threadText)
+  })
+
+  it('the chip stands across a send while the staging stands', async () => {
+    await renderStaged('the scales', () => {})
+    await hydrateTwo()
+    typeText('what do the scales say?')
+    await click(sendButton())
+    expect(turnBodies).toHaveLength(1)
+    expect(chip()).not.toBeNull()
+    expect(chip()!.textContent).toContain('the scales')
+  })
+})

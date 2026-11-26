@@ -584,6 +584,8 @@ export default function JynxScrollView() {
               conversationId={conversationId}
               context={chatContext}
               onTurnSent={onTurnLanded}
+              stagedLabel={selectedDrawing ? (selectedDrawing.title ?? 'a drawing') : null}
+              onStagedClear={() => setSelectedDrawingId(null)}
             />
           </div>
         </div>

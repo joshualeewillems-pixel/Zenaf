@@ -42,7 +42,11 @@ const stubDrawings = vi.hoisted(() => ({
 /** The chat stub's latest props — the turn-landing tests fire the
  *  view's onTurnSent exactly as CouncilChat does after a reply. */
 const chatStub = vi.hoisted(() => ({
-  latest: null as null | { onTurnSent?: () => void },
+  latest: null as null | {
+    onTurnSent?: () => void
+    stagedLabel?: string | null
+    onStagedClear?: () => void
+  },
 }))
 
 vi.mock('../chat/CouncilChat', async () => {
@@ -53,14 +57,41 @@ vi.mock('../chat/CouncilChat', async () => {
       context?: Record<string, unknown>
       initialArchetypeId?: string
       onTurnSent?: () => void
+      stagedLabel?: string | null
+      onStagedClear?: () => void
     }) => {
       chatStub.latest = props
-      return ReactMod.createElement('div', {
-        'data-testid': 'jynx-chat',
-        'data-conversation-id': props.conversationId ?? '',
-        'data-context': JSON.stringify(props.context ?? {}),
-        'data-archetype': props.initialArchetypeId ?? '',
-      })
+      // The stub renders the chat seam's staging chip to
+      // CouncilChat's contract (the real component is pinned by
+      // its own suite): the staged drawing's name inside the chat,
+      // with its dismissal, while it stands staged.
+      return ReactMod.createElement(
+        'div',
+        {
+          'data-testid': 'jynx-chat',
+          'data-conversation-id': props.conversationId ?? '',
+          'data-context': JSON.stringify(props.context ?? {}),
+          'data-archetype': props.initialArchetypeId ?? '',
+        },
+        props.stagedLabel
+          ? ReactMod.createElement(
+              'span',
+              { 'data-testid': 'staged-chip' },
+              props.stagedLabel,
+              props.onStagedClear
+                ? ReactMod.createElement(
+                    'button',
+                    {
+                      type: 'button',
+                      'data-testid': 'staged-chip-clear',
+                      onClick: props.onStagedClear,
+                    },
+                    'Set it down',
+                  )
+                : null,
+            )
+          : null,
+      )
     },
   }
 })
@@ -396,7 +427,33 @@ describe('JynxScrollView', () => {
     })
     // The dashed border is the subjecthood sign, on the drawing's band.
     expect(hit!.getAttribute('stroke')).toBe('#a55cce')
+    // And the staging SHOWS in the chat: the chip stands inside the
+    // chat pane carrying the drawing's title.
+    expect(chatStub.latest?.stagedLabel).toBe('Icarus, again')
+    const chip = container.querySelector('[data-testid="jynx-chat"] [data-testid="staged-chip"]')
+    expect(chip).not.toBeNull()
+    expect(chip!.textContent).toContain('Icarus, again')
 
+    // Setting it down FROM THE CHAT discards the staging exactly
+    // as tapping the drawing again does: subject back to the
+    // scroll, chip gone, subjecthood border gone.
+    await clickEl(container.querySelector('[data-testid="staged-chip-clear"]')!)
+    expect(chat()?.getAttribute('data-conversation-id')).toBe(P1_CONVO)
+    expect(chatContext()).toEqual({
+      sheet_type: 'jynx_scroll',
+      entity_type: 'project',
+      entity_id: 'p1',
+    })
+    expect(container.querySelector('[data-testid="staged-chip"]')).toBeNull()
+    expect(hit!.getAttribute('stroke')).toBe('none')
+
+    // Stage once more and unstage by the drawing tap, as before.
+    await clickEl(hit!)
+    expect(chatContext()).toEqual({
+      sheet_type: 'jynx_scroll',
+      entity_type: 'drawing',
+      entity_id: 'd1',
+    })
     await clickEl(hit!)
     expect(chat()?.getAttribute('data-conversation-id')).toBe(P1_CONVO)
     expect(chatContext()).toEqual({
@@ -427,15 +484,19 @@ describe('JynxScrollView', () => {
       entity_type: 'drawing',
       entity_id: 'd1',
     })
+    expect(chatStub.latest?.stagedLabel).toBe('Icarus, again')
     expect(traffic()).toEqual(before)
 
     // Clicking another drawing replaces the staged subject silently.
+    // The second drawing carries no title in the record, so the
+    // chip names it plainly — a drawing — rather than not standing.
     await clickEl(container.querySelector('[data-drawing-hit="d2"]')!)
     expect(chatContext()).toEqual({
       sheet_type: 'jynx_scroll',
       entity_type: 'drawing',
       entity_id: 'd2',
     })
+    expect(chatStub.latest?.stagedLabel).toBe('a drawing')
     expect(traffic()).toEqual(before)
 
     // Clicking the scroll's own ground discards it silently.
@@ -450,6 +511,8 @@ describe('JynxScrollView', () => {
       entity_type: 'project',
       entity_id: 'p1',
     })
+    expect(chatStub.latest?.stagedLabel).toBeNull()
+    expect(container.querySelector('[data-testid="staged-chip"]')).toBeNull()
     expect(traffic()).toEqual(before)
     expect(chat()?.getAttribute('data-conversation-id')).toBe(P1_CONVO)
   })

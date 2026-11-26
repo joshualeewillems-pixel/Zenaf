@@ -21,17 +21,50 @@ import { act } from 'react-dom/test-utils'
 import { readFileSync } from 'node:fs'
 
 /** The latest props the board handed CouncilChat — the staging pins
- *  read the conversation context from here. */
+ *  read the conversation context and the staging chip from here. */
 const chatProps = vi.hoisted(() => ({
-  current: null as null | { context?: Record<string, unknown> },
+  current: null as null | {
+    context?: Record<string, unknown>
+    stagedLabel?: string | null
+    onStagedClear?: () => void
+  },
 }))
 
 vi.mock('../chat/CouncilChat', async () => {
   const ReactMod = await import('react')
   return {
-    default: (props: { context?: Record<string, unknown> }) => {
+    default: (props: {
+      context?: Record<string, unknown>
+      stagedLabel?: string | null
+      onStagedClear?: () => void
+    }) => {
       chatProps.current = props
-      return ReactMod.createElement('div', { 'data-testid': 'valen-chat' })
+      // The stub renders the chat seam's staging chip to
+      // CouncilChat's contract (the real component is pinned by
+      // its own suite): the staged thing's name inside the chat,
+      // with its dismissal, while it stands staged.
+      return ReactMod.createElement(
+        'div',
+        { 'data-testid': 'valen-chat' },
+        props.stagedLabel
+          ? ReactMod.createElement(
+              'span',
+              { 'data-testid': 'staged-chip' },
+              props.stagedLabel,
+              props.onStagedClear
+                ? ReactMod.createElement(
+                    'button',
+                    {
+                      type: 'button',
+                      'data-testid': 'staged-chip-clear',
+                      onClick: props.onStagedClear,
+                    },
+                    'Set it down',
+                  )
+                : null,
+            )
+          : null,
+      )
     },
   }
 })
@@ -281,6 +314,34 @@ describe('CampaignBoardView', () => {
     expect(container.textContent).not.toContain('Declare a River')
     // The tap wrote nothing.
     expect(fetchLog.filter((f) => f.method !== 'GET')).toHaveLength(0)
+    // The staged signal SHOWS in the chat, under its recorded title.
+    expect(chatProps.current?.stagedLabel).toBe('Venue closed for repairs')
+    expect(
+      container.querySelector('[data-testid="staged-chip"]')!.textContent,
+    ).toContain('Venue closed for repairs')
+
+    // Tapping the River stages it under the board's own name for it.
+    const river = [...container.querySelectorAll('g')].find(
+      (g) => g.textContent?.trim() === 'The River',
+    )
+    expect(river).toBeTruthy()
+    await act(async () => {
+      river!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+    expect(chatProps.current?.stagedLabel).toBe('The River')
+
+    // Tapping the Hold stages it as a Hold and its day.
+    const hold = [...container.querySelectorAll('g')].find((g) =>
+      (g.textContent ?? '').startsWith('Hold'),
+    )
+    expect(hold).toBeTruthy()
+    await act(async () => {
+      hold!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+    expect(chatProps.current?.stagedLabel).toMatch(/^Hold · /)
+    expect(fetchLog.filter((f) => f.method !== 'GET')).toHaveLength(0)
 
     // No declaration forms or header declaration controls exist.
     for (const banned of ['＋ River', '＋ Hold', 'Set window', 'Withdraw declaration', 'Remove hold', 'Set date']) {
@@ -323,6 +384,9 @@ describe('CampaignBoardView', () => {
     expect(patches).toHaveLength(1)
     expect(patches[0].url).toContain('/vision-execution/tasks/t1')
     expect(chatProps.current?.context).toMatchObject({ entity_type: 'project', entity_id: 'p1' })
+    // A drag stages nothing: no chip stands in the chat either.
+    expect(chatProps.current?.stagedLabel).toBeNull()
+    expect(container.querySelector('[data-testid="staged-chip"]')).toBeNull()
 
     // TAP: press and release without moving. The waypoint stages —
     // the context now names the TASK — and the fetch log gains no
@@ -333,6 +397,24 @@ describe('CampaignBoardView', () => {
     await act(async () => { g2.dispatchEvent(pointer('pointerup', 100)) })
     await flush()
     expect(chatProps.current?.context).toMatchObject({ entity_type: 'task', entity_id: 't1' })
+    expect(fetchLog.filter((f) => f.method !== 'GET')).toHaveLength(0)
+    // The staging SHOWS in the chat: the chip stands inside the
+    // chat pane carrying the record's own title.
+    expect(chatProps.current?.stagedLabel).toBe('Confirm the print run')
+    const chip = container.querySelector('[data-testid="valen-chat"] [data-testid="staged-chip"]')
+    expect(chip).not.toBeNull()
+    expect(chip!.textContent).toContain('Confirm the print run')
+
+    // Setting it down FROM THE CHAT clears the staging exactly as
+    // clearing it in the view does: context back to the project,
+    // chip gone, still no writes.
+    const clear = container.querySelector('[data-testid="staged-chip-clear"]')
+    expect(clear).not.toBeNull()
+    await act(async () => { (clear as HTMLElement).click() })
+    await flush()
+    expect(chatProps.current?.context).toMatchObject({ entity_type: 'project', entity_id: 'p1' })
+    expect(chatProps.current?.stagedLabel).toBeNull()
+    expect(container.querySelector('[data-testid="staged-chip"]')).toBeNull()
     expect(fetchLog.filter((f) => f.method !== 'GET')).toHaveLength(0)
   })
 

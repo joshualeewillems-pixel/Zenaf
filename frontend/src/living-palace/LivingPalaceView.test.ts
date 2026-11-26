@@ -18,11 +18,14 @@
  * panel, no review acts anywhere), that a furniture tap STAGES its
  * object in the chat context tentatively (palace_focus rides the
  * context; staging performs zero writes; navigation or setting it
- * down discards it silently), and that a landed chat turn re-reads
- * the subject. CouncilChat is stubbed — the chat seam is covered
- * by its own suite.
+ * down discards it silently), that the staging SHOWS as a chip in
+ * the chat — never as a banner in the world, and the mechanism
+ * copy that once explained the loading is gone — and that a
+ * landed chat turn re-reads the subject. CouncilChat is stubbed —
+ * the chat seam is covered by its own suite.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { readFileSync } from 'node:fs'
 import * as React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
@@ -31,6 +34,8 @@ const chatProps: {
   conversationId?: string | null
   context?: Record<string, unknown>
   onTurnSent?: () => void
+  stagedLabel?: string | null
+  onStagedClear?: () => void
 }[] = []
 vi.mock('../chat/CouncilChat', async () => {
   const ReactMod = await import('react')
@@ -39,12 +44,39 @@ vi.mock('../chat/CouncilChat', async () => {
       conversationId?: string | null
       context?: Record<string, unknown>
       onTurnSent?: () => void
+      stagedLabel?: string | null
+      onStagedClear?: () => void
     }) => {
       chatProps.push(props)
-      return ReactMod.createElement('div', {
-        'data-testid': 'maeve-chat',
-        'data-conversation-id': props.conversationId ?? '',
-      })
+      // The stub renders the chat seam's staging chip to
+      // CouncilChat's contract (the real component is pinned by
+      // its own suite): the staged thing's name inside the chat,
+      // with its dismissal, while it stands staged.
+      return ReactMod.createElement(
+        'div',
+        {
+          'data-testid': 'maeve-chat',
+          'data-conversation-id': props.conversationId ?? '',
+        },
+        props.stagedLabel
+          ? ReactMod.createElement(
+              'span',
+              { 'data-testid': 'staged-chip' },
+              props.stagedLabel,
+              props.onStagedClear
+                ? ReactMod.createElement(
+                    'button',
+                    {
+                      type: 'button',
+                      'data-testid': 'staged-chip-clear',
+                      onClick: props.onStagedClear,
+                    },
+                    'Set it down',
+                  )
+                : null,
+            )
+          : null,
+      )
     },
   }
 })
@@ -447,6 +479,16 @@ const READ_WITH_PENDING = {
 }
 
 describe('Living Palace — chat-is-the-work', () => {
+  it('the mechanism copy is gone from the source: no staged banner explaining the loading', () => {
+    const view = readFileSync('src/living-palace/LivingPalaceView.tsx', 'utf8')
+    expect(view).not.toContain('rides into her conversation')
+    expect(view).not.toContain('a tap settles nothing')
+    expect(view).not.toContain('Staged with Maeve')
+    expect(view).not.toContain('palace-staged-line')
+    expect(view).not.toContain('palace-staged-clear')
+  })
+
+
   it('no panel forms remain: no boundaries, pending, vessel, weighing, or review acts', async () => {
     attributedPayload = READ_WITH_PENDING
     await render()
@@ -474,9 +516,16 @@ describe('Living Palace — chat-is-the-work', () => {
     await click('palace-building-i1')
     await click('palace-floor-p1')
     await click('palace-floor-scales')
-    const line = container.querySelector('[data-testid="palace-staged-line"]')
-    expect(line).not.toBeNull()
-    expect(line!.textContent).toContain('the scales')
+    // The staging manifests IN THE CHAT: the chip stands inside
+    // the chat pane carrying the instrument's name. No staged line
+    // stands in the world pane, and no mechanism copy with it.
+    const chip = container.querySelector('[data-testid="maeve-chat"] [data-testid="staged-chip"]')
+    expect(chip).not.toBeNull()
+    expect(chip!.textContent).toContain('the scales')
+    expect(lastChat().stagedLabel).toBe('the scales')
+    expect(container.querySelector('[data-testid="palace-staged-line"]')).toBeNull()
+    expect(container.textContent).not.toContain('rides into her conversation')
+    expect(container.textContent).not.toContain('a tap settles nothing')
     expect(lastChat().context).toEqual({
       sheet_type: 'living_palace',
       entity_type: 'project',
@@ -492,13 +541,15 @@ describe('Living Palace — chat-is-the-work', () => {
     await descendToGamma()
     await click('palace-room-vessel')
     expect(lastChat().context).toMatchObject({ palace_focus: 'vessel' })
-    // Another tap replaces the staged object.
+    // Another tap replaces the staged object — chip and context alike.
     await click('palace-room-chest')
     expect(lastChat().context).toMatchObject({ palace_focus: 'chest' })
-    expect(container.querySelector('[data-testid="palace-staged-line"]')!.textContent).toContain('the chest')
-    // Setting it down clears the context back to the bare subject.
-    await click('palace-staged-clear')
-    expect(container.querySelector('[data-testid="palace-staged-line"]')).toBeNull()
+    expect(container.querySelector('[data-testid="staged-chip"]')!.textContent).toContain('the chest')
+    // Setting it down FROM THE CHAT clears the focus: the chip is
+    // gone and the context is back to the bare subject.
+    await click('staged-chip-clear')
+    expect(container.querySelector('[data-testid="staged-chip"]')).toBeNull()
+    expect(lastChat().stagedLabel).toBeNull()
     expect(lastChat().context).toEqual({
       sheet_type: 'living_palace',
       entity_type: 'task',
@@ -514,7 +565,7 @@ describe('Living Palace — chat-is-the-work', () => {
       entity_type: 'task',
       entity_id: 'tb',
     })
-    expect(container.querySelector('[data-testid="palace-staged-line"]')).toBeNull()
+    expect(container.querySelector('[data-testid="staged-chip"]')).toBeNull()
     expect(writes).toEqual([])
   })
 
@@ -536,7 +587,7 @@ describe('Living Palace — chat-is-the-work', () => {
     await click('palace-guest-explore')
     expect(container.querySelector('[data-testid="palace-guest-strip"]')).toBeNull()
     expect(lastChat().context).toMatchObject({ palace_focus: 'guest:ambassador' })
-    expect(container.querySelector('[data-testid="palace-staged-line"]')!.textContent).toContain("Lucian's cup")
+    expect(container.querySelector('[data-testid="staged-chip"]')!.textContent).toContain("Lucian's cup")
     expect(writes).toEqual([])
   })
 

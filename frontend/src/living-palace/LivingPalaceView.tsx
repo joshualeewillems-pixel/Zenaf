@@ -408,20 +408,6 @@ export default function LivingPalaceView({
             </button>
           </p>
         )}
-        {stagedFocus && (
-          <p data-testid="palace-staged-line" className="mt-1 text-xs text-[#6b5b45]">
-            Staged with Maeve: <span className="font-semibold text-[#4a3f30]">{focusLabel(stagedFocus)}</span> — it
-            rides into her conversation while it stands here; a tap settles nothing.{' '}
-            <button
-              type="button"
-              data-testid="palace-staged-clear"
-              className="underline decoration-dotted"
-              onClick={() => setStagedFocus(null)}
-            >
-              Set it down
-            </button>
-          </p>
-        )}
       </div>
 
       <div className="living-palace-scene relative min-h-0 flex-1 overflow-y-auto px-3 py-3">
@@ -534,6 +520,8 @@ export default function LivingPalaceView({
         conversationId={chatSubject.conversationId}
         context={chatSubject.context}
         onTurnSent={onTurnLanded}
+        stagedLabel={stagedFocus ? focusLabel(stagedFocus) : null}
+        onStagedClear={() => setStagedFocus(null)}
       />
     </div>
   )

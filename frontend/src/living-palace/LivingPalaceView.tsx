@@ -62,7 +62,8 @@ import {
   type AttributedRead,
   type PalaceData,
 } from './palaceLogic'
-import { fetchAttributedRead, fetchPalaceEntities } from './palaceApi'
+import { fetchAttributedRead, fetchPalaceEntities, fetchSubjectInteractions } from './palaceApi'
+import type { SubjectInteraction } from './palaceSceneLogic'
 import { BuildingScene, CompoundScene, FloorScene, RoomScene } from './palaceCanvas'
 import './palace.css'
 
@@ -120,6 +121,10 @@ export default function LivingPalaceView({
   onFollowGuest?: (seat: SeatId) => void
 } = {}) {
   const [data, setData] = useState<PalaceData | null>(null)
+  /** Per-subject seat-interaction counts — Scene 1's ivy read.
+   *  Null until loaded; a failed read leaves it null and every
+   *  building stands at resting ivy (stage 1, natural green). */
+  const [interactions, setInteractions] = useState<SubjectInteraction[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [trail, setTrail] = useState<PalaceLayer[]>([{ layer: 'compound' }])
   const [attendedCompound, setAttendedCompound] = useState(false)
@@ -142,15 +147,21 @@ export default function LivingPalaceView({
     setData(entities)
   }, [])
 
+  const loadInteractions = useCallback(async () => {
+    const rows = await fetchSubjectInteractions()
+    setInteractions(rows)
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     loadEntities().catch(() => {
       if (!cancelled) setLoadError('The Palace could not be reached — its records did not load.')
     })
+    void loadInteractions()
     return () => {
       cancelled = true
     }
-  }, [loadEntities])
+  }, [loadEntities, loadInteractions])
 
   /* ---------------- the attributed subject read ---------------- */
 
@@ -198,7 +209,8 @@ export default function LivingPalaceView({
   const onTurnLanded = useCallback(() => {
     void refreshSubjectRead()
     void loadEntities().catch(() => {})
-  }, [refreshSubjectRead, loadEntities])
+    void loadInteractions()
+  }, [refreshSubjectRead, loadEntities, loadInteractions])
 
   const subjectGuests = useMemo(() => attendingGuests(subjectRead), [subjectRead])
   const subjectGuestSeats = useMemo(() => subjectGuests.map((g) => g.seat), [subjectGuests])
@@ -233,6 +245,18 @@ export default function LivingPalaceView({
     () => (data ? buildCompound(data, { unnested: unnestedCompound }) : null),
     [data, unnestedCompound],
   )
+  /** Room (task) counts per project — Scene 1's class reading for
+   *  project structures (an initiative's class reads its floors
+   *  from the compound model itself). */
+  const projectRoomCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    if (data) {
+      for (const t of data.tasks) {
+        if (t.project_id) counts[t.project_id] = (counts[t.project_id] ?? 0) + 1
+      }
+    }
+    return counts
+  }, [data])
   const building = useMemo(() => {
     if (!data || current.layer !== 'building') return null
     const initiative = data.initiatives.find((i) => i.id === current.initiativeId)
@@ -425,6 +449,8 @@ export default function LivingPalaceView({
             onOpenBuilding={openBuilding}
             onOpenProject={openProject}
             onOpenTask={openTask}
+            interactions={interactions}
+            projectRoomCounts={projectRoomCounts}
             onSelectIdea={(id) => {
               setSelectedIdeaId(id)
               setStagedFocus(null)

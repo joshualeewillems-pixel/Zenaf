@@ -2006,6 +2006,48 @@ def list_chalk_drawings(
 
 
 # ---------------------------------------------------------------------------
+# Subject interactions (the Living Palace's ivy read, Scene 1).
+#
+# Ivy grows on a Palace building according to the seat interaction
+# recorded about its subject. This route serves the counts: for the
+# caller only, per subject entity, the total visitor turns sent
+# with that subject selected and the per-seat split — read from the
+# messages' own live-context snapshots through the linkage
+# context_preparation.py documents (see
+# local_ai/conversation/subject_interactions.py). READ-ONLY and
+# strictly per-user: the store scan's ownership predicate is its
+# first condition, so another user's subjects are simply absent.
+# Failure-isolated: a failed read degrades to an empty result and
+# the Palace stands without ivy data rather than failing.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/subject-interactions")
+def list_subject_interactions(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Per-subject seat-interaction counts for the caller.
+
+    Shape: ``{"subjects": [{"entity_type", "entity_id", "total",
+    "per_seat": {seat: count}}]}`` — only subjects the caller has
+    actually discussed appear. An owner with no such turns gets an
+    empty list.
+    """
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    try:
+        from local_ai.conversation.subject_interactions import (
+            subject_interactions_for_user,
+        )
+
+        return subject_interactions_for_user(_store(), user_id)
+    except Exception:
+        logger.exception("subject-interactions: read failed; degrading to empty")
+        return {"subjects": []}
+
+
+# ---------------------------------------------------------------------------
 # Weaver strand interviews (rev2, as accepted).
 #
 # One ordinary Weaver (conductor) Talk thread per strand, opened from

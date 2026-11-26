@@ -4,18 +4,23 @@
  * Geometry and rendering lifted from the founder-ruled prototype
  * (maeve-s-living-palace-interactive-increment-1): the seven-tongue
  * council flame from a single source, the stone-ring bonfire, the
- * stone hearth, buildings in three-quarter register with roofs
- * seated on their wall lines, the continuous 2.5D floor plan (rooms
- * sharing walls around a real hall), and the room cutaway whose
- * furniture sits IN the skewed wall planes. The prototype's fixture
- * is not used — every scene renders the live models from
- * palaceLogic.
+ * stone hearth, the continuous 2.5D floor plan (rooms sharing walls
+ * around a real hall), and the room cutaway whose furniture sits IN
+ * the skewed wall planes. The prototype's fixture is not used —
+ * every scene renders the live models from palaceLogic.
+ *
+ * The compound layer is Scene 1 (founder, 2026-11-26): the
+ * founder's own three-court plan art with the ivy buildings placed
+ * by the ruled placement law — see the CompoundScene section and
+ * palaceSceneLogic. The building / floor / room layers below are
+ * unchanged.
  *
  * Surface rule: the scenes carry no legends, no vocabulary panels,
  * no explanations of themselves. What a tap reveals lives in the
  * view's panels and in Maeve's chat.
  */
 import * as React from 'react'
+import { useMemo } from 'react'
 import type {
   BuildingModel,
   CompoundModel,
@@ -23,6 +28,23 @@ import type {
   RoomModel,
 } from './palaceLogic'
 import { councilFlameColors, isDoneStatus } from './palaceLogic'
+import {
+  PALACE_GEOMETRY,
+  classForNestedCount,
+  indexInteractions,
+  interactionKey,
+  ivyColorFor,
+  ivyStageFor,
+  masterAspect,
+  planCompoundScene,
+  type PalaceClassId,
+  type PlacedStructure,
+  type SceneStructureInput,
+  type SubjectInteraction,
+} from './palaceSceneLogic'
+import { useTintedMaster } from './palaceTint'
+import planImage from './assets/palace-plan.jpg'
+import frontWallImage from './assets/palace-front-wall.png'
 import { SEAT_COLORS, type SeatId } from '../council/colors'
 
 /* The prototype's material palette. */
@@ -265,13 +287,59 @@ export function DrawingTable({ x, y, w }: { x: number; y: number; w: number }) {
 /* compound                                                            */
 /* ------------------------------------------------------------------ */
 
-const CW = 900
+/* ------------------------------------------------------------------ */
+/* compound — Scene 1 (founder, 2026-11-26: "Implement it")            */
+/*                                                                     */
+/* The compound layer IS the founder's three-court plan now: his     */
+/* art as the ground, the ivy buildings standing in it under the     */
+/* placement law (palaceSceneLogic), the council bonfire at the      */
+/* plaza, and the front wall — the art's own southern stonework —    */
+/* layered over the buildings last, so front foundations stand at    */
+/* the full circle's edge correctly occluded. Layer order is the     */
+/* brief's: plan → buildings in foundation-depth order → bonfire →   */
+/* front wall. Buildings are plain positioned <img> elements (the    */
+/* Scroll's structural model) — no per-element SVG transforms.       */
+/*                                                                     */
+/* What stands in the plan: the compound's structures — initiatives  */
+/* as buildings, loose projects and (un-nested) standing projects   */
+/* as their own structures. What cannot stand in the plan keeps its  */
+/* existing presentation below it: loose tasks as standing stones,   */
+/* undeveloped ideas on the drawing table, released projects at the  */
+/* south gate. Nothing the compound offered is dropped.              */
+/*                                                                     */
+/* A tap does what it always did here: an initiative enters its      */
+/* building layer; a project enters its floor. The scene writes      */
+/* nothing — the chat is the work.                                   */
+/* ------------------------------------------------------------------ */
 
-interface Placed {
-  x: number
-  y: number
-  w: number
-  h: number
+const PLAN_W = PALACE_GEOMETRY.width
+const PLAN_H = PALACE_GEOMETRY.height
+
+/** The bonfire's place on the plan — the plaza where the three
+ *  courts meet (plan coordinates, the brief's numbers). */
+const PLAZA = { x: 642, y: 378 }
+
+interface SceneBuilding {
+  key: string
+  klass: PalaceClassId
+  stage: 1 | 2 | 3
+  colour: string
+  testid: string
+  title: string
+  open: () => void
+}
+
+function SceneBuildingImage({
+  klass,
+  stage,
+  colour,
+}: {
+  klass: PalaceClassId
+  stage: 1 | 2 | 3
+  colour: string
+}) {
+  const url = useTintedMaster(klass, stage, colour)
+  return <img src={url} alt="" draggable={false} className="block h-auto w-full" />
 }
 
 export function CompoundScene({
@@ -283,6 +351,8 @@ export function CompoundScene({
   onOpenTask,
   onSelectIdea,
   selectedIdeaId,
+  interactions,
+  projectRoomCounts,
 }: {
   model: CompoundModel
   attended: boolean
@@ -292,258 +362,256 @@ export function CompoundScene({
   onOpenTask: (taskId: string) => void
   onSelectIdea: (ideaId: string) => void
   selectedIdeaId: string | null
+  /** Per-subject seat-interaction counts (the ivy read); absent or
+   *  null while loading or after a failed read — every building
+   *  then stands at stage 1 in natural green. */
+  interactions?: SubjectInteraction[] | null
+  /** Room (task) counts per project id — the class reading for
+   *  project structures, from the view's full record set. */
+  projectRoomCounts?: Record<string, number>
 }) {
-  // Flow the buildings in rows, biggest first (the model sorts them).
-  const placed: { building: CompoundModel['buildings'][number]; box: Placed }[] = []
-  let cx = 26
-  let cy = 96
-  let rowH = 0
-  for (const b of model.buildings) {
-    const w = Math.min(320, Math.max(200, 180 + b.roomCount * 3))
-    const h = (b.form === 'pagoda' ? 168 : 128) + b.floors.length * 14
-    if (cx + w > CW - 20 && cx > 26) {
-      cx = 26
-      cy += rowH + 64
-      rowH = 0
+  const scene = useMemo(() => {
+    const index = indexInteractions(interactions)
+    const buildings = new Map<string, SceneBuilding>()
+    const inputs: SceneStructureInput[] = []
+    const add = (
+      entityType: 'initiative' | 'project',
+      entityId: string,
+      title: string,
+      nestedCount: number,
+      testid: string,
+      open: () => void,
+    ) => {
+      const key = `${entityType}:${entityId}`
+      const interaction = index.get(interactionKey(entityType, entityId))
+      const stage = ivyStageFor(interaction?.total ?? 0)
+      const klass = classForNestedCount(nestedCount)
+      buildings.set(key, {
+        key,
+        klass,
+        stage,
+        colour: ivyColorFor(interaction),
+        testid,
+        title,
+        open,
+      })
+      inputs.push({
+        key,
+        entityType,
+        entityId,
+        title,
+        nestedCount,
+        aspect: masterAspect(klass, stage),
+      })
     }
-    placed.push({ building: b, box: { x: cx, y: cy, w, h } })
-    cx += w + 30
-    rowH = Math.max(rowH, h)
-  }
-  const buildingsBottom = placed.length ? cy + rowH : 130
-  const groundsY = buildingsBottom + 44
-  const H = groundsY + 400
+    for (const b of model.buildings) {
+      add('initiative', b.initiative.id, b.initiative.title, b.floors.length, `palace-building-${b.initiative.id}`, () =>
+        onOpenBuilding(b.initiative.id),
+      )
+    }
+    for (const p of model.looseProjects) {
+      add('project', p.id, p.title, projectRoomCounts?.[p.id] ?? 0, `palace-loose-project-${p.id}`, () =>
+        onOpenProject(p.id),
+      )
+    }
+    for (const p of model.standingProjects) {
+      add('project', p.id, p.title, projectRoomCounts?.[p.id] ?? 0, `palace-standing-project-${p.id}`, () =>
+        onOpenProject(p.id),
+      )
+    }
+    let placements: PlacedStructure[] | null = null
+    try {
+      placements = planCompoundScene(inputs)
+    } catch {
+      // The law found no lawful plan (a corrupt geometry asset is
+      // the only known road here). The buildings still stand and
+      // still open — access is never the price of placement.
+      placements = null
+    }
+    return { buildings, placements }
+  }, [model, interactions, projectRoomCounts, onOpenBuilding, onOpenProject])
+
+  const { buildings, placements } = scene
+
+  /* The grounds strip: what cannot stand in the plan, in its
+   * existing presentation. */
+  const tasksRows = Math.ceil(model.looseTasks.length / 3)
+  const stripMainH = Math.max(tasksRows ? tasksRows * 96 + 36 : 0, 300)
+  const stripReleasedH = model.releasedProjects.length ? 116 : 0
+  const stripH = stripMainH + stripReleasedH
+  const tableY = stripMainH - 70
 
   return (
-    <svg
-      viewBox={`0 0 ${CW} ${H}`}
-      className="w-full h-auto block"
-      role="img"
-      aria-label="The Palace compound"
-      onMouseLeave={() => onAttend(false)}
-    >
-      <rect x={0} y={0} width={CW} height={H} fill={PAL.sky} />
-      <rect x={0} y={groundsY - 60} width={CW} height={H - groundsY + 60} fill={PAL.ground} />
-      {/* paths from the gate to the buildings */}
-      <path
-        d={`M 450 ${H - 8} C 440 ${groundsY + 200}, 460 ${groundsY + 120}, 450 ${groundsY + 96}`}
-        stroke={PAL.groundDark}
-        strokeWidth={20}
-        fill="none"
-        opacity={0.7}
-      />
-      {placed.map(({ building: b, box }) => {
-        const { x, y, w, h } = box
-        const base = y + h
-        const tiers = b.form === 'pagoda' ? 3 : 1
-        return (
-          <g
-            key={b.initiative.id}
-            data-testid={`palace-building-${b.initiative.id}`}
-            onClick={() => onOpenBuilding(b.initiative.id)}
-            onMouseEnter={() => onAttend(true)}
-            style={{ cursor: 'pointer' }}
-          >
-            <title>{b.initiative.title}</title>
-            <rect x={x - 6} y={base - 4} width={w + 12} height={8} fill={PAL.groundDark} />
-            <rect x={x} y={y + 34} width={w} height={h - 34} fill={PAL.wall} stroke={WALL_LINE} strokeWidth={2} />
-            {/* floors read as bands on the facade */}
-            {b.floors.map((_, fi) => (
-              <line
-                key={fi}
-                x1={x}
-                x2={x + w}
-                y1={y + 34 + ((h - 34) / Math.max(1, b.floors.length)) * (fi + 1)}
-                y2={y + 34 + ((h - 34) / Math.max(1, b.floors.length)) * (fi + 1)}
-                stroke={PAL.wallDark}
-                strokeWidth={2}
-              />
-            ))}
-            {/* windows */}
-            {Array.from({ length: Math.max(2, Math.floor(w / 56)) }, (_, wi) => (
-              <rect
-                key={wi}
-                x={x + 18 + wi * 56}
-                y={y + 58}
-                width={20}
-                height={26}
-                fill="#f6e7bd"
-                stroke={WALL_LINE}
-              />
-            ))}
-            {/* roof — seated on the wall lines; pagoda tiers at 40+ rooms */}
-            {Array.from({ length: tiers }, (_, ti) => {
-              const inset = ti * (w * 0.13)
-              const ry = y + 34 - ti * 16
+    <div onMouseLeave={() => onAttend(false)}>
+      {/* ——— the plan ——— */}
+      <div
+        className="relative w-full select-none"
+        style={{ aspectRatio: `${PLAN_W} / ${PLAN_H}` }}
+        role="img"
+        aria-label="The Palace compound — the three courts"
+      >
+        <img
+          src={planImage}
+          alt=""
+          draggable={false}
+          className="absolute inset-0 h-full w-full"
+        />
+        {placements
+          ? placements.map((p) => {
+              const b = buildings.get(p.key)!
               return (
-                <path
-                  key={ti}
-                  d={`M ${x + inset - 10} ${ry} L ${x + w / 2} ${ry - 26} L ${x + w - inset + 10} ${ry} Z`}
-                  fill={ti === tiers - 1 ? PAL.roofDark : PAL.roof}
-                  stroke={PAL.roofDark}
-                />
+                <button
+                  key={p.key}
+                  type="button"
+                  data-testid={b.testid}
+                  title={b.title}
+                  aria-label={b.title}
+                  onClick={b.open}
+                  onMouseEnter={() => onAttend(true)}
+                  className="absolute block cursor-pointer border-0 bg-transparent p-0"
+                  style={{
+                    left: `${((p.bx - p.w / 2) / PLAN_W) * 100}%`,
+                    top: `${((p.by - p.h) / PLAN_H) * 100}%`,
+                    width: `${(p.w / PLAN_W) * 100}%`,
+                  }}
+                >
+                  <SceneBuildingImage klass={p.klass} stage={b.stage} colour={b.colour} />
+                </button>
               )
-            })}
-            {/* door + the map's cairn at the door */}
-            <rect x={x + w / 2 - 13} y={base - 34} width={26} height={34} fill={PAL.woodDark} />
-            <CairnGlyph x={x + w / 2 + 34} base={base} />
-            {wrapTitle(b.initiative.title, 24, 2).map((line, li) => (
-              <text
-                key={li}
-                x={x + w / 2}
-                y={base + 22 + li * 15}
-                textAnchor="middle"
-                fontSize={13.5}
-                fontWeight={600}
-                fill={PAL.ink}
+            })
+          : [...buildings.values()].map((b, i) => (
+              <button
+                key={b.key}
+                type="button"
+                data-testid={b.testid}
+                title={b.title}
+                aria-label={b.title}
+                onClick={b.open}
+                onMouseEnter={() => onAttend(true)}
+                className="absolute block cursor-pointer border-0 bg-transparent p-0"
+                style={{
+                  left: `${4 + i * 14}%`,
+                  bottom: '3%',
+                  width: '11%',
+                }}
               >
-                {line}
-              </text>
+                <SceneBuildingImage klass={b.klass} stage={b.stage} colour={b.colour} />
+              </button>
             ))}
-            <text x={x + w / 2} y={base + 22 + 30} textAnchor="middle" fontSize={10.5} fill={PAL.inkSoft}>
-              {b.floors.length} floor{b.floors.length === 1 ? '' : 's'} · {b.roomCount} room{b.roomCount === 1 ? '' : 's'}
-            </text>
+        {/* the bonfire at the plaza, over the buildings */}
+        <svg
+          viewBox={`0 0 ${PLAN_W} ${PLAN_H}`}
+          className="pointer-events-none absolute inset-0 h-full w-full"
+          aria-hidden
+        >
+          <g onMouseEnter={() => onAttend(true)} style={{ pointerEvents: 'auto' }}>
+            <Bonfire x={PLAZA.x} y={PLAZA.y} lit={attended} />
           </g>
-        )
-      })}
+        </svg>
+        {/* the front wall, over everything */}
+        <img
+          src={frontWallImage}
+          alt=""
+          draggable={false}
+          className="pointer-events-none absolute inset-0 h-full w-full"
+        />
+      </div>
 
-      {/* the bonfire at the centre of the grounds */}
-      <g onMouseEnter={() => onAttend(true)}>
-        <Bonfire x={450} y={groundsY + 96} lit={attended} />
-      </g>
-      <text x={450} y={groundsY + 140} textAnchor="middle" fontSize={11} fill={PAL.inkSoft}>
-        the council fire
-      </text>
+      {/* ——— the grounds strip ——— */}
+      <svg
+        viewBox={`0 0 900 ${stripH}`}
+        className="block h-auto w-full"
+        role="img"
+        aria-label="The Palace grounds — loose work and the drawing table"
+      >
+        <rect x={0} y={0} width={900} height={stripH} fill={PAL.ground} />
 
-      {/* loose projects — their own structures on the grounds */}
-      {model.looseProjects.map((p, i) => {
-        const x = 36 + (i % 3) * 118
-        const y = groundsY + 26 + Math.floor(i / 3) * 108
-        return (
-          <g
-            key={p.id}
-            data-testid={`palace-loose-project-${p.id}`}
-            onClick={() => onOpenProject(p.id)}
-            style={{ cursor: 'pointer' }}
-          >
-            <title>{p.title}</title>
-            <rect x={x} y={y + 16} width={92} height={52} fill={PAL.wall} stroke={WALL_LINE} strokeWidth={2} />
-            <path d={`M ${x - 6} ${y + 16} L ${x + 46} ${y - 8} L ${x + 98} ${y + 16} Z`} fill={PAL.roof} stroke={PAL.roofDark} />
-            <rect x={x + 36} y={y + 40} width={18} height={28} fill={PAL.woodDark} />
-            {wrapTitle(p.title, 15, 2).map((line, li) => (
-              <text key={li} x={x + 46} y={y + 84 + li * 12} textAnchor="middle" fontSize={10.5} fill={PAL.ink}>
-                {line}
-              </text>
-            ))}
-          </g>
-        )
-      })}
-
-      {/* loose tasks — standing stones on the open ground */}
-      {model.looseTasks.map((t, i) => {
-        const x = 596 + (i % 3) * 100
-        const y = groundsY + 30 + Math.floor(i / 3) * 96
-        return (
-          <g
-            key={t.id}
-            data-testid={`palace-loose-task-${t.id}`}
-            onClick={() => onOpenTask(t.id)}
-            style={{ cursor: 'pointer' }}
-          >
-            <title>{t.title}</title>
-            <path
-              d={`M ${x - 17} ${y + 34} C ${x - 19} ${y + 6}, ${x - 8} ${y - 12}, ${x} ${y - 14} C ${x + 9} ${y - 12}, ${x + 18} ${y + 8}, ${x + 16} ${y + 34} Z`}
-              fill={isDoneStatus(t.status) ? '#c9b995' : PAL.stone}
-              stroke={PAL.stoneDark}
-            />
-            {wrapTitle(t.title, 13, 2).map((line, li) => (
-              <text key={li} x={x} y={y + 50 + li * 12} textAnchor="middle" fontSize={10} fill={PAL.ink}>
-                {line}
-              </text>
-            ))}
-          </g>
-        )
-      })}
-
-      {/* un-nested: the buildings' projects also stand on the grounds */}
-      {model.standingProjects.map((p, i) => {
-        const x = 36 + (i % 6) * 142
-        const y = groundsY + 268 + Math.floor(i / 6) * 10
-        return (
-          <g
-            key={p.id}
-            data-testid={`palace-standing-project-${p.id}`}
-            onClick={() => onOpenProject(p.id)}
-            style={{ cursor: 'pointer' }}
-          >
-            <title>{p.title}</title>
-            <rect x={x} y={y} width={118} height={30} fill={PAL.wall} stroke={WALL_LINE} strokeDasharray="4 3" />
-            <text x={x + 59} y={y + 19} textAnchor="middle" fontSize={10} fill={PAL.ink}>
-              {p.title.length > 17 ? `${p.title.slice(0, 16)}…` : p.title}
-            </text>
-          </g>
-        )
-      })}
-
-      {/* the drawing table — undeveloped ideas rest on it */}
-      <g data-testid="palace-drawing-table">
-        <DrawingTable x={450} y={groundsY + 236} w={300} />
-        {model.ideas.map((idea, i) => {
-          const x = 336 + (i % 4) * 76
-          const y = groundsY + 196 + Math.floor(i / 4) * 4
-          const selected = selectedIdeaId === idea.id
+        {/* loose tasks — standing stones on the open ground */}
+        {model.looseTasks.map((t, i) => {
+          const x = 66 + (i % 3) * 110
+          const y = 44 + Math.floor(i / 3) * 96
           return (
             <g
-              key={idea.id}
-              data-testid={`palace-idea-${idea.id}`}
-              onClick={() => onSelectIdea(idea.id)}
+              key={t.id}
+              data-testid={`palace-loose-task-${t.id}`}
+              onClick={() => onOpenTask(t.id)}
               style={{ cursor: 'pointer' }}
             >
-              <title>{idea.title}</title>
-              <rect
-                x={x - 34}
-                y={y - 12}
-                width={68}
-                height={24}
-                rx={3}
-                fill={selected ? '#f2dfae' : PAL.paper}
-                stroke={selected ? PAL.maeve : PAL.stoneDark}
-                strokeWidth={selected ? 2 : 1}
-                transform={`rotate(${i % 2 ? 2.5 : -2.5} ${x} ${y})`}
+              <title>{t.title}</title>
+              <path
+                d={`M ${x - 17} ${y + 34} C ${x - 19} ${y + 6}, ${x - 8} ${y - 12}, ${x} ${y - 14} C ${x + 9} ${y - 12}, ${x + 18} ${y + 8}, ${x + 16} ${y + 34} Z`}
+                fill={isDoneStatus(t.status) ? '#c9b995' : PAL.stone}
+                stroke={PAL.stoneDark}
               />
-              <text x={x} y={y + 3.5} textAnchor="middle" fontSize={8.6} fill={PAL.ink}>
-                {idea.title.length > 11 ? `${idea.title.slice(0, 10)}…` : idea.title}
+              {wrapTitle(t.title, 13, 2).map((line, li) => (
+                <text key={li} x={x} y={y + 50 + li * 12} textAnchor="middle" fontSize={10} fill={PAL.ink}>
+                  {line}
+                </text>
+              ))}
+            </g>
+          )
+        })}
+
+        {/* the drawing table — undeveloped ideas rest on it */}
+        <g data-testid="palace-drawing-table">
+          <DrawingTable x={560} y={tableY} w={300} />
+          {model.ideas.map((idea, i) => {
+            const x = 446 + (i % 4) * 76
+            const y = tableY - 40 + Math.floor(i / 4) * 4
+            const selected = selectedIdeaId === idea.id
+            return (
+              <g
+                key={idea.id}
+                data-testid={`palace-idea-${idea.id}`}
+                onClick={() => onSelectIdea(idea.id)}
+                style={{ cursor: 'pointer' }}
+              >
+                <title>{idea.title}</title>
+                <rect
+                  x={x - 34}
+                  y={y - 12}
+                  width={68}
+                  height={24}
+                  rx={3}
+                  fill={selected ? '#f2dfae' : PAL.paper}
+                  stroke={selected ? PAL.maeve : PAL.stoneDark}
+                  strokeWidth={selected ? 2 : 1}
+                  transform={`rotate(${i % 2 ? 2.5 : -2.5} ${x} ${y})`}
+                />
+                <text x={x} y={y + 3.5} textAnchor="middle" fontSize={8.6} fill={PAL.ink}>
+                  {idea.title.length > 11 ? `${idea.title.slice(0, 10)}…` : idea.title}
+                </text>
+              </g>
+            )
+          })}
+          <text x={560} y={tableY + 46} textAnchor="middle" fontSize={11} fill={PAL.inkSoft}>
+            the drawing table
+          </text>
+        </g>
+
+        {/* released work at the south gate */}
+        {model.releasedProjects.map((p, i) => {
+          const x = 120 + i * 170
+          const y = stripMainH + 24
+          return (
+            <g
+              key={p.id}
+              data-testid={`palace-released-project-${p.id}`}
+              onClick={() => onOpenProject(p.id)}
+              style={{ cursor: 'pointer' }}
+              opacity={0.75}
+            >
+              <title>{p.title}</title>
+              <rect x={x} y={y + 12} width={80} height={40} fill="#ded2b8" stroke={WALL_LINE} strokeWidth={2} />
+              <path d={`M ${x - 5} ${y + 12} L ${x + 40} ${y - 6} L ${x + 85} ${y + 12} Z`} fill="#a08b62" stroke={PAL.roofDark} />
+              <text x={x + 40} y={y + 68} textAnchor="middle" fontSize={10} fill={PAL.inkSoft}>
+                {p.title.length > 15 ? `${p.title.slice(0, 14)}…` : p.title} · released
               </text>
             </g>
           )
         })}
-        <text x={450} y={groundsY + 282} textAnchor="middle" fontSize={11} fill={PAL.inkSoft}>
-          the drawing table
-        </text>
-      </g>
-
-      {/* released work at the south gate */}
-      {model.releasedProjects.map((p, i) => {
-        const x = 120 + i * 170
-        const y = H - 64
-        return (
-          <g
-            key={p.id}
-            data-testid={`palace-released-project-${p.id}`}
-            onClick={() => onOpenProject(p.id)}
-            style={{ cursor: 'pointer' }}
-            opacity={0.75}
-          >
-            <title>{p.title}</title>
-            <rect x={x} y={y + 12} width={80} height={40} fill="#ded2b8" stroke={WALL_LINE} strokeWidth={2} />
-            <path d={`M ${x - 5} ${y + 12} L ${x + 40} ${y - 6} L ${x + 85} ${y + 12} Z`} fill="#a08b62" stroke={PAL.roofDark} />
-            <text x={x + 40} y={y + 68} textAnchor="middle" fontSize={10} fill={PAL.inkSoft}>
-              {p.title.length > 15 ? `${p.title.slice(0, 14)}…` : p.title} · released
-            </text>
-          </g>
-        )
-      })}
-    </svg>
+      </svg>
+    </div>
   )
 }
 

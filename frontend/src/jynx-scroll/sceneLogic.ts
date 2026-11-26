@@ -20,15 +20,19 @@
  *    (±40 at the rim) and out of the sheet's exclusion rect
  *    [518,366]–[950,862] — 230 rhombs on the wall (146 thick,
  *    84 thin). The counts are pinned by sceneLogic.test.ts.
- *    Each rhomb is DRESSED as the frozen builder dresses it: the
- *    fixture's hollow wooden frame asset (frame-thick.png /
- *    frame-thin.png, byte copies in ./assets) laid onto the rhomb
- *    by the builder's own affine placement (frameTransform), over
- *    the builder's soft depth-reveal bands (depthBands). An
- *    earlier build drew stroked vector outlines instead of the
- *    wooden frames — a substitution the founder caught on device
- *    2026-11-26 ("our wood was sooo good"); the material is the
- *    asset, never a redraw.
+ *    The fabric is DISPLAYED as the frozen builder's own raster:
+ *    assets/scroll-fabric.png is generated from
+ *    build_composite_v4.py's fabric code verbatim (depth bands +
+ *    the hollow wooden frames, keep-masked) by
+ *    sprites/scroll-rebuild/scene-1/gen_fabric.py, and verified
+ *    against the frozen composite (wall-band diff ≈ 0). The view
+ *    lays that one image over the room; the deflation here still
+ *    computes the CELLS the cubbies stand in. Two earlier builds
+ *    substituted their own drawing for the builder's fabric — a
+ *    stroked vector lattice (PR #449), then per-rhomb SVG image
+ *    transforms that iOS painted as a giant overlapping web
+ *    (PR #450) — both caught by the founder on device 2026-11-26.
+ *    The material is the builder's raster, never a redraw.
  *
  *  - CUBBIES: one per top-level item (initiatives + loose items —
  *    shelfTopLevel's face, the bin's scrolls included: Scene 1 has
@@ -233,121 +237,6 @@ export function cellInDiameter(cell: FabricRhomb): number {
   return side * Math.sin(acute)
 }
 
-/* ------------------------------------------------------------------ */
-/* The wooden frames — the frozen fixture's assets, placed as the    */
-/* frozen builder (build_composite_v4.py) places them                */
-/* ------------------------------------------------------------------ */
-
-/** The frame assets in the app bundle are byte copies of the
- *  frozen fixture's frames (sprites/scroll-rebuild/scene-1/
- *  frame-thick.png, frame-thin.png — the founder's skew-corrected
- *  hollow wooden rhombs). Their geometry here is fixture data,
- *  measured off the assets exactly as the builder measures them:
- *  the alpha extremes (L/T/R/B) in each asset's own pixels, in the
- *  builder's cycle order per kind. */
-export const FRAME_IMG = {
-  thick: {
-    w: 971,
-    h: 705,
-    cycle: [
-      { x: 7, y: 356 },
-      { x: 485, y: 6 },
-      { x: 964, y: 356 },
-      { x: 486, y: 699 },
-    ] as Pt[],
-  },
-  thin: {
-    w: 371,
-    h: 1141,
-    cycle: [
-      { x: 185, y: 10 },
-      { x: 366, y: 571 },
-      { x: 185, y: 1132 },
-      { x: 6, y: 572 },
-    ] as Pt[],
-  },
-} as const
-
-function cornerAngle(cs: Pt[], i: number): number {
-  const p = cs[(i + 3) % 4]
-  const q = cs[(i + 1) % 4]
-  const c = cs[i]
-  const v1 = { x: p.x - c.x, y: p.y - c.y }
-  const v2 = { x: q.x - c.x, y: q.y - c.y }
-  const dot = (v1.x * v2.x + v1.y * v2.y) / (Math.hypot(v1.x, v1.y) * Math.hypot(v2.x, v2.y))
-  return (Math.acos(Math.min(1, Math.max(-1, dot))) * 180) / Math.PI
-}
-
-function signedArea(pts: Pt[]): number {
-  let s = 0
-  for (let i = 0; i < 4; i++) {
-    const a = pts[i]
-    const b = pts[(i + 1) % 4]
-    s += a.x * b.y - b.x * a.y
-  }
-  return 0.5 * s
-}
-
-/** The affine that lays a frame asset onto a rhomb, in SVG matrix
- *  terms — a direct port of the frozen builder's placement: the
- *  asset's corner cycle is rotated to the rotation whose first
- *  corner's angle best matches the rhomb's, flipped if the signed
- *  areas disagree, and the affine is solved from corners 0, 1, 3.
- *  Pinned against the builder's own output in sceneLogic.test.ts. */
-export function frameTransform(cell: FabricRhomb): {
-  a: number
-  b: number
-  c: number
-  d: number
-  e: number
-  f: number
-} {
-  const cyc = FRAME_IMG[cell.thick ? 'thick' : 'thin'].cycle
-  const ia = cyc.map((_, i) => cornerAngle(cyc, i))
-  const target = cornerAngle(cell.corners, 0)
-  let start = 0
-  for (let i = 1; i < 4; i++) {
-    if (Math.abs(ia[i] - target) < Math.abs(ia[start] - target)) start = i
-  }
-  let ip = [0, 1, 2, 3].map((k) => cyc[(start + k) % 4])
-  let qp: Pt[] = [...cell.corners]
-  if (Math.sign(signedArea(ip)) !== Math.sign(signedArea(qp))) {
-    ip = [ip[0], ip[3], ip[2], ip[1]]
-    qp = [qp[0], qp[3], qp[2], qp[1]]
-  }
-  // Solve [[x0,y0,1],[x1,y1,1],[x3,y3,1]] · m = q for both axes.
-  const [p0, p1, p3] = [ip[0], ip[1], ip[3]]
-  const det =
-    p0.x * (p1.y - p3.y) - p0.y * (p1.x - p3.x) + (p1.x * p3.y - p3.x * p1.y)
-  const solve = (q0: number, q1: number, q3: number): [number, number, number] => [
-    (q0 * (p1.y - p3.y) - q1 * (p0.y - p3.y) + q3 * (p0.y - p1.y)) / det,
-    (q0 * (p3.x - p1.x) - q1 * (p3.x - p0.x) + q3 * (p1.x - p0.x)) / det,
-    (q0 * (p1.x * p3.y - p3.x * p1.y) - q1 * (p0.x * p3.y - p3.x * p0.y) + q3 * (p0.x * p1.y - p1.x * p0.y)) / det,
-  ]
-  const mx = solve(qp[0].x, qp[1].x, qp[3].x)
-  const my = solve(qp[0].y, qp[1].y, qp[3].y)
-  return { a: mx[0], b: my[0], c: mx[1], d: my[1], e: mx[2], f: my[2] }
-}
-
-/** The composite's depth reveal for one rhomb: the four bands
- *  between the rhomb and its vanishing-point-pulled back, filled
- *  (110,74,40) at the builder's per-edge strengths — upper edges
- *  64/255, lower 88/255, side edges 40/255. (The builder also
- *  strokes the back outline and blurs the layer; the frames carry
- *  the read without it.) */
-export function depthBands(cell: FabricRhomb): { points: Pt[]; opacity: number }[] {
-  const back = cell.corners.map((c) => ({
-    x: VANISHING_POINT.x + (c.x - VANISHING_POINT.x) * DEPTH_SCALE,
-    y: VANISHING_POINT.y + (c.y - VANISHING_POINT.y) * DEPTH_SCALE,
-  }))
-  return cell.corners.map((c, i) => {
-    const j = (i + 1) % 4
-    const midY = (c.y + cell.corners[j].y) / 2
-    const opacity = midY < cell.centre.y - 4 ? 64 / 255 : midY > cell.centre.y + 4 ? 88 / 255 : 40 / 255
-    return { points: [c, cell.corners[j], back[j], back[i]], opacity }
-  })
-}
-
 /** The priority order cells are handed out in: distance from the
  *  sheet ascending, alternating left/right of the sheet's centre
  *  line, thick cells before thin ones within each distance band
@@ -451,25 +340,31 @@ export function assignCubbies(bays: ShelfBay[], rhombs: FabricRhomb[]): CubbyAss
     if (t !== 0) return t
     return `${a.head.kind}:${a.head.id}`.localeCompare(`${b.head.kind}:${b.head.id}`)
   })
-  // Cells are preferred inside the wall band, inset enough that a
-  // standing scroll (sized by its face to the cell) never reaches
-  // the floor or spills past the wall's edges; cells outside the
-  // band remain as the never-drop fallback, in priority order.
+  // Cells inside the wall band — inset far enough that a standing
+  // scroll (sized by its face to the cell, cluster and all) never
+  // reaches the floor or spills past the wall's side edges — are
+  // exhausted first, crowded cells included, before any cell
+  // outside the band is considered. The founder caught a scroll
+  // standing on the floorboards twice (2026-11-26); the band is a
+  // hard preference, not a sort key. Outside cells remain only as
+  // the never-drop last resort.
   const inBand = (c: FabricRhomb) =>
-    c.centre.x >= 150 && c.centre.x <= 1360 && c.centre.y >= 290 && c.centre.y <= 795
+    c.centre.x >= 175 && c.centre.x <= 1330 && c.centre.y >= 290 && c.centre.y <= 780
   const priority = cellPriorityOrder(rhombs)
-  const order = [...priority.filter(inBand), ...priority.filter((c) => !inBand(c))]
+  const inCells = priority.filter(inBand)
+  const outCells = priority.filter((c) => !inBand(c))
   const taken: FabricRhomb[] = []
   const chosen: FabricRhomb[] = []
+  const spaced = (c: FabricRhomb) =>
+    taken.every(
+      (t) => Math.hypot(t.centre.x - c.centre.x, t.centre.y - c.centre.y) >= CUBBY_MIN_SEPARATION,
+    )
   for (let i = 0; i < units.length; i++) {
     const cell =
-      order.find(
-        (c) =>
-          !taken.includes(c) &&
-          taken.every(
-            (t) => Math.hypot(t.centre.x - c.centre.x, t.centre.y - c.centre.y) >= CUBBY_MIN_SEPARATION,
-          ),
-      ) ?? order.find((c) => !taken.includes(c))
+      inCells.find((c) => !taken.includes(c) && spaced(c)) ??
+      inCells.find((c) => !taken.includes(c)) ??
+      outCells.find((c) => !taken.includes(c) && spaced(c)) ??
+      outCells.find((c) => !taken.includes(c))
     if (!cell) break
     taken.push(cell)
     chosen.push(cell)

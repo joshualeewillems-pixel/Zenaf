@@ -134,9 +134,6 @@ import {
   SHEET_RECT,
   assignCubbies,
   buildPenroseFabric,
-  depthBands,
-  frameTransform,
-  FRAME_IMG,
   longPressRoute,
   popupSynopsis,
   scrollKey,
@@ -148,8 +145,7 @@ import {
   type PenroseFabric,
   type TableRow,
 } from './sceneLogic'
-import frameThick from './assets/frame-thick.png'
-import frameThin from './assets/frame-thin.png'
+import scrollFabric from './assets/scroll-fabric.png'
 import scrollGround from './assets/scroll-ground.png'
 import scrollRoom from './assets/scroll-room.png'
 import scrollEnd from './assets/scroll-end.png'
@@ -874,15 +870,22 @@ function RoomScene({
             fillOpacity={0}
             onClick={onDismiss}
           />
-          {/* the shelf fabric — the canonical deflation, each
-              rhomb dressed as the frozen composite dresses it:
-              the soft depth-reveal bands, then the founder's
-              hollow wooden frame asset itself, its centre open
-              to the room's plaster */}
+          {/* the shelf fabric — the frozen builder's own raster
+              (assets/scroll-fabric.png, generated from
+              build_composite_v4.py's fabric code and verified
+              against the frozen composite): the depth reveals and
+              the founder's hollow wooden frames over the room's
+              plaster, as ONE image. Per-rhomb drawing of any kind
+              is a substitution — see sceneLogic's header. */}
           <g clipPath="url(#jynx-fabric-clip)" onClick={onDismiss}>
-            {fabric.rhombs.map((cell, i) => (
-              <FabricCell key={i} cell={cell} />
-            ))}
+            <image
+              data-testid="scene-fabric"
+              href={scrollFabric}
+              x={0}
+              y={0}
+              width={FRAME_W}
+              height={FRAME_H}
+            />
           </g>
           {/* the cubbies — one per top-level item, clusters within;
               clipped to the wall so no scroll ever spills onto the
@@ -955,38 +958,7 @@ function RoomScene({
   )
 }
 
-/** One rhomb of the fabric, dressed as the frozen composite
- *  dresses it: the soft depth-reveal bands behind, then the
- *  founder's hollow WOODEN frame itself — the fixture asset laid
- *  onto the rhomb by the builder's affine (frameTransform), its
- *  centre open to the room's plaster. The material is the asset;
- *  a stroked outline is not the frame. */
-function FabricCell({ cell }: { cell: FabricRhomb }) {
-  const pts = (cs: { x: number; y: number }[]) => cs.map((p) => `${p.x},${p.y}`).join(' ')
-  const t = frameTransform(cell)
-  const img = FRAME_IMG[cell.thick ? 'thick' : 'thin']
-  return (
-    <g>
-      {depthBands(cell).map((band, i) => (
-        <polygon
-          key={i}
-          points={pts(band.points)}
-          fill="#6e4a28"
-          fillOpacity={band.opacity}
-          stroke="none"
-        />
-      ))}
-      <image
-        href={cell.thick ? frameThick : frameThin}
-        x={0}
-        y={0}
-        width={img.w}
-        height={img.h}
-        transform={`matrix(${t.a} ${t.b} ${t.c} ${t.d} ${t.e} ${t.f})`}
-      />
-    </g>
-  )
-}
+
 
 /** A cubby: the head scroll at full cell size in front, its
  *  cluster tucked behind/below it inside the same cell. */

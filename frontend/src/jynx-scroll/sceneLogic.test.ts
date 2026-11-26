@@ -19,8 +19,6 @@ import {
   buildPenroseFabric,
   cellInDiameter,
   clusterChildren,
-  depthBands,
-  frameTransform,
   longPressRoute,
   popupSynopsis,
   scrollKey,
@@ -116,63 +114,7 @@ describe('the Penrose fabric port', () => {
   })
 })
 
-describe('the wooden frames — the fixture material, placed as the builder places it', () => {
-  const rhomb = (corners: FabricRhomb['corners'], thick: boolean): FabricRhomb => ({
-    corners,
-    thick,
-    centre: {
-      x: corners.reduce((s, c) => s + c.x, 0) / 4,
-      y: corners.reduce((s, c) => s + c.y, 0) / 4,
-    },
-  })
-  const side = 59
-  const mk = (deg: number, ox: number, oy: number): FabricRhomb['corners'] => {
-    const e2 = {
-      x: side * Math.cos((deg * Math.PI) / 180),
-      y: side * Math.sin((deg * Math.PI) / 180),
-    }
-    return [
-      { x: ox, y: oy },
-      { x: ox + side, y: oy },
-      { x: ox + side + e2.x, y: oy + e2.y },
-      { x: ox + e2.x, y: oy + e2.y },
-    ]
-  }
-
-  it('frameTransform reproduces the frozen builder’s affine for a thick rhomb', () => {
-    // Expected values computed by build_composite_v4.py's own
-    // placement code for this rhomb — the port must match the
-    // builder, not merely look plausible.
-    const t = frameTransform(rhomb(mk(72, 200, 300), true))
-    expect(t.a).toBeCloseTo(0.0803, 3)
-    expect(t.b).toBeCloseTo(0.0592, 3)
-    expect(t.c).toBeCloseTo(-0.0589, 3)
-    expect(t.d).toBeCloseTo(0.0809, 3)
-    expect(t.e).toBeCloseTo(220.4222, 2)
-    expect(t.f).toBeCloseTo(270.7905, 2)
-  })
-
-  it('frameTransform reproduces the frozen builder’s affine for a thin rhomb', () => {
-    const t = frameTransform(rhomb(mk(36, 900, 300), false))
-    expect(t.a).toBeCloseTo(-0.0316, 3)
-    expect(t.b).toBeCloseTo(0.0962, 3)
-    expect(t.c).toBeCloseTo(-0.0953, 3)
-    expect(t.d).toBeCloseTo(-0.0308, 3)
-    expect(t.e).toBeCloseTo(1013.6825, 2)
-    expect(t.f).toBeCloseTo(317.0197, 2)
-  })
-
-  it('depthBands gives the composite’s four soft reveal bands per rhomb', () => {
-    const cell = rhomb(mk(72, 200, 300), true)
-    const bands = depthBands(cell)
-    expect(bands).toHaveLength(4)
-    for (const band of bands) {
-      expect(band.points).toHaveLength(4)
-      expect(band.opacity).toBeGreaterThan(0)
-      expect(band.opacity).toBeLessThanOrEqual(88 / 255)
-    }
-  })
-
+describe('the cubby ground rules — face-sized scrolls, standing on the wall', () => {
   it('scrollWidthFor sizes by the end face — the disc fills the cell’s inscribed diameter', () => {
     const a = assignCubbies(fixtureShelf(), buildPenroseFabric().rhombs)
     for (const x of a) {
@@ -183,14 +125,39 @@ describe('the wooden frames — the fixture material, placed as the builder plac
     }
   })
 
-  it('assignment keeps cubbies inside the wall band while spaced cells allow', () => {
+  it('assignment keeps cubbies inside the wall band while cells remain there', () => {
     const a = assignCubbies(fixtureShelf(), buildPenroseFabric().rhombs)
     for (const x of a) {
-      expect(x.cell.centre.x).toBeGreaterThanOrEqual(150)
-      expect(x.cell.centre.x).toBeLessThanOrEqual(1360)
+      expect(x.cell.centre.x).toBeGreaterThanOrEqual(175)
+      expect(x.cell.centre.x).toBeLessThanOrEqual(1330)
       expect(x.cell.centre.y).toBeGreaterThanOrEqual(290)
-      expect(x.cell.centre.y).toBeLessThanOrEqual(795)
+      expect(x.cell.centre.y).toBeLessThanOrEqual(780)
     }
+  })
+
+  it('assignment exhausts in-band cells — crowded ones included — before any out-of-band cell', () => {
+    // Three in-band cells, mutually crowded (all within the
+    // separation distance of each other), and two cells outside
+    // the band (above it, below it). Five units: the first three
+    // must take ALL the in-band cells — a crowded in-band cell
+    // beats a free out-of-band one, so no scroll ever stands on
+    // the floor while wall remains.
+    const cell = (x: number, y: number): FabricRhomb => ({
+      corners: [
+        { x: x - 10, y: y - 10 },
+        { x: x + 10, y: y - 10 },
+        { x: x + 10, y: y + 10 },
+        { x: x - 10, y: y + 10 },
+      ],
+      centre: { x, y },
+      thick: true,
+    })
+    const cells = [cell(400, 400), cell(440, 420), cell(480, 400), cell(734, 200), cell(300, 900)]
+    const a = assignCubbies(fixtureShelf(), cells)
+    expect(a).toHaveLength(5)
+    const used = a.map((x) => `${x.cell.centre.x},${x.cell.centre.y}`)
+    expect(used.slice(0, 3).sort()).toEqual(['400,400', '440,420', '480,400'])
+    expect(used.slice(3).sort()).toEqual(['300,900', '734,200'])
   })
 })
 

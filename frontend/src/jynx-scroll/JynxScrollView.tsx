@@ -129,13 +129,14 @@ import {
 } from './scrollLogic'
 import {
   CLUSTER_SHOWN,
-  DEPTH_SCALE,
   FRAME_H,
   FRAME_W,
   SHEET_RECT,
-  VANISHING_POINT,
   assignCubbies,
   buildPenroseFabric,
+  depthBands,
+  frameTransform,
+  FRAME_IMG,
   longPressRoute,
   popupSynopsis,
   scrollKey,
@@ -147,6 +148,8 @@ import {
   type PenroseFabric,
   type TableRow,
 } from './sceneLogic'
+import frameThick from './assets/frame-thick.png'
+import frameThin from './assets/frame-thin.png'
 import scrollGround from './assets/scroll-ground.png'
 import scrollRoom from './assets/scroll-room.png'
 import scrollEnd from './assets/scroll-end.png'
@@ -166,8 +169,6 @@ import stampWave from './assets/wave.png'
 const INK = '#1a1816'
 const WOOD_DARK = '#4a3018'
 const WOOD_DEEP = '#3c2712'
-const FRAME_WOOD = '#7c5a36'
-const FRAME_BACK = 'rgba(100,66,36,0.5)'
 
 /** The founder's ground on its own screen: drawn at its own
  *  aspect (1086×1448), never stretched. The parchment interior —
@@ -874,24 +875,28 @@ function RoomScene({
             onClick={onDismiss}
           />
           {/* the shelf fabric — the canonical deflation, each
-              rhomb a hollow wooden frame with the composite's
-              depth read: a back outline pulled toward the
-              vanishing point, a shaded inner reveal, the room's
-              plaster showing through the open centre */}
+              rhomb dressed as the frozen composite dresses it:
+              the soft depth-reveal bands, then the founder's
+              hollow wooden frame asset itself, its centre open
+              to the room's plaster */}
           <g clipPath="url(#jynx-fabric-clip)" onClick={onDismiss}>
             {fabric.rhombs.map((cell, i) => (
               <FabricCell key={i} cell={cell} />
             ))}
           </g>
-          {/* the cubbies — one per top-level item, clusters within */}
-          {assignments.map((a) => (
-            <Cubby
-              key={scrollKey(a.unit.head)}
-              assignment={a}
-              onTapScroll={onTapScroll}
-              onLongPressScroll={onLongPressScroll}
-            />
-          ))}
+          {/* the cubbies — one per top-level item, clusters within;
+              clipped to the wall so no scroll ever spills onto the
+              room's floor or across the sheet */}
+          <g clipPath="url(#jynx-fabric-clip)">
+            {assignments.map((a) => (
+              <Cubby
+                key={scrollKey(a.unit.head)}
+                assignment={a}
+                onTapScroll={onTapScroll}
+                onLongPressScroll={onLongPressScroll}
+              />
+            ))}
+          </g>
           {/* the centre sheet — the founder's ground standing
               blank, or the open scroll's sheet in its place */}
           {open ? (
@@ -950,20 +955,35 @@ function RoomScene({
   )
 }
 
-/** One rhomb of the fabric: a back outline pulled toward the
- *  vanishing point (the composite's depth reveal) and the wooden
- *  frame itself — a single border, its centre open to the room's
- *  plaster. */
+/** One rhomb of the fabric, dressed as the frozen composite
+ *  dresses it: the soft depth-reveal bands behind, then the
+ *  founder's hollow WOODEN frame itself — the fixture asset laid
+ *  onto the rhomb by the builder's affine (frameTransform), its
+ *  centre open to the room's plaster. The material is the asset;
+ *  a stroked outline is not the frame. */
 function FabricCell({ cell }: { cell: FabricRhomb }) {
   const pts = (cs: { x: number; y: number }[]) => cs.map((p) => `${p.x},${p.y}`).join(' ')
-  const back = cell.corners.map((c) => ({
-    x: VANISHING_POINT.x + (c.x - VANISHING_POINT.x) * DEPTH_SCALE,
-    y: VANISHING_POINT.y + (c.y - VANISHING_POINT.y) * DEPTH_SCALE,
-  }))
+  const t = frameTransform(cell)
+  const img = FRAME_IMG[cell.thick ? 'thick' : 'thin']
   return (
     <g>
-      <polygon points={pts(back)} fill="none" stroke={FRAME_BACK} strokeWidth={3} />
-      <polygon points={pts(cell.corners)} fill="rgba(0,0,0,0)" stroke={FRAME_WOOD} strokeWidth={6} />
+      {depthBands(cell).map((band, i) => (
+        <polygon
+          key={i}
+          points={pts(band.points)}
+          fill="#6e4a28"
+          fillOpacity={band.opacity}
+          stroke="none"
+        />
+      ))}
+      <image
+        href={cell.thick ? frameThick : frameThin}
+        x={0}
+        y={0}
+        width={img.w}
+        height={img.h}
+        transform={`matrix(${t.a} ${t.b} ${t.c} ${t.d} ${t.e} ${t.f})`}
+      />
     </g>
   )
 }
@@ -981,11 +1001,11 @@ function Cubby({
 }) {
   const { unit, cell, side } = assignment
   const w = scrollWidthFor(unit.head, cell)
-  const childW = w * 0.55
+  const childW = w * 0.5
   const offsets = [
-    { dx: -0.3 * w, dy: 0.3 * w },
-    { dx: 0.3 * w, dy: 0.34 * w },
-    { dx: 0, dy: 0.5 * w },
+    { dx: -0.26 * w, dy: 0.16 * w },
+    { dx: 0.26 * w, dy: 0.18 * w },
+    { dx: 0, dy: 0.3 * w },
   ]
   const shown = unit.cluster.slice(0, CLUSTER_SHOWN)
   return (

@@ -17,12 +17,17 @@ import {
   SHEET_CENTRE,
   assignCubbies,
   buildPenroseFabric,
+  cellInDiameter,
   clusterChildren,
+  depthBands,
+  frameTransform,
   longPressRoute,
   popupSynopsis,
   scrollKey,
+  scrollWidthFor,
   tableRows,
   trailForScroll,
+  type FabricRhomb,
 } from './sceneLogic'
 
 const base = {
@@ -107,6 +112,84 @@ describe('the Penrose fabric port', () => {
       const inExcl = (x: number, y: number) => x >= 518 && x <= 950 && y >= 366 && y <= 862
       expect(inExcl(r.centre.x, r.centre.y)).toBe(false)
       for (const c of r.corners) expect(inExcl(c.x, c.y)).toBe(false)
+    }
+  })
+})
+
+describe('the wooden frames — the fixture material, placed as the builder places it', () => {
+  const rhomb = (corners: FabricRhomb['corners'], thick: boolean): FabricRhomb => ({
+    corners,
+    thick,
+    centre: {
+      x: corners.reduce((s, c) => s + c.x, 0) / 4,
+      y: corners.reduce((s, c) => s + c.y, 0) / 4,
+    },
+  })
+  const side = 59
+  const mk = (deg: number, ox: number, oy: number): FabricRhomb['corners'] => {
+    const e2 = {
+      x: side * Math.cos((deg * Math.PI) / 180),
+      y: side * Math.sin((deg * Math.PI) / 180),
+    }
+    return [
+      { x: ox, y: oy },
+      { x: ox + side, y: oy },
+      { x: ox + side + e2.x, y: oy + e2.y },
+      { x: ox + e2.x, y: oy + e2.y },
+    ]
+  }
+
+  it('frameTransform reproduces the frozen builder’s affine for a thick rhomb', () => {
+    // Expected values computed by build_composite_v4.py's own
+    // placement code for this rhomb — the port must match the
+    // builder, not merely look plausible.
+    const t = frameTransform(rhomb(mk(72, 200, 300), true))
+    expect(t.a).toBeCloseTo(0.0803, 3)
+    expect(t.b).toBeCloseTo(0.0592, 3)
+    expect(t.c).toBeCloseTo(-0.0589, 3)
+    expect(t.d).toBeCloseTo(0.0809, 3)
+    expect(t.e).toBeCloseTo(220.4222, 2)
+    expect(t.f).toBeCloseTo(270.7905, 2)
+  })
+
+  it('frameTransform reproduces the frozen builder’s affine for a thin rhomb', () => {
+    const t = frameTransform(rhomb(mk(36, 900, 300), false))
+    expect(t.a).toBeCloseTo(-0.0316, 3)
+    expect(t.b).toBeCloseTo(0.0962, 3)
+    expect(t.c).toBeCloseTo(-0.0953, 3)
+    expect(t.d).toBeCloseTo(-0.0308, 3)
+    expect(t.e).toBeCloseTo(1013.6825, 2)
+    expect(t.f).toBeCloseTo(317.0197, 2)
+  })
+
+  it('depthBands gives the composite’s four soft reveal bands per rhomb', () => {
+    const cell = rhomb(mk(72, 200, 300), true)
+    const bands = depthBands(cell)
+    expect(bands).toHaveLength(4)
+    for (const band of bands) {
+      expect(band.points).toHaveLength(4)
+      expect(band.opacity).toBeGreaterThan(0)
+      expect(band.opacity).toBeLessThanOrEqual(88 / 255)
+    }
+  })
+
+  it('scrollWidthFor sizes by the end face — the disc fills the cell’s inscribed diameter', () => {
+    const a = assignCubbies(fixtureShelf(), buildPenroseFabric().rhombs)
+    for (const x of a) {
+      expect(scrollWidthFor(x.unit.head, x.cell)).toBeCloseTo(
+        (cellInDiameter(x.cell) * 0.98) / 0.6,
+        6,
+      )
+    }
+  })
+
+  it('assignment keeps cubbies inside the wall band while spaced cells allow', () => {
+    const a = assignCubbies(fixtureShelf(), buildPenroseFabric().rhombs)
+    for (const x of a) {
+      expect(x.cell.centre.x).toBeGreaterThanOrEqual(150)
+      expect(x.cell.centre.x).toBeLessThanOrEqual(1360)
+      expect(x.cell.centre.y).toBeGreaterThanOrEqual(290)
+      expect(x.cell.centre.y).toBeLessThanOrEqual(795)
     }
   })
 })

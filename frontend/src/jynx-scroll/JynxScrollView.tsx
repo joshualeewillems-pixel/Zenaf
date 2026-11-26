@@ -23,23 +23,28 @@
  * ring band on the end face in the recorded cord colour — a
  * Blocked scroll wears Jynx's violet. NO text stands on any
  * scroll or in the room: no heading, no lettered names, no
- * explanatory copy (the surface rule). Names live in the popup
- * and the chat, never on the parchment.
+ * explanatory copy (the surface rule). The only words the room
+ * carries are the ones a tap loads onto the sheet, and the
+ * talk in the chat beside it.
  *
- * Taps and presses (founder rulings, 2026-11-25):
- *  - TAP a scroll: a small popup stands in the room with the
- *    item's name and a short synopsis composed from recorded
- *    fields only, and the item is staged TENTATIVELY in the chat
- *    through the staged-chip seam — the tap writes nothing
- *    anywhere; tapping elsewhere dismisses both silently.
- *    Tapping the popup's body opens the item on the centre sheet
- *    (the open/unroll path below, walked through its parents so
- *    the back step lands where it came from).
+ * Taps and presses (founder rulings, 2026-11-25; the pop-up and
+ * the button lists removed, the Fox set over the room,
+ * 2026-11-26):
+ *  - TAP a scroll: the item LOADS ON THE SHEET — in the room,
+ *    the centre sheet opens it (walked through its parents, so
+ *    the back step lands where it came from) and its name and
+ *    recorded synopsis stand as ink over the parchment beside
+ *    its drawings; on the worktable, the hanging sheet takes
+ *    the load the same way. The tap ALSO stages the item
+ *    TENTATIVELY in the chat through the staged-chip seam —
+ *    the tap writes nothing anywhere; tapping elsewhere sets
+ *    the staging down silently, and the sheet's load stands
+ *    until another scroll is tapped or the visitor steps back.
  *  - LONG-PRESS a scroll with children: the WORKTABLE screen —
- *    its children standing end-on along the table, each with its
- *    own cluster; the same tap/popup rules; a back chevron (no
- *    prose) returns to the room. Long-press on a leaf opens it
- *    on the sheet directly.
+ *    stage 2, the founder's wall and desk, its children standing
+ *    as task piles on the desk; a back chevron (no prose)
+ *    returns to the room. Long-press on a leaf is its tap: it
+ *    loads on the sheet.
  *
  * The centre sheet is the first build's sheet, unchanged: the
  * founder's scroll ground (assets/scroll-ground.png, byte-
@@ -107,7 +112,15 @@
  * (maverick). No separate chat engine. Jynx takes they/them in
  * every reference on this surface.
  */
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react'
 import CouncilChat from '../chat/CouncilChat'
 import SplitShell from '../components/SplitShell'
 import { fetchScrollDrawings, fetchScrollEntities, type ScrollEntities } from './scrollApi'
@@ -117,7 +130,6 @@ import {
   drawingDurationMs,
   flattenShelf,
   markProgressAt,
-  scrollChildren,
   sheetLayout,
   JYNX_PURPLE,
   type ScrollDrawing,
@@ -132,26 +144,40 @@ import {
   FRAME_H,
   FRAME_W,
   SHEET_RECT,
+  TABLE_DESK,
+  TABLE_FABRIC,
+  TABLE_FABRIC_CUTS,
+  TABLE_FABRIC_FIELD,
+  TABLE_FRAME_H,
+  TABLE_FRAME_W,
+  TABLE_SHEET,
+  TABLE_WINDOW,
+  TASK_SCROLL_H,
+  TASK_SCROLL_W,
   assignCubbies,
   buildPenroseFabric,
   longPressRoute,
-  popupSynopsis,
   scrollKey,
   scrollPlacementFor,
+  sheetSynopsis,
   tableRows,
+  taskPileLayout,
   trailForScroll,
   type CubbyAssignment,
   type FabricRhomb,
   type PenroseFabric,
   type TableRow,
 } from './sceneLogic'
+import maverickLogo from '../assets/seats/maverick-logo.png'
+import scrollDesk from './assets/scroll-desk.png'
 import scrollFabric from './assets/scroll-fabric.png'
 import scrollRoomDark from './assets/scroll-room-dark.png'
 import scrollGround from './assets/scroll-ground.png'
 import scrollRoom from './assets/scroll-room.png'
 import scrollEnd from './assets/scroll-end.png'
 import scrollEndRight from './assets/scroll-end-right.png'
-import scrollTable from './assets/scroll-table.png'
+import scrollTask from './assets/scroll-task.png'
+import scrollWall2 from './assets/scroll-wall2.jpg'
 import stampArc from './assets/arc.png'
 import stampCaret from './assets/caret.png'
 import stampCrescent from './assets/crescent.png'
@@ -218,14 +244,6 @@ function prefersReducedMotion(): boolean {
   }
 }
 
-interface StagedAnchor {
-  /** Anchor point as percentages of the scene frame. */
-  xPct: number
-  yPct: number
-  /** Place the popup below the anchor (anchors near the top). */
-  below: boolean
-}
-
 export default function JynxScrollView() {
   const [entities, setEntities] = useState<ScrollEntities | null>(null)
   const [drawings, setDrawings] = useState<ScrollDrawing[]>([])
@@ -241,12 +259,19 @@ export default function JynxScrollView() {
   const [focusOverride, setFocusOverride] = useState<number | null>(null)
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null)
   /** The tentatively staged scroll (a tap): its key, resolved
-   *  against the current shelf, and where its popup stands. The
-   *  staging is client-side state alone — nothing is written by
-   *  a tap, and it leaves this surface only inside a turn the
-   *  visitor actually sends. */
+   *  against the current shelf. The staging is client-side state
+   *  alone — nothing is written by a tap, and it leaves this
+   *  surface only inside a turn the visitor actually sends. */
   const [stagedKey, setStagedKey] = useState<string | null>(null)
-  const [stagedAnchor, setStagedAnchor] = useState<StagedAnchor | null>(null)
+  /** The worktable's sheet load: the tapped child's own drawings,
+   *  read from its conversation as the tap lands and keyed to the
+   *  scroll they belong to. A failed read leaves the hanging
+   *  sheet carrying the name and synopsis alone. */
+  const [tableLoad, setTableLoad] = useState<{
+    key: string
+    drawings: ScrollDrawing[]
+  } | null>(null)
+  const tableLoadKeyRef = useRef<string | null>(null)
   /** The scroll whose children stand on the worktable, by key —
    *  or null, standing in the room. */
   const [tableKey, setTableKey] = useState<string | null>(null)
@@ -349,10 +374,6 @@ export default function JynxScrollView() {
   )
   const openKey = openTrail[openTrail.length - 1] ?? null
   const open = byKey(openKey)
-  const openChildren = useMemo(
-    () => (open ? scrollChildren(shelf, open) : []),
-    [shelf, open],
-  )
   const staged = byKey(stagedKey)
   const tableParent = byKey(tableKey)
   const tableRowList = useMemo(
@@ -410,11 +431,14 @@ export default function JynxScrollView() {
 
   /** Setting the staged subject down — from the chat's chip, or
    *  by tapping elsewhere — discards whichever staging stands,
-   *  silently. Nothing was written; nothing is unwritten. */
+   *  silently. Nothing was written; nothing is unwritten. The
+   *  worktable's sheet load is the staging's face there, and it
+   *  is set down with it. */
   const clearStaging = useCallback(() => {
     setSelectedDrawingId(null)
     setStagedKey(null)
-    setStagedAnchor(null)
+    tableLoadKeyRef.current = null
+    setTableLoad(null)
   }, [])
 
   // Opening a scroll (or stepping back to one) re-reads its feed,
@@ -513,43 +537,74 @@ export default function JynxScrollView() {
   /** Opening a scroll on the centre sheet, walked through its
    *  parents: the trail deepens from the shelf, so the back step
    *  returns through the parent it came from. The place along
-   *  the new sheet starts at rest, no drawing is the subject, and
-   *  any staging is spent. */
+   *  the new sheet starts at rest, and no drawing is the subject. */
   const openOnSheet = useCallback(
     (scroll: ShelfScroll) => {
       setOpenTrail(trailForScroll(shelf, scroll))
       setFocusOverride(null)
       setSelectedDrawingId(null)
-      setStagedKey(null)
-      setStagedAnchor(null)
       setTableKey(null)
     },
     [shelf],
   )
 
-  /** A tap on a scroll: its popup stands at the tap's anchor and
-   *  the scroll is staged tentatively in the chat. Nothing is
-   *  written — the tap's whole effect is this state. A staged
-   *  drawing is replaced silently (one staged subject at a time). */
-  const tapScroll = useCallback((scroll: ShelfScroll, anchor: StagedAnchor) => {
-    setSelectedDrawingId(null)
-    setStagedKey(scrollKey(scroll))
-    setStagedAnchor(anchor)
-  }, [])
+  /** A tap on a scroll loads it on the sheet and stages it
+   *  tentatively in the chat (founder, 2026-11-26: no pop-up, no
+   *  button lists — the data loads on the scroll). In the room,
+   *  the load IS the open scroll: the centre sheet opens it, its
+   *  name and synopsis standing as ink over the parchment beside
+   *  its drawings. On the worktable, the hanging sheet takes the
+   *  load — the name, the synopsis, and the child's own drawings,
+   *  read from its conversation as the tap lands. Nothing is
+   *  written by a tap: the staging is client-side state alone,
+   *  and the sheet's load is replaced by the next tap. A staged
+   *  drawing is replaced silently (one staged subject at a time).
+   *  Tapping the scroll already open only re-stages it — its
+   *  place along the sheet is not disturbed. */
+  const tapScroll = useCallback(
+    (scroll: ShelfScroll) => {
+      const key = scrollKey(scroll)
+      setSelectedDrawingId(null)
+      if (tableKey) {
+        setStagedKey(key)
+        tableLoadKeyRef.current = key
+        setTableLoad({ key, drawings: [] })
+        const convo = `jynx-scroll:${scroll.kind}:${scroll.id}`
+        void fetchScrollDrawings(convo)
+          .then((draws) => {
+            if (tableLoadKeyRef.current !== key) return
+            setTableLoad({
+              key,
+              drawings: drawingsForConversation(draws, convo),
+            })
+          })
+          .catch(() => {
+            /* the sheet keeps the name and synopsis alone */
+          })
+        return
+      }
+      if (key !== openKey) openOnSheet(scroll)
+      setStagedKey(key)
+    },
+    [tableKey, openKey, openOnSheet],
+  )
 
   /** A long-press: a scroll with children opens the worktable
-   *  standing them; a leaf opens on the sheet directly. */
+   *  standing them as piles; a leaf's long-press is its tap — it
+   *  loads on the sheet. */
   const longPressScroll = useCallback(
     (scroll: ShelfScroll) => {
       if (longPressRoute(shelf, scroll) === 'table') {
+        setSelectedDrawingId(null)
         setStagedKey(null)
-        setStagedAnchor(null)
+        tableLoadKeyRef.current = null
+        setTableLoad(null)
         setTableKey(scrollKey(scroll))
       } else {
-        openOnSheet(scroll)
+        tapScroll(scroll)
       }
     },
-    [shelf, openOnSheet],
+    [shelf, tapScroll],
   )
 
   /** One step back: from the table to the room; in the room, to
@@ -558,23 +613,14 @@ export default function JynxScrollView() {
     if (tableKey) {
       setTableKey(null)
       setStagedKey(null)
-      setStagedAnchor(null)
+      tableLoadKeyRef.current = null
+      setTableLoad(null)
       return
     }
     setOpenTrail((trail) => trail.slice(0, -1))
     setFocusOverride(null)
     setSelectedDrawingId(null)
   }, [tableKey])
-
-  /** Opening a child from the open scroll's screen: the trail
-   *  deepens, so the back step returns to this parent. */
-  const openChild = useCallback((scroll: ShelfScroll) => {
-    setOpenTrail((trail) => [...trail, scrollKey(scroll)])
-    setFocusOverride(null)
-    setSelectedDrawingId(null)
-    setStagedKey(null)
-    setStagedAnchor(null)
-  }, [])
 
   /** A turn just landed in the conversation beside the scroll.
    *  CouncilChat fires onTurnSent on its success arms only, after
@@ -617,7 +663,6 @@ export default function JynxScrollView() {
   const handleSelectDrawing = useCallback(
     (drawing: ScrollDrawing | null) => {
       setStagedKey(null)
-      setStagedAnchor(null)
       setSelectedDrawingId((prev) =>
         drawing === null || drawing.id === prev ? null : drawing.id,
       )
@@ -673,6 +718,18 @@ export default function JynxScrollView() {
               <TableScene
                 parent={tableParent}
                 rows={tableRowList}
+                load={
+                  staged
+                    ? {
+                        scroll: staged,
+                        lines: sheetSynopsis(shelf, staged),
+                        drawings:
+                          tableLoad && tableLoad.key === scrollKey(staged)
+                            ? tableLoad.drawings
+                            : [],
+                      }
+                    : null
+                }
                 onTapScroll={tapScroll}
                 onLongPressScroll={longPressScroll}
                 onDismiss={clearStaging}
@@ -691,38 +748,10 @@ export default function JynxScrollView() {
                 onTapScroll={tapScroll}
                 onLongPressScroll={longPressScroll}
                 onDismiss={clearStaging}
+                sheetTitle={open ? open.title : null}
+                sheetLines={open ? sheetSynopsis(shelf, open) : []}
               />
             )}
-            {staged && stagedAnchor ? (
-              <div
-                data-testid="scroll-popup"
-                role="button"
-                tabIndex={0}
-                aria-label={`Open ${staged.title} on the sheet`}
-                className="absolute z-10 w-60 max-w-[80%] cursor-pointer rounded-xl border border-[#b09a6d] bg-[#f7efdb] p-3 shadow-xl"
-                style={{
-                  left: `${stagedAnchor.xPct}%`,
-                  top: `${stagedAnchor.yPct}%`,
-                  transform: stagedAnchor.below
-                    ? 'translate(-50%, 18px)'
-                    : 'translate(-50%, calc(-100% - 18px))',
-                }}
-                onClick={() => openOnSheet(staged)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    openOnSheet(staged)
-                  }
-                }}
-              >
-                <p className="text-sm font-semibold text-[#3a2c1c]">{staged.title}</p>
-                {popupSynopsis(shelf, staged).map((line) => (
-                  <p key={line} className="mt-0.5 text-xs text-[#6b5636]">
-                    {line}
-                  </p>
-                ))}
-              </div>
-            ) : null}
           </div>
 
           {/* roll controls — the sheet rolls from the screen's
@@ -753,26 +782,6 @@ export default function JynxScrollView() {
             </div>
           ) : null}
 
-          {/* the open scroll's children — scrolls of their own,
-              standing beneath the room (never on the parchment) */}
-          {!tableParent && open && openChildren.length > 0 ? (
-            <div className="flex flex-wrap gap-2" data-testid="scroll-children">
-              {openChildren.map((child) => (
-                <button
-                  key={scrollKey(child)}
-                  type="button"
-                  data-child-scroll={scrollKey(child)}
-                  onClick={() => openChild(child)}
-                  className="min-h-[44px] px-4 rounded-full bg-[#efe6cc] text-[#3a2c1c] border border-[#b09a6d] text-sm font-medium shadow-sm"
-                >
-                  <span className="mr-2 text-[0.65rem] uppercase tracking-[0.14em] opacity-70">
-                    {child.kind}
-                  </span>
-                  {child.title}
-                </button>
-              ))}
-            </div>
-          ) : null}
         </div>
       }
       right={
@@ -820,6 +829,8 @@ function RoomScene({
   onTapScroll,
   onLongPressScroll,
   onDismiss,
+  sheetTitle,
+  sheetLines,
 }: {
   fabric: PenroseFabric
   assignments: CubbyAssignment[]
@@ -830,15 +841,17 @@ function RoomScene({
   selectedDrawingId: string | null
   onSelectDrawing: (drawing: ScrollDrawing | null) => void
   onRoll: (delta: number) => void
-  onTapScroll: (scroll: ShelfScroll, anchor: StagedAnchor) => void
+  onTapScroll: (scroll: ShelfScroll) => void
   onLongPressScroll: (scroll: ShelfScroll) => void
   onDismiss: () => void
+  sheetTitle: string | null
+  sheetLines: string[]
 }) {
   const drawingCount = layout.bands.length - 1
   const focus = layout.focus
   return (
     <section aria-label="Jynx — the Scroll, Scene 1">
-      <div className="rounded-2xl overflow-hidden border border-[#4a3018]/70 shadow-lg">
+      <div className="relative [container-type:inline-size] rounded-2xl overflow-hidden border border-[#4a3018]/70 shadow-lg">
         <svg
           viewBox={`0 0 ${FRAME_W} ${FRAME_H}`}
           className="w-full block"
@@ -969,9 +982,133 @@ function RoomScene({
             <image href={scrollRoom} x={0} y={0} width={FRAME_W} height={FRAME_H} />
           </g>
         </svg>
+        {/* the load on the centre sheet: the open scroll's name
+            and recorded synopsis as ink over the parchment —
+            plain positioned DOM, never SVG text, and it takes
+            no taps (the sheet's own surfaces work beneath it) */}
+        {sheetTitle ? (
+          <SheetLoadText
+            title={sheetTitle}
+            lines={sheetLines}
+            style={{ left: '39.16%', top: '41.99%', width: '17.5%', height: '37.5%' }}
+          />
+        ) : null}
+        <FoxMedallion leftPct={50} topPct={18.75} sizePct={6} />
       </div>
     </section>
   )
+}
+
+/** A sheet load's words: an item's name and its recorded
+ *  synopsis lines, centred as ink over the parchment interior.
+ *  DOM, not SVG — the sheet itself stays text-free — sized in
+ *  container units so the ink scales with the room. */
+function SheetLoadText({
+  title,
+  lines,
+  style,
+}: {
+  title: string
+  lines: string[]
+  style: CSSProperties
+}) {
+  return (
+    <div
+      data-testid="sheet-load"
+      className="pointer-events-none absolute z-10 flex flex-col items-center overflow-hidden text-center"
+      style={{ padding: '1cqw 0.6cqw 0', ...style }}
+    >
+      <p className="font-semibold leading-snug" style={{ color: INK, fontSize: '1.9cqw' }}>
+        {title}
+      </p>
+      {lines.map((line) => (
+        <p
+          key={line}
+          className="leading-snug"
+          style={{ color: '#5a4630', fontSize: '1.45cqw', marginTop: '0.4cqw' }}
+        >
+          {line}
+        </p>
+      ))}
+    </div>
+  )
+}
+
+/** The Fox over the room (founder, 2026-11-26): Jynx's own
+ *  logo — the app's seat mark for the maverick — as a round
+ *  medallion at the top centre of the room, on both screens.
+ *  A presence, not a control: it takes no taps. */
+function FoxMedallion({
+  leftPct,
+  topPct,
+  sizePct,
+}: {
+  leftPct: number
+  topPct: number
+  sizePct: number
+}) {
+  return (
+    <div
+      data-testid="fox-medallion"
+      aria-hidden="true"
+      className="pointer-events-none absolute z-10 overflow-hidden rounded-full shadow-md"
+      style={{
+        left: `${leftPct}%`,
+        top: `${topPct}%`,
+        width: `${sizePct}%`,
+        aspectRatio: '1',
+        transform: 'translate(-50%, -50%)',
+      }}
+    >
+      <img src={maverickLogo} alt="" className="block h-full w-full object-cover" />
+    </div>
+  )
+}
+
+/** The press discipline every scroll on either screen shares:
+ *  a quick release is a tap; holding past the long-press mark
+ *  fires the long-press and swallows the trailing click, so a
+ *  press never becomes a tap on its way up. */
+function usePressHandlers(onTap: () => void, onLongPress: () => void) {
+  const [pressing, setPressing] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const firedRef = useRef(false)
+  const clearTimer = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+  }
+  useEffect(() => clearTimer, [])
+  const handlers = {
+    onPointerDown: () => {
+      firedRef.current = false
+      setPressing(true)
+      clearTimer()
+      timerRef.current = setTimeout(() => {
+        firedRef.current = true
+        setPressing(false)
+        onLongPress()
+      }, LONG_PRESS_MS)
+    },
+    onPointerUp: () => {
+      clearTimer()
+      setPressing(false)
+    },
+    onPointerLeave: () => {
+      clearTimer()
+      setPressing(false)
+    },
+    onClick: (e: { stopPropagation: () => void }) => {
+      e.stopPropagation()
+      if (firedRef.current) {
+        firedRef.current = false
+        return
+      }
+      onTap()
+    },
+  }
+  return { pressing, handlers }
 }
 
 
@@ -984,7 +1121,7 @@ function Cubby({
   onLongPressScroll,
 }: {
   assignment: CubbyAssignment
-  onTapScroll: (scroll: ShelfScroll, anchor: StagedAnchor) => void
+  onTapScroll: (scroll: ShelfScroll) => void
   onLongPressScroll: (scroll: ShelfScroll) => void
 }) {
   const { unit, cell, side } = assignment
@@ -1031,90 +1168,232 @@ function Cubby({
 }
 
 /* ================================================================== */
-/* The worktable — a long-press away                                   */
+/* Stage 2 — the worktable, a long-press away                          */
 /* ================================================================== */
 
-/** The table screen: the long-pressed scroll's children standing
- *  end-on along the worktable (the founder's table scene), each
- *  with its own cluster tucked behind it. The flip follows the
- *  table half, as the room's flip follows the sheet. */
+/** The table screen (stage 2, study v12): the founder's wall
+ *  photo as the room, the shelf fabric across its wall at the
+ *  same stopping points as Scene 1, our sheet hanging over the
+ *  pine scroll on the ladder, and the founder's desk low across
+ *  the frame — the long-pressed scroll's children standing on
+ *  it as task piles. The scene renders through the founder's
+ *  tighter window onto the photo's frame (TABLE_WINDOW): the
+ *  composition never moves, only the crop does. A tap on a pile
+ *  scroll loads it on the hanging sheet — its name and synopsis
+ *  as ink, its own drawings standing beneath the words — and
+ *  stages it in the chat; the sheet's foot passes behind the
+ *  desk, exactly as the study composes it. */
 function TableScene({
   parent,
   rows,
+  load,
   onTapScroll,
   onLongPressScroll,
   onDismiss,
 }: {
   parent: ShelfScroll
   rows: TableRow[]
-  onTapScroll: (scroll: ShelfScroll, anchor: StagedAnchor) => void
+  load: {
+    scroll: ShelfScroll
+    lines: string[]
+    drawings: ScrollDrawing[]
+  } | null
+  onTapScroll: (scroll: ShelfScroll) => void
   onLongPressScroll: (scroll: ShelfScroll) => void
   onDismiss: () => void
 }) {
-  const n = rows.length
-  const y = 505
-  const xFor = (i: number) => (n <= 1 ? FRAME_W / 2 : 250 + (i * (FRAME_W - 500)) / (n - 1))
+  const placements = taskPileLayout(rows.length)
+  const interior = {
+    x: TABLE_SHEET.x + INTERIOR.x * TABLE_SHEET.w,
+    y: TABLE_SHEET.y + INTERIOR.y * TABLE_SHEET.h,
+    w: INTERIOR.w * TABLE_SHEET.w,
+    h: INTERIOR.h * TABLE_SHEET.h,
+  }
+  const fabricClip =
+    `M ${TABLE_FABRIC_FIELD.x} ${TABLE_FABRIC_FIELD.y} ` +
+    `H ${TABLE_FABRIC_FIELD.x + TABLE_FABRIC_FIELD.w} ` +
+    `V ${TABLE_FABRIC_FIELD.y + TABLE_FABRIC_FIELD.h} ` +
+    `H ${TABLE_FABRIC_FIELD.x} Z ` +
+    TABLE_FABRIC_CUTS.map(
+      (c) => `M ${c.x} ${c.y} H ${c.x + c.w} V ${c.y + c.h} H ${c.x} Z`,
+    ).join(' ')
   return (
-    <section aria-label={`The worktable of ${parent.title}`}>
-      <div className="rounded-2xl overflow-hidden border border-[#4a3018]/70 shadow-lg">
+    <section
+      aria-label={`The worktable of ${parent.title}`}
+      data-table-parent={scrollKey(parent)}
+    >
+      <div className="relative [container-type:inline-size] rounded-2xl overflow-hidden border border-[#4a3018]/70 shadow-lg">
         <svg
-          viewBox={`0 0 ${FRAME_W} ${FRAME_H}`}
+          viewBox={`${TABLE_WINDOW.x} ${TABLE_WINDOW.y} ${TABLE_WINDOW.w} ${TABLE_WINDOW.h}`}
           className="w-full block"
           role="img"
-          aria-label="A worktable in the sunlit room, scrolls standing along it"
+          aria-label="The same room, closer: the shelf wall, our scroll hanging on the ladder, and the worktable with its piles of scrolls"
           data-testid="worktable"
         >
-          <image href={scrollTable} x={0} y={0} width={FRAME_W} height={FRAME_H} />
+          <defs>
+            <clipPath id="jynx-stage2-fabric-clip">
+              <path d={fabricClip} clipRule="evenodd" />
+            </clipPath>
+            <clipPath id="jynx-stage2-sheet-clip">
+              <rect x={interior.x} y={interior.y} width={interior.w} height={interior.h} />
+            </clipPath>
+          </defs>
+          <image href={scrollWall2} x={0} y={0} width={TABLE_FRAME_W} height={TABLE_FRAME_H} />
+          {/* tapping the room's bare ground sets the staging down */}
           <rect
             data-testid="table-background"
             x={0}
             y={0}
-            width={FRAME_W}
-            height={FRAME_H}
+            width={TABLE_FRAME_W}
+            height={TABLE_FRAME_H}
             fill="#ffffff"
             fillOpacity={0}
             onClick={onDismiss}
           />
-          {rows.map((row, i) => {
-            const cx = xFor(i)
-            const side = cx < FRAME_W / 2 ? ('left' as const) : ('right' as const)
-            const w = 185
-            const childW = w * 0.55
-            const offsets = [
-              { dx: -0.34 * w, dy: 26 },
-              { dx: 0.34 * w, dy: 30 },
-              { dx: 0, dy: 48 },
-            ]
-            return (
-              <g key={scrollKey(row.scroll)} data-table-row={scrollKey(row.scroll)}>
-                {row.cluster.map((child, j) => (
-                  <SceneScroll
-                    key={scrollKey(child)}
-                    scroll={child}
-                    cx={cx + offsets[j].dx}
-                    cy={y - 44 + offsets[j].dy}
-                    width={childW}
-                    side={side}
-                    cluster
-                    onTapScroll={onTapScroll}
-                    onLongPressScroll={onLongPressScroll}
-                  />
-                ))}
-                <SceneScroll
-                  scroll={row.scroll}
-                  cx={cx}
-                  cy={y}
-                  width={w}
-                  side={side}
-                  onTapScroll={onTapScroll}
-                  onLongPressScroll={onLongPressScroll}
-                />
-              </g>
-            )
-          })}
+          {/* the shelf fabric — Scene 1's own raster at cover
+              scale over this wall's field, cut around the
+              hanging sheet and the floor props (sceneLogic) */}
+          <g clipPath="url(#jynx-stage2-fabric-clip)" onClick={onDismiss}>
+            <image
+              data-testid="stage2-fabric"
+              href={scrollFabric}
+              x={TABLE_FABRIC.x}
+              y={TABLE_FABRIC.y}
+              width={TABLE_FABRIC.w}
+              height={TABLE_FABRIC.h}
+            />
+          </g>
+          {/* our sheet, hanging over the pine scroll */}
+          <image
+            href={scrollGround}
+            x={TABLE_SHEET.x}
+            y={TABLE_SHEET.y}
+            width={TABLE_SHEET.w}
+            height={TABLE_SHEET.h}
+            onClick={onDismiss}
+          />
+          {/* the load's drawings, standing on the hanging sheet
+              in the order they were made, fitted one above the
+              other inside the parchment — finished ink, as a
+              load is a reading, not an arrival */}
+          {load && load.drawings.length > 0 ? (
+            <g clipPath="url(#jynx-stage2-sheet-clip)">
+              {load.drawings.map((drawing, di) => {
+                const slotH = interior.h / load.drawings.length
+                const fit = Math.min(
+                  interior.w / drawing.space.w,
+                  slotH / drawing.space.h,
+                )
+                const drawnW = drawing.space.w * fit
+                const drawnH = drawing.space.h * fit
+                const fitX = interior.x + (interior.w - drawnW) / 2
+                const fitY = interior.y + di * slotH + (slotH - drawnH) / 2
+                return (
+                  <g
+                    key={drawing.id}
+                    data-drawing-id={drawing.id}
+                    transform={`translate(${fitX} ${fitY}) scale(${fit})`}
+                  >
+                    {drawing.marks.map((mark, i) => (
+                      <DrawingMark
+                        key={i}
+                        mark={mark}
+                        progress={markProgressAt(Number.MAX_SAFE_INTEGER, drawing, i)}
+                      />
+                    ))}
+                  </g>
+                )
+              })}
+            </g>
+          ) : null}
+          {/* the desk stands over the sheet's foot, and the
+              piles stand on the desk */}
+          <image
+            href={scrollDesk}
+            x={TABLE_DESK.x}
+            y={TABLE_DESK.y}
+            width={TABLE_DESK.w}
+            height={TABLE_DESK.h}
+            onClick={onDismiss}
+          />
+          {placements.map((p) => (
+            <TaskScroll
+              key={scrollKey(rows[p.index].scroll)}
+              scroll={rows[p.index].scroll}
+              cx={p.cx}
+              baseY={p.baseY}
+              flipped={p.flipped}
+              onTapScroll={onTapScroll}
+              onLongPressScroll={onLongPressScroll}
+            />
+          ))}
         </svg>
+        {/* the load on the hanging sheet: the tapped scroll's
+            name and recorded synopsis as ink over the parchment */}
+        {load ? (
+          <SheetLoadText
+            title={load.scroll.title}
+            lines={load.lines}
+            style={{ left: '24.85%', top: '20.51%', width: '45.77%', height: '30%' }}
+          />
+        ) : null}
+        <FoxMedallion leftPct={50} topPct={3.05} sizePct={6.9} />
       </div>
     </section>
+  )
+}
+
+/** One task scroll on the desk: the founder's horizontal scroll,
+ *  standing end-on in its pile (the pile's base line is the
+ *  desk's surface). A flipped pile wears the asset mirrored —
+ *  spiral ends facing the other way, the founder's rule for the
+ *  overflow pile. The same press discipline as the room: a tap
+ *  loads it on the hanging sheet, a long-press routes it. */
+function TaskScroll({
+  scroll,
+  cx,
+  baseY,
+  flipped,
+  onTapScroll,
+  onLongPressScroll,
+}: {
+  scroll: ShelfScroll
+  cx: number
+  baseY: number
+  flipped: boolean
+  onTapScroll: (scroll: ShelfScroll) => void
+  onLongPressScroll: (scroll: ShelfScroll) => void
+}) {
+  const { pressing, handlers } = usePressHandlers(
+    () => onTapScroll(scroll),
+    () => onLongPressScroll(scroll),
+  )
+  return (
+    <g
+      data-scroll={scrollKey(scroll)}
+      transform={`translate(${cx} ${baseY}) scale(${pressing ? 0.96 : 1})`}
+    >
+      <g transform={flipped ? 'scale(-1 1)' : undefined}>
+        <image
+          href={scrollTask}
+          x={-TASK_SCROLL_W / 2}
+          y={-TASK_SCROLL_H}
+          width={TASK_SCROLL_W}
+          height={TASK_SCROLL_H}
+        />
+      </g>
+      {/* tap / long-press target */}
+      <rect
+        x={-TASK_SCROLL_W / 2 - 4}
+        y={-TASK_SCROLL_H - 4}
+        width={TASK_SCROLL_W + 8}
+        height={TASK_SCROLL_H + 8}
+        fill="#ffffff"
+        fillOpacity={0}
+        style={{ cursor: 'pointer' }}
+        {...handlers}
+      />
+    </g>
   )
 }
 
@@ -1145,29 +1424,16 @@ function SceneScroll({
   width: number
   side: 'left' | 'right'
   cluster?: boolean
-  onTapScroll: (scroll: ShelfScroll, anchor: StagedAnchor) => void
+  onTapScroll: (scroll: ShelfScroll) => void
   onLongPressScroll: (scroll: ShelfScroll) => void
 }) {
-  const [pressing, setPressing] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const firedRef = useRef(false)
+  const { pressing, handlers } = usePressHandlers(
+    () => onTapScroll(scroll),
+    () => onLongPressScroll(scroll),
+  )
   const h = (width * 699) / 709
   const ringCx = (side === 'left' ? END_FACE.fx - 0.5 : 0.5 - END_FACE.fx) * width
   const ringCy = (END_FACE.fy - 0.5) * h
-
-  const clearTimer = () => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current)
-      timerRef.current = null
-    }
-  }
-  useEffect(() => clearTimer, [])
-
-  const anchorFor = (): StagedAnchor => ({
-    xPct: (cx / FRAME_W) * 100,
-    yPct: (cy / FRAME_H) * 100,
-    below: cy < 300,
-  })
 
   return (
     <g
@@ -1202,32 +1468,7 @@ function SceneScroll({
         fill="#ffffff"
         fillOpacity={0}
         style={{ cursor: 'pointer' }}
-        onPointerDown={() => {
-          firedRef.current = false
-          setPressing(true)
-          clearTimer()
-          timerRef.current = setTimeout(() => {
-            firedRef.current = true
-            setPressing(false)
-            onLongPressScroll(scroll)
-          }, LONG_PRESS_MS)
-        }}
-        onPointerUp={() => {
-          clearTimer()
-          setPressing(false)
-        }}
-        onPointerLeave={() => {
-          clearTimer()
-          setPressing(false)
-        }}
-        onClick={(e) => {
-          e.stopPropagation()
-          if (firedRef.current) {
-            firedRef.current = false
-            return
-          }
-          onTapScroll(scroll, anchorFor())
-        }}
+        {...handlers}
       />
     </g>
   )

@@ -20,11 +20,12 @@ import {
   cellInDiameter,
   clusterChildren,
   longPressRoute,
-  popupSynopsis,
   scrollKey,
   scrollPlacementFor,
   SCROLL_CONTOUR,
+  sheetSynopsis,
   tableRows,
+  taskPileLayout,
   trailForScroll,
   type FabricRhomb,
 } from './sceneLogic'
@@ -285,17 +286,17 @@ describe('the cluster rule', () => {
     const ini = find(bays, 'initiative', 'i1')
     expect(clusterChildren(bays, ini).length).toBe(5)
     expect(Math.min(CLUSTER_SHOWN, clusterChildren(bays, ini).length)).toBe(3)
-    const lines = popupSynopsis(bays, ini)
+    const lines = sheetSynopsis(bays, ini)
     expect(lines[0]).toBe('Initiative · Active')
     expect(lines).toContain('2 projects · 3 tasks within')
     expect(lines).toContain('…and 2 more within')
   })
 })
 
-describe('the popup synopsis — recorded fields only', () => {
+describe('the sheet synopsis — recorded fields only', () => {
   it('carries a project’s status, task count and declared window', () => {
     const bays = fixtureShelf()
-    const lines = popupSynopsis(bays, find(bays, 'project', 'p1'))
+    const lines = sheetSynopsis(bays, find(bays, 'project', 'p1'))
     expect(lines[0]).toBe('Project · Blocked')
     expect(lines).toContain('2 tasks')
     expect(lines).toContain('5 Jan 2026 – 30 Mar 2026')
@@ -303,7 +304,7 @@ describe('the popup synopsis — recorded fields only', () => {
 
   it('carries a task’s estimate and due date', () => {
     const bays = fixtureShelf()
-    const lines = popupSynopsis(bays, find(bays, 'task', 't1'))
+    const lines = sheetSynopsis(bays, find(bays, 'task', 't1'))
     expect(lines[0]).toBe('Task · Todo')
     expect(lines).toContain('3h estimated')
     expect(lines).toContain('due 14 Feb 2026')
@@ -337,5 +338,53 @@ describe('trails and the long-press route', () => {
     expect(rows.map((r) => scrollKey(r.scroll))).toEqual(['project:p1', 'project:p2'])
     expect(rows[0].cluster.map((s) => scrollKey(s))).toEqual(['task:t1', 'task:t2'])
     expect(rows[1].cluster.map((s) => scrollKey(s))).toEqual(['task:t3'])
+  })
+})
+
+describe('stage 2 — the task piles (study v12)', () => {
+  const byIndex = (n: number) => {
+    const layout = taskPileLayout(n)
+    return new Map(layout.map((p) => [p.index, p]))
+  }
+
+  it('stands one child alone at the left pile’s base centre', () => {
+    const layout = taskPileLayout(1)
+    expect(layout).toHaveLength(1)
+    expect(layout[0]).toMatchObject({ index: 0, pile: 0, row: 0, cx: 330, baseY: 695, flipped: false })
+  })
+
+  it('stacks six in a 3-2-1 triangle on the left, drawn back-to-front', () => {
+    const layout = taskPileLayout(6)
+    expect(layout).toHaveLength(6)
+    const m = byIndex(6)
+    // Bottom row of three, middle of two centred, top of one.
+    expect(m.get(0)).toMatchObject({ cx: 240, baseY: 695, row: 0 })
+    expect(m.get(1)).toMatchObject({ cx: 330, baseY: 695, row: 0 })
+    expect(m.get(2)).toMatchObject({ cx: 420, baseY: 695, row: 0 })
+    expect(m.get(3)).toMatchObject({ cx: 285, baseY: 665, row: 1 })
+    expect(m.get(4)).toMatchObject({ cx: 375, baseY: 665, row: 1 })
+    expect(m.get(5)).toMatchObject({ cx: 330, baseY: 635, row: 2 })
+    // Draw order: the top row stands first (it is the back).
+    expect(layout.map((p) => p.index)).toEqual([5, 3, 4, 0, 1, 2])
+  })
+
+  it('puts the overflow past six in a flipped pile on the right', () => {
+    const m = byIndex(8)
+    expect(m.get(6)).toMatchObject({ pile: 1, cx: 920, baseY: 695, flipped: true })
+    expect(m.get(7)).toMatchObject({ pile: 1, cx: 1010, baseY: 695, flipped: true })
+    // The right pile draws before the left (it stands behind).
+    const layout = taskPileLayout(8)
+    expect(layout.slice(0, 2).map((p) => p.pile)).toEqual([1, 1])
+  })
+
+  it('centres a partial row on its pile', () => {
+    const m = byIndex(4)
+    // The fourth child stands alone in the middle row, centred.
+    expect(m.get(3)).toMatchObject({ cx: 330, baseY: 665, row: 1 })
+  })
+
+  it('alternates sides inward beyond twelve, each flipped relative to the previous', () => {
+    const m = byIndex(13)
+    expect(m.get(12)).toMatchObject({ pile: 2, cx: 545, baseY: 695, flipped: false })
   })
 })

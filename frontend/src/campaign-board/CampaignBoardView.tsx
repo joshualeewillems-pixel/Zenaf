@@ -29,6 +29,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CouncilChat from '../chat/CouncilChat'
+import SplitShell from '../components/SplitShell'
 import type { Project, Task } from '../vision-execution/types'
 import { fetchBoardEntities, patchTaskDueDate, type BoardEntities } from './boardApi'
 import {
@@ -136,11 +137,6 @@ export default function CampaignBoardView() {
   const [selection, setSelection] = useState<Selection>(null)
   const [drag, setDrag] = useState<{ taskId: string; fraction: number; moved: boolean } | null>(null)
   const [writeError, setWriteError] = useState<string | null>(null)
-  // Split-shell divider (wide screens): the conversation pane's
-  // width, draggable between the board and Valen's chat. Portrait
-  // stacks the panes and the divider is not rendered.
-  const [chatW, setChatW] = useState(380)
-  const dividerDrag = useRef<{ pointerId: number } | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const dragStart = useRef<{ x: number; taskId: string } | null>(null)
 
@@ -309,67 +305,49 @@ export default function CampaignBoardView() {
   }
 
   return (
-    <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden">
-      <div className="flex-1 min-w-0 lg:overflow-y-auto p-3 lg:p-5 space-y-3">
-        {focus ? (
-          <FocusBoard
-            focus={focus}
-            selection={selection}
-            setSelection={setSelection}
-            drag={drag}
-            svgRef={svgRef}
-            onBack={() => {
-              setFocusId(null)
-              setSelection(null)
-            }}
-            onWaypointPointerDown={onWaypointPointerDown}
-            onWaypointPointerMove={onWaypointPointerMove}
-            onWaypointPointerUp={onWaypointPointerUp}
-            writeError={writeError}
-          />
-        ) : (
-          <OverviewBoard
-            overview={overview}
-            initiatives={entities.initiatives}
-            onFocus={(id) => { setFocusId(id); setSelection(null) }}
-          />
-        )}
-      </div>
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize conversation pane"
-        className="hidden lg:block w-1.5 shrink-0 cursor-col-resize bg-stone-700/40 hover:bg-amber-600/60 touch-none"
-        onPointerDown={(e) => {
-          ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
-          dividerDrag.current = { pointerId: e.pointerId }
-        }}
-        onPointerMove={(e) => {
-          if (!dividerDrag.current || dividerDrag.current.pointerId !== e.pointerId) return
-          const parent = (e.currentTarget as Element).parentElement
-          if (!parent) return
-          const rect = parent.getBoundingClientRect()
-          setChatW(Math.min(560, Math.max(300, rect.right - e.clientX)))
-        }}
-        onPointerUp={(e) => {
-          if (dividerDrag.current?.pointerId === e.pointerId) dividerDrag.current = null
-        }}
-      />
-      <aside
-        className="shrink-0 lg:w-[var(--cb-chat-w,380px)] lg:overflow-y-auto border-t lg:border-t-0 border-stone-700/60 p-3"
-        style={{ ['--cb-chat-w' as string]: `${chatW}px` }}
-      >
-        <div className="rounded-2xl border border-stone-700/60 bg-stone-900/70 p-2">
-          <CouncilChat
-            key={conversationId}
-            environment="workspace"
-            initialArchetypeId="champion"
-            conversationId={conversationId}
-            context={chatContext}
-          />
+    <SplitShell
+      storageKey="campaign-board"
+      left={
+        <div className="p-3 lg:p-5 space-y-3">
+          {focus ? (
+            <FocusBoard
+              focus={focus}
+              selection={selection}
+              setSelection={setSelection}
+              drag={drag}
+              svgRef={svgRef}
+              onBack={() => {
+                setFocusId(null)
+                setSelection(null)
+              }}
+              onWaypointPointerDown={onWaypointPointerDown}
+              onWaypointPointerMove={onWaypointPointerMove}
+              onWaypointPointerUp={onWaypointPointerUp}
+              writeError={writeError}
+            />
+          ) : (
+            <OverviewBoard
+              overview={overview}
+              initiatives={entities.initiatives}
+              onFocus={(id) => { setFocusId(id); setSelection(null) }}
+            />
+          )}
         </div>
-      </aside>
-    </div>
+      }
+      right={
+        <div className="p-3">
+          <div className="rounded-2xl border border-stone-700/60 bg-stone-900/70 p-2">
+            <CouncilChat
+              key={conversationId}
+              environment="workspace"
+              initialArchetypeId="champion"
+              conversationId={conversationId}
+              context={chatContext}
+            />
+          </div>
+        </div>
+      }
+    />
   )
 }
 

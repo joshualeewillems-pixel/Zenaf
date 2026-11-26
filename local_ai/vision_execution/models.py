@@ -685,16 +685,6 @@ class CoordinationClientCheckpointCreate(BaseModel):
     detail: str | None = Field(None, max_length=2000)
 
 
-# --- Radar feed (meeting-extraction signals, etc.) ---
-class RadarFeedCreate(BaseModel):
-    title: str = ""
-    detail: str = ""
-    severity: str = "medium"
-    source: str = "meeting-extraction"
-    source_excerpt: str | None = None
-    kind: str = "attention"  # attention | risk | opportunity | blocker
-
-
 # --- Meeting extract (intake only; no storage) ---
 
 
@@ -1173,9 +1163,3 @@ def row_to_material_offer(row: tuple) -> dict[str, Any]:
         "updated_at": row[26],
     }
 
-
-def row_to_radar_feed(row: tuple) -> dict[str, Any]:
-    return {
-        "id": row[0], "title": row[1], "detail": row[2], "severity": row[3],
-        "source": row[4], "source_excerpt": row[5], "kind": row[6], "created_at": row[7],
-    }

@@ -1488,18 +1488,6 @@ def get_radar(current_user: dict = Depends(get_current_user)):
     return S.get_radar(current_user["id"])
 
 
-@router.post("/radar/items")
-def create_radar_item(body: M.RadarFeedCreate, current_user: dict = Depends(get_current_user)):
-    """Deprecated: prefer POST /signals. Add a radar feed item (e.g. meeting-extraction signal).
-
-    Auth-contained identically to the signals endpoints (Track A §4.1):
-    anonymous requests return 401 before any service/storage access.
-    radar_feed itself carries no owner column and its rows are never
-    read back (list_radar_feed has no callers); ownership scoping for
-    that dead table is out of scope here.
-    """
-    return S.create_radar_item(body)
-
 
 # --- Projects ---
 @router.get("/projects")

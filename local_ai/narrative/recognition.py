@@ -111,6 +111,10 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from .correspondence import propose_correspondence
+from .derivation import (
+    correspondence_signature_from_fields,
+    fitting_signature_from_keys,
+)
 from .discovery import _live_threads, _thread_ref_map
 from .lenses import LENSES, NarrativeLens, get_lens
 from .models import ThreadChange, ThreadEvidence
@@ -1551,6 +1555,50 @@ def assess_card_sections(
 # ---------------------------------------------------------------------------
 
 
+def _evidence_keys_for(
+    store: NarrativeStore,
+    user_id: str,
+    thread_ids: tuple[str, ...] | list[str],
+    row_ids: tuple[str, ...] | list[str],
+) -> list[str]:
+    """Content keys ("<kind>:<id>") for cited evidence row ids,
+    resolved over the given threads — the grounds half of a
+    dismissal signature, addressed by ref so rebuilt rows (new
+    row ids, same refs) key identically. Unresolvable ids are
+    absent, never invented."""
+    wanted = set(row_ids)
+    keys_by_row_id: dict[str, str] = {}
+    for thread_id in thread_ids:
+        for row in store.evidence_for(user_id, thread_id):
+            if row.id in wanted:
+                keys_by_row_id[row.id] = (
+                    f"{row.ref_kind}:{row.ref_id}"
+                )
+    return [keys_by_row_id[r] for r in row_ids if r in keys_by_row_id]
+
+
+def _is_dismissed(
+    store: NarrativeStore, user_id: str, *, kind: str, signature: str
+) -> bool:
+    """Consult dismissal memory, failure-isolated.
+
+    A failed check is logged and treated as not dismissed — the
+    same direction the review side's dismissal write fails
+    (PR #440): the memory layer never breaks the primary act.
+    The decided proposal's terminal status is the first layer;
+    this check is the second, against re-proposal.
+    """
+    try:
+        return store.is_dismissed(user_id, kind=kind, signature=signature)
+    except Exception:
+        logger.exception(
+            "recognition: dismissal check failed for %s; "
+            "proposing without it",
+            kind,
+        )
+        return False
+
+
 def propose_all(
     store: NarrativeStore, user_id: str, result: RecognitionResult
 ) -> list[str]:
@@ -1563,6 +1611,17 @@ def propose_all(
     store refusal (e.g. F2's durable-rejection raise) is logged
     and skipped: a refused proposal leaves no row and never fails
     the pass.
+
+    Dismissal memory is consulted HERE — at the final
+    proposal-write, per candidate, immediately before its write
+    (Consultation 1 disposition, 2026-11-25) — for the two kinds
+    that carry it: fittings and correspondences. A rejection
+    recorded while this pass was still assessing therefore gates
+    the equivalent candidate in this same pass. The check lives
+    only on this autonomous path: the shared writers
+    (``set_fitting``, ``propose_correspondence``) consult no
+    dismissal state, so a visitor-initiated proposal is never
+    barred by it.
     """
     written: list[str] = []
     for candidate in result.candidates:
@@ -1586,6 +1645,24 @@ def propose_all(
                 )
                 written.append(reading.id)
             elif isinstance(candidate, FittingCandidate):
+                signature = fitting_signature_from_keys(
+                    candidate.thread_id,
+                    candidate.lens_id,
+                    _evidence_keys_for(
+                        store,
+                        user_id,
+                        (candidate.thread_id,),
+                        candidate.evidence_refs,
+                    ),
+                )
+                if _is_dismissed(
+                    store, user_id, kind="fitting", signature=signature
+                ):
+                    logger.info(
+                        "recognition: fitting proposal dismissed "
+                        "by verdict memory; skipped"
+                    )
+                    continue
                 fitting = store.set_fitting(
                     user_id,
                     candidate.thread_id,
@@ -1596,6 +1673,28 @@ def propose_all(
                 )
                 written.append(fitting.id)
             elif isinstance(candidate, CorrespondenceCandidate):
+                signature = correspondence_signature_from_fields(
+                    candidate.thread_ids,
+                    candidate.proposed_relationship,
+                    candidate.mapping,
+                    _evidence_keys_for(
+                        store,
+                        user_id,
+                        candidate.thread_ids,
+                        candidate.evidence_refs,
+                    ),
+                )
+                if _is_dismissed(
+                    store,
+                    user_id,
+                    kind="correspondence",
+                    signature=signature,
+                ):
+                    logger.info(
+                        "recognition: correspondence proposal "
+                        "dismissed by verdict memory; skipped"
+                    )
+                    continue
                 outcome = propose_correspondence(
                     store,
                     user_id,

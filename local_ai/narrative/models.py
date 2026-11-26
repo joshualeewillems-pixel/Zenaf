@@ -516,6 +516,16 @@ class InvolvementMeasure:
 #: proposal §4), not a content signature — a declined offer, subject,
 #: or class, not a declined evidence cluster. The two regimes are
 #: consulted and cleared independently (proposal §5.4).
+#: The correspondence and fitting kinds (2026-11-25, Consultation 1
+#: disposition) extend the content-addressed regime: the signature
+#: captures the rejected COMMITMENT on its grounds — for a
+#: correspondence, the relation between the threads (direction
+#: borne by the record's own relationship + mapping fields) over
+#: the cited evidence keys; for a fitting, the lens placement
+#: (thread + lens) over the cited evidence keys. Readings have no
+#: kind (deferred: interpretation-equivalence is not reliable in
+#: the current representation) and oversight items get no
+#: interpretive kind (a system condition, not an interpretation).
 DISMISSAL_KINDS: tuple[str, ...] = (
     "thread_birth",
     "extension",
@@ -528,6 +538,8 @@ DISMISSAL_KINDS: tuple[str, ...] = (
     # silently re-accumulate. Written only by a user decline act
     # (the delivery scope); capture consults it (§5.3 rule 1).
     "candidate_mention",
+    "correspondence",
+    "fitting",
 )
 
 

@@ -78,6 +78,7 @@ can never become derivation evidence (tier gate, by type).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -564,6 +565,63 @@ def extension_signature(thread_id: str, items: Iterable[EvidenceItem]) -> str:
     return extension_signature_from_keys(
         thread_id, (item.evidence_key() for item in items)
     )
+
+
+def fitting_signature_from_keys(
+    thread_id: str, lens_id: str, keys: Iterable[str]
+) -> str:
+    """The fitting signature: one lens placement on one thread,
+    over the evidence keys the proposal cites.
+
+    The placement is (thread, lens) — the fitting model carries
+    no fitted-to axis beyond the thread, so thread + lens IS the
+    placement identity the record supports. The grounds are the
+    cited evidence keys ("<kind>:<id>", the same content
+    addressing as births/extensions), so reordered citations and
+    rebuilt evidence rows (new row ids, same refs) produce the
+    identical signature, while a different lens, a different
+    thread, or genuinely different cited evidence reopens.
+    """
+    return f"fitting:{thread_id}:{lens_id}:" + "|".join(sorted(keys))
+
+
+def correspondence_signature_from_fields(
+    thread_ids: Iterable[str],
+    proposed_relationship: str,
+    mapping: dict | None,
+    keys: Iterable[str],
+) -> str:
+    """The correspondence signature: one relation between the
+    same threads, over the evidence keys the proposal cites.
+
+    The commitment is the record's own relation identity — the
+    ``proposed_relationship`` statement plus the ``mapping`` of
+    which elements parallel which. Direction, where the relation
+    is directional, is borne by those fields (the stored thread
+    pair is sorted and carries no direction), so the reverse
+    relation or a different relation over the same pair produces
+    a different signature, while the thread pair alone never
+    keys anything. The relation fields enter as a digest of
+    their canonical form (whitespace-collapsed relationship;
+    mapping serialized with sorted keys), so citation-order,
+    mapping-key-order, and evidence-row churn cannot make the
+    same commitment look new; the grounds are the cited evidence
+    keys, content-addressed exactly as births/extensions.
+    """
+    relation = {
+        "relationship": " ".join((proposed_relationship or "").split()),
+        "mapping": mapping or {},
+    }
+    digest = hashlib.sha256(
+        json.dumps(
+            relation,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()[:16]
+    threads = "+".join(sorted(thread_ids))
+    return f"correspondence:{threads}:{digest}:" + "|".join(sorted(keys))
 
 
 # ---------------------------------------------------------------------------

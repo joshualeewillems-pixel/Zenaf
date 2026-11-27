@@ -182,8 +182,19 @@ describe('AriaAtelierView', () => {
 
   it('paints the garden from the data: the well, the initiative cairn, and Aria’s garden conversation', async () => {
     await renderGarden()
-    expect(container.querySelector('[data-testid="atelier-garden"]')).not.toBeNull()
-    expect(container.querySelector('button[aria-label="The well"]')).not.toBeNull()
+    const scene = container.querySelector('[data-testid="atelier-garden"]') as HTMLElement | null
+    expect(scene).not.toBeNull()
+    // Screen 1 is the scene: the founder's painting, whole.
+    expect(scene?.style.backgroundImage).toContain('garden-scene1')
+    // The live well stands over the painting's basin ellipse: a
+    // circle of the ellipse's width at its centre, squashed to
+    // its perspective.
+    const well = container.querySelector('button[aria-label="The well"]') as HTMLElement | null
+    expect(well).not.toBeNull()
+    expect(well?.style.left).toBe('58.9%')
+    expect(well?.style.top).toBe('50.6%')
+    expect(well?.style.width).toBe('28.4%')
+    expect(well?.style.transform).toContain('scaleY(0.338)')
     // Parents + loose only: the initiative stands in the ring as
     // one cairn carrying both stones; its project does NOT.
     expect(container.querySelector('[data-initiative="i1"]')).not.toBeNull()
@@ -215,6 +226,25 @@ describe('AriaAtelierView', () => {
     await settleCast()
 
     expect(container.querySelector('[data-testid="atelier-cast-circle"]')).not.toBeNull()
+    // Screen 2 is the cast's scene: the overhead painting, the
+    // live water clipped to its well disc, and the painting's own
+    // ring and lotus standing above the water.
+    const castScene = container.querySelector('[data-testid="atelier-cast-scene"]') as HTMLElement | null
+    expect(castScene?.style.backgroundImage).toContain('garden-scene2')
+    const disc = container.querySelector('[data-testid="atelier-cast-circle"]') as HTMLElement | null
+    expect(disc?.style.left).toBe('48.8%')
+    expect(disc?.style.top).toBe('49%')
+    expect(disc?.style.width).toBe('32.8%')
+    const ring = castScene?.querySelector('img[src*="garden-scene2-ring"]') as HTMLImageElement | null
+    expect(ring).not.toBeNull()
+    expect(parseFloat(ring?.style.left ?? '')).toBeCloseTo((352 / 1086) * 100, 1)
+    expect(parseFloat(ring?.style.top ?? '')).toBeCloseTo((532 / 1448) * 100, 1)
+    expect(parseFloat(ring?.style.width ?? '')).toBeCloseTo((356 / 1086) * 100, 1)
+    const lotus = castScene?.querySelector('img[src*="garden-scene2-lotus"]') as HTMLImageElement | null
+    expect(lotus).not.toBeNull()
+    expect(parseFloat(lotus?.style.left ?? '')).toBeCloseTo((311 / 1086) * 100, 1)
+    expect(parseFloat(lotus?.style.top ?? '')).toBeCloseTo((616 / 1448) * 100, 1)
+    expect(parseFloat(lotus?.style.width ?? '')).toBeCloseTo((163 / 1086) * 100, 1)
     expect(container.textContent).toContain('Confirm the print run')
     // The formation stands at the increased scale in the bowl.
     const stack = container.querySelector('.atelier-layer-stack') as HTMLElement | null

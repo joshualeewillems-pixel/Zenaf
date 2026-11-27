@@ -1,14 +1,17 @@
 /**
  * Aria's Atelier — the Well in the rock garden.
  *
- * The scene styles are the accepted prototype's (seven-interfaces,
- * Aria view): raked-gravel garden, the stone well ring, cairn piles,
- * the fan, and the cast — the well grown large with the seven-layer
- * stack forming on its water. Class names are atelier-prefixed where
- * the app could collide; the cairn tint-stack rules below are the
- * Vision map's own (mapAesthetics.css), repeated so this surface
- * stands alone — CairnStoneSprite assigns the masks itself after
- * mount (isolation row E), these rules only carry the layer geometry.
+ * The scenes are the founder's two paintings (ruled 2026-11-27),
+ * presented whole at their natural aspect: Screen 1's garden in
+ * the garden state, Screen 2's overhead garden in the cast state,
+ * with the live water, the cairn piles, the fan, and the
+ * seven-layer stack laid over them at the measured geometry
+ * (./atelierLogic's scene constants). Class names are
+ * atelier-prefixed where the app could collide; the cairn
+ * tint-stack rules below are the Vision map's own
+ * (mapAesthetics.css), repeated so this surface stands alone —
+ * CairnStoneSprite assigns the masks itself after mount
+ * (isolation row E), these rules only carry the layer geometry.
  */
 
 /* Cairn tint stack (the map's rules, mapAesthetics.css). */
@@ -38,63 +41,52 @@
   pointer-events: none;
 }
 
-/* ---------- the garden ---------- */
+/* ---------- the scenes ---------- */
 
-.atelier-garden {
+/* The painting, whole: natural 1086×1448 aspect, width 100% of
+   the world pane, never cropped. Positioned children take % of
+   the scene element. */
+.atelier-scene {
   position: relative;
-  aspect-ratio: 10 / 11;
+  width: 100%;
+  aspect-ratio: 1086 / 1448;
   overflow: hidden;
   border-radius: 1rem;
-  background:
-    repeating-radial-gradient(circle at 50% 44%, transparent 0 30px, rgba(122, 106, 70, 0.13) 30px 31.5px, transparent 31.5px 62px),
-    radial-gradient(ellipse 70% 50% at 18% 88%, rgba(110, 130, 80, 0.2), transparent 70%),
-    radial-gradient(ellipse 60% 42% at 86% 90%, rgba(110, 130, 80, 0.16), transparent 70%),
-    linear-gradient(165deg, #e6ddc6, #d9cfb2 55%, #cfc19e);
+  background-size: 100% 100%;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
-.atelier-garden-rock {
+/* The painting's own ring and lotus, above the cast's live water. */
+.atelier-scene-overlay {
   position: absolute;
-  border-radius: 58% 42% 55% 45% / 70% 60% 40% 45%;
-  background: linear-gradient(150deg, #a89a7c, #7d7057 70%);
-  box-shadow:
-    inset 0 -6px 10px rgba(50, 40, 15, 0.35),
-    0 3px 6px rgba(60, 45, 15, 0.25);
-  opacity: 0.8;
+  display: block;
   pointer-events: none;
-}
-.atelier-garden-moss {
-  position: absolute;
-  border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(96, 124, 66, 0.5), transparent 70%);
-  pointer-events: none;
+  z-index: 3;
 }
 
-/* The well — a stone ring of rainbow water. The water itself is a
-   canvas: the Resonance Atelier field (./waterEngine), composited
-   over its own ground. No CSS gradient stands in for it. */
+/* The well — the live water over the painting's basin. The
+   element is a circle the basin ellipse's width, squashed to the
+   basin's perspective by its inline transform (scaleY, from
+   ./atelierLogic's SCENE1_WELL_SCALE_Y); its position and size
+   are inline for the same reason. The water itself is a canvas:
+   the Resonance Atelier field (./waterEngine), composited over
+   its own ground. No CSS gradient stands in for it, and the
+   basin's stone is the painting's — the element carries none. */
 .atelier-well {
   position: absolute;
-  left: 50%;
-  top: 44%;
-  width: 47%;
   aspect-ratio: 1;
-  transform: translate(-50%, -50%);
   border-radius: 50%;
   border: none;
   padding: 0;
   cursor: pointer;
-  background: conic-gradient(from 20deg, #8d8271, #6f6455, #958a76, #5f5546, #8d8271);
-  box-shadow:
-    0 14px 28px rgba(60, 45, 15, 0.35),
-    inset 0 3px 8px rgba(255, 250, 230, 0.35),
-    inset 0 -8px 14px rgba(30, 22, 8, 0.5);
+  background: transparent;
 }
 .atelier-well .atelier-water {
   position: absolute;
-  left: 7.5%;
-  top: 7.5%;
-  width: 85%;
-  height: 85%;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   border-radius: 50%;
   display: block;
   box-shadow:
@@ -103,17 +95,13 @@
 }
 .atelier-well.awaiting {
   box-shadow:
-    0 14px 28px rgba(60, 45, 15, 0.35),
     0 0 0 6px rgba(255, 240, 190, 0.45),
-    0 0 26px rgba(255, 220, 140, 0.55),
-    inset 0 3px 8px rgba(255, 250, 230, 0.35);
+    0 0 26px rgba(255, 220, 140, 0.55);
 }
 .atelier-well.dragover {
   box-shadow:
-    0 14px 28px rgba(60, 45, 15, 0.35),
     0 0 0 8px rgba(160, 230, 255, 0.5),
-    0 0 30px rgba(140, 210, 255, 0.6),
-    inset 0 3px 8px rgba(255, 250, 230, 0.35);
+    0 0 30px rgba(140, 210, 255, 0.6);
 }
 .atelier-well-ring {
   position: absolute;
@@ -288,34 +276,18 @@
 
 /* ---------- the cast ---------- */
 
-.atelier-cast {
-  position: relative;
-  padding: 1.1rem 0.6rem 0.4rem;
-  border-radius: 1rem;
-  background:
-    repeating-radial-gradient(circle at 50% 46%, transparent 0 30px, rgba(122, 106, 70, 0.13) 30px 31.5px, transparent 31.5px 62px),
-    linear-gradient(165deg, #e6ddc6, #d9cfb2 55%, #cfc19e);
-}
-.atelier-cast-rim {
-  position: relative;
-  width: min(94%, 520px);
-  margin: 0 auto;
+/* The live water disc over Screen 2's painted well: position and
+   width are inline, from ./atelierLogic's SCENE2_DISC; the disc
+   clips the water and the formation stack to the painting's
+   water. The painting's ring and lotus stand above it as
+   overlays (.atelier-scene-overlay). */
+.atelier-cast-circle {
+  position: absolute;
+  transform: translate(-50%, -50%);
   aspect-ratio: 1;
   border-radius: 50%;
-  padding: 13px;
-  background: conic-gradient(from 30deg, #8d8271, #655b4a, #968b77, #574e3f, #8d8271);
-  box-shadow:
-    0 18px 36px rgba(60, 45, 15, 0.4),
-    inset 0 3px 8px rgba(255, 250, 230, 0.3),
-    inset 0 -8px 14px rgba(30, 22, 8, 0.5);
-}
-.atelier-cast-circle {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
   overflow: hidden;
-  background: #f0e5cb;
+  background: transparent;
 }
 .atelier-cast-circle .atelier-water {
   position: absolute;
@@ -337,8 +309,8 @@
 }
 .atelier-return {
   position: absolute;
-  top: -0.4rem;
-  right: 2%;
+  top: 3.5%;
+  right: 4%;
   z-index: 5;
   background: rgba(240, 229, 203, 0.92);
   border: 1px solid rgba(90, 80, 60, 0.35);
@@ -350,11 +322,19 @@
   box-shadow: 0 6px 16px rgba(60, 45, 15, 0.25);
   cursor: pointer;
 }
+/* The cast's captions stand on a parchment plate beneath the
+   painting, in the surface's own palette. */
+.atelier-cast-captions {
+  margin-top: 0.85rem;
+  padding: 0.55rem 0.8rem 0.65rem;
+  border-radius: 1rem;
+  background: rgba(240, 229, 203, 0.94);
+  border: 1px solid rgba(90, 80, 60, 0.35);
+}
 .atelier-cast-subject {
   text-align: center;
   font-size: 1.3rem;
   color: #2e2a24;
-  margin-top: 0.85rem;
 }
 .atelier-cast-cairn {
   text-align: center;

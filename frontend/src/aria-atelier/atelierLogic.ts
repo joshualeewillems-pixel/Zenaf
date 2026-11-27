@@ -293,16 +293,24 @@ export const SCENE_REF_H = 480
 export const GARDEN_GAP = 8
 
 /**
- * Screen 1's basin water, measured on the painting: the ellipse
- * the live well element covers. Centre and radii as fractions of
- * the scene (rx of its width, ry of its height). The well element
- * is a circle of diameter 2·rx of the scene's width, presented
- * with scaleY so it lands in the basin's perspective: the
- * ellipse's height ÷ its width on the painting's own pixels,
- * (0.036 × 1448) / (0.142 × 1086) ≈ 0.338.
+ * Screen 1's basin, measured on the painting: the full water
+ * inside the outer stone rim — the ellipse the live well element
+ * covers. Centre and radii as fractions of the scene (rx of its
+ * width, ry of its height). The founder ruled the painting's
+ * inner stone ring obstructive on device (2026-11-27), as on
+ * Screen 2: the inner wall is not carried, and the water runs
+ * out to the well's edges — the rim's inner edge, fitted on the
+ * painting at centre (567, 717), radii (247, 87) of its
+ * 1086×1448 px. The well element is a circle of diameter 2·rx
+ * of the scene's width, presented with scaleY so it lands in
+ * the basin's perspective: 87 / 247 ≈ 0.352. The painting's
+ * lotus, floating on the basin's west water, is carried as an
+ * overlay above the live water (SCENE1_LOTUS_OVERLAY), as on
+ * Screen 2.
  */
-export const SCENE1_BASIN = { cx: 0.589, cy: 0.506, rx: 0.142, ry: 0.036 }
-export const SCENE1_WELL_SCALE_Y = 0.338
+export const SCENE1_BASIN = { cx: 567 / 1086, cy: 717 / 1448, rx: 247 / 1086, ry: 87 / 1448 }
+export const SCENE1_WELL_SCALE_Y = 0.352
+export const SCENE1_LOTUS_OVERLAY = { left: 318 / 1086, top: 693 / 1448, width: 160 / 1086 }
 
 /**
  * Screen 2's well, measured on the painting: the disc the live
@@ -332,21 +340,26 @@ export const SCENE_BASIN_REF = {
  * this order. x/y are fractions of the scene; scale is the seat's
  * depth scale (foreground seats stand larger, back seats
  * smaller). Every seat anchor stands clear of the basin ellipse;
- * scenePlacements keeps every footprint clear of it too.
+ * scenePlacements keeps every footprint clear of it too. Every
+ * seat stands on the painting's raked sand — the rock garden —
+ * and nowhere else (founder, 2026-11-27: cairns and stones
+ * belong in the rock garden only; the seats that stood on the
+ * painted boulder, in the ferns, on the grass by the arcade,
+ * and on the garden rocks at the edges moved onto the sand).
  */
 export const GARDEN_SEATS: Array<{ x: number; y: number; scale: number }> = [
   { x: 0.24, y: 0.7, scale: 1.15 },
   { x: 0.78, y: 0.72, scale: 1.15 },
-  { x: 0.12, y: 0.55, scale: 1.0 },
+  { x: 0.17, y: 0.55, scale: 1.0 },
   { x: 0.88, y: 0.57, scale: 1.0 },
   { x: 0.3, y: 0.86, scale: 1.25 },
   { x: 0.66, y: 0.87, scale: 1.25 },
   { x: 0.33, y: 0.4, scale: 0.8 },
   { x: 0.74, y: 0.41, scale: 0.8 },
-  { x: 0.16, y: 0.38, scale: 0.75 },
-  { x: 0.86, y: 0.36, scale: 0.75 },
-  { x: 0.06, y: 0.78, scale: 1.1 },
-  { x: 0.94, y: 0.8, scale: 1.1 },
+  { x: 0.2, y: 0.4, scale: 0.75 },
+  { x: 0.9, y: 0.44, scale: 0.75 },
+  { x: 0.9, y: 0.86, scale: 1.1 },
+  { x: 0.5, y: 0.93, scale: 1.1 },
 ]
 
 export interface GardenFootprint {

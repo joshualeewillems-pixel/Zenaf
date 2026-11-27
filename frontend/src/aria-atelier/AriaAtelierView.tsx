@@ -102,6 +102,7 @@ import { fetchAtelierData, fetchSeatTurnCounts, type AtelierData } from './ateli
 import {
   FORMATION_SCALE,
   SCENE1_BASIN,
+  SCENE1_LOTUS_OVERLAY,
   SCENE1_WELL_SCALE_Y,
   SCENE2_DISC,
   SCENE2_LOTUS_OVERLAY,
@@ -158,9 +159,12 @@ import valenFill from './assets/layer-valen-fill.png'
 /* The founder's two paintings (ruled 2026-11-27): Screen 1, the
  * garden with the Zenaf sky and our water composited into the
  * basin; Screen 2, the same garden from above once a stone is
- * thrown in — plus its stone ring and lotus, carried as overlays
- * above the cast's live water. */
+ * thrown in. Neither painting's inner stone ring is carried —
+ * the founder ruled the well-within-a-well obstructive — and
+ * each painting's lotus rides above the live water as an
+ * overlay. */
 import gardenScene1 from './assets/garden-scene1.webp'
+import gardenScene1Lotus from './assets/garden-scene1-lotus.png'
 import gardenScene2 from './assets/garden-scene2.webp'
 import gardenScene2Lotus from './assets/garden-scene2-lotus.png'
 
@@ -1023,6 +1027,17 @@ export default function AriaAtelierView() {
                 </>
               ) : null}
             </button>
+            <img
+              className="atelier-scene-overlay"
+              src={gardenScene1Lotus}
+              alt=""
+              aria-hidden="true"
+              style={{
+                left: pct(SCENE1_LOTUS_OVERLAY.left),
+                top: pct(SCENE1_LOTUS_OVERLAY.top),
+                width: pct(SCENE1_LOTUS_OVERLAY.width),
+              }}
+            />
 
             {ringItems.map((item, i) => {
               const pos = placements[i]

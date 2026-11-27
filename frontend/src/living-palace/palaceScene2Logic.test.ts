@@ -22,6 +22,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
+  ADJACENCY_SLACK,
   ANCHOR,
   CIRCLE_GAP,
   CLEARANCE_TOLERANCE,
@@ -32,12 +33,18 @@ import {
   HEARTH_R,
   MIN_FLOOR_RADIUS,
   RIM_SAMPLES,
+  areAdjacent,
   containerArea,
   containerEdtAt,
   planBuildingScene,
+  planTaskScene,
   plateForFloor,
-  type PlacedFloor,
+  rimDistance,
+  taskSizeWeight,
+  type Scene2Circle,
   type Scene2FloorInput,
+  type Scene2TaskInput,
+  type TaskLinkPair,
 } from './palaceScene2Logic'
 
 const EPS = 1e-6
@@ -78,7 +85,7 @@ const FALLBACK_SHAPES: [string, Scene2FloorInput[]][] = [
 
 const ALL_SHAPES = [...LADDER_SHAPES, ...FALLBACK_SHAPES]
 
-function expectContainedAndSeparated(placed: PlacedFloor[]) {
+function expectContainedAndSeparated(placed: (Scene2Circle & { key: string })[]) {
   for (const p of placed) {
     for (let k = 0; k < RIM_SAMPLES; k++) {
       const a = (2 * Math.PI * k) / RIM_SAMPLES
@@ -322,5 +329,119 @@ describe('Palace Scene 2 — the relaxed Apollonian spacing, nested in the dome'
     expect(layout.floors).toEqual([])
     expect(layout.hearth).toEqual({ x: 627, y: 1095, r: 88 })
     expect(layout.fillUsed).toBe(FILL_TOP)
+  })
+})
+
+describe('Palace Scene 2 — the task level: dependencies as adjacency, lines as fallback', () => {
+  const taskIn = (key: string, weight: number): Scene2TaskInput => ({ key, weight })
+  const pair = (aKey: string, bKey: string): TaskLinkPair => ({ aKey, bKey })
+
+  it('taskSizeWeight: the recorded estimate when it stands, else one equal unit', () => {
+    expect(taskSizeWeight(6)).toBe(6)
+    expect(taskSizeWeight(2.5)).toBe(2.5)
+    expect(taskSizeWeight(null)).toBe(1)
+    expect(taskSizeWeight(undefined)).toBe(1)
+    expect(taskSizeWeight(0)).toBe(1)
+    expect(taskSizeWeight(-3)).toBe(1)
+  })
+
+  it('sizes from weights under one common fill — radius² tracks the weight share', () => {
+    // the live building's proportions as task weights: a shape
+    // the ladder seats whole, as it does for floors
+    const weights = [7, 6, 7, 5, 9, 5, 18, 5]
+    const shape = weights.map((w, i) => taskIn(`t${i}`, w))
+    const layout = planTaskScene(shape, [])
+    expect(FILL_LADDER).toContain(layout.fillUsed)
+    const total = weights.reduce((s, w) => s + w, 0)
+    for (const t of layout.tasks) {
+      expect(t.share, t.key).toBeCloseTo(t.weight / total, 9)
+      expect(t.r, t.key).toBeCloseTo(shareRadius(t.share, layout.fillUsed), 6)
+    }
+    // no pairs in play: nothing is adjacent, nothing is linked
+    expect(layout.adjacent).toEqual([])
+    expect(layout.links).toEqual([])
+  })
+
+  it('a shape the ladder cannot seat takes the documented fallback — one common scale', () => {
+    const shape = [
+      taskIn('a', 10), taskIn('b', 6), taskIn('c', 4),
+      taskIn('d', 3), taskIn('e', 2), taskIn('f', 1),
+    ]
+    const layout = planTaskScene(shape, [])
+    expect(layout.fillUsed).toBe(FILL_BOTTOM)
+    const largest = layout.tasks[0]
+    const scale = largest.r / shareRadius(largest.share, FILL_BOTTOM)
+    expect(scale).toBeLessThanOrEqual(1 + EPS)
+    for (const t of layout.tasks) {
+      expect(t.r, t.key).toBeCloseTo(shareRadius(t.share, FILL_BOTTOM) * scale, 6)
+    }
+  })
+
+  it('every task placed, contained, separated — and deterministic', () => {
+    const shape = [
+      taskIn('t1', 10), taskIn('t2', 6), taskIn('t3', 4),
+      taskIn('t4', 3), taskIn('t5', 2), taskIn('t6', 1),
+    ]
+    const layout = planTaskScene(shape, [pair('t3', 't4')])
+    expect(layout.tasks).toHaveLength(shape.length)
+    expectContainedAndSeparated(layout.tasks)
+    expect(planTaskScene(shape, [pair('t3', 't4')])).toEqual(layout)
+  })
+
+  it('a dependency pair seats adjacent — its rims at the standard gap', () => {
+    const shape = [
+      taskIn('t1', 10), taskIn('t2', 6), taskIn('t3', 4),
+      taskIn('t4', 3), taskIn('t5', 2), taskIn('t6', 1),
+    ]
+    const layout = planTaskScene(shape, [pair('t3', 't4')])
+    expect(layout.adjacent).toEqual([pair('t3', 't4')])
+    expect(layout.links).toEqual([])
+    const byKey = new Map(layout.tasks.map((t) => [t.key, t]))
+    const rim = rimDistance(byKey.get('t3')!, byKey.get('t4')!)
+    // tangent at the one relaxed gap, within the packing's own
+    // tolerance and the adjacency slack
+    expect(rim).toBeGreaterThanOrEqual(CIRCLE_GAP - CLEARANCE_TOLERANCE - EPS)
+    expect(rim).toBeLessThanOrEqual(CIRCLE_GAP + ADJACENCY_SLACK)
+    expect(areAdjacent(byKey.get('t3')!, byKey.get('t4')!)).toBe(true)
+  })
+
+  it('a pair the packing cannot seat adjacent is reported as a link, not a neighbour', () => {
+    // Ten tasks; the pair joins the two unit-weight tasks, which
+    // seat last into whatever pockets remain — the packing
+    // cannot bring them together, so the pair takes the line.
+    const shape = [
+      taskIn('a', 30), taskIn('b', 22), taskIn('c', 18), taskIn('d', 15),
+      taskIn('e', 12), taskIn('f', 10), taskIn('g', 8), taskIn('h', 6),
+      taskIn('x', 1), taskIn('y', 1),
+    ]
+    const layout = planTaskScene(shape, [pair('x', 'y')])
+    expect(layout.tasks).toHaveLength(shape.length)
+    expectContainedAndSeparated(layout.tasks)
+    expect(layout.adjacent).toEqual([])
+    expect(layout.links).toEqual([pair('x', 'y')])
+    const byKey = new Map(layout.tasks.map((t) => [t.key, t]))
+    expect(areAdjacent(byKey.get('x')!, byKey.get('y')!)).toBe(false)
+  })
+
+  it('pairs are cleaned: unknown keys, self-pairs and duplicates set aside', () => {
+    const shape = [taskIn('a', 4), taskIn('b', 3)]
+    const layout = planTaskScene(shape, [
+      pair('a', 'missing'),
+      pair('a', 'a'),
+      pair('b', 'a'),
+      pair('a', 'b'),
+    ])
+    // the one real pair survives, canonicalised — and the two
+    // tasks seat beside each other
+    expect(layout.adjacent).toEqual([pair('a', 'b')])
+    expect(layout.links).toEqual([])
+  })
+
+  it('an empty project plans as the empty space and the hearth alone', () => {
+    const layout = planTaskScene([], [pair('a', 'b')])
+    expect(layout.tasks).toEqual([])
+    expect(layout.hearth).toEqual({ x: 627, y: 1095, r: 88 })
+    expect(layout.adjacent).toEqual([])
+    expect(layout.links).toEqual([])
   })
 })

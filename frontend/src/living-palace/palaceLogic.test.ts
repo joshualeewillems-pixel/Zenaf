@@ -6,12 +6,15 @@
  * as buildings, floors as projects, rooms as tasks; loose work on
  * the grounds; undeveloped ideas on the drawing table); the display
  * rule holds (nested by default, un-nest available); furniture is
- * EARNED (a dependency makes the window, recorded figures make the
- * floor scales, recorded words fill the chest) and the affordance
- * instruments stand unpopulated (empty room scales by construction,
- * the Kintsugi vessel plain in this VE-only model — its gold is
- * earned by the attributed read's accepted-supersession lineage and
- * applied by the view, pinned in the read's own describe below).
+ * EARNED (a dependency makes the window, recorded words fill the
+ * chest) and the affordance instruments stand unpopulated (empty
+ * room scales by construction, the Kintsugi vessel plain in this
+ * VE-only model — its gold is earned by the attributed read's
+ * accepted-supersession lineage and applied by the view, pinned in
+ * the read's own describe below). The task level — the dome's
+ * second level since the floor-plan frame retired (founder,
+ * 2026-11-26) — carries the project's rooms and EVERY recorded
+ * dependency pair between them: the doorway data, unfiltered.
  */
 import { describe, expect, it } from 'vitest'
 import type {
@@ -27,8 +30,8 @@ import {
   attendingGuests,
   buildBuilding,
   buildCompound,
-  buildFloor,
   buildRoom,
+  buildTaskLevel,
   councilFlameColors,
   growthOf,
   type AttributedRead,
@@ -237,48 +240,43 @@ describe('building', () => {
   })
 })
 
-describe('floor', () => {
-  it('nests subtasks inside their room by default; un-nest stands them as rooms', () => {
-    const nested = buildFloor(DATA, P1, { unnested: false })
-    expect(nested.rooms.map((r) => r.task.id).sort()).toEqual(['ta', 'tb', 'tc', 'td'])
-    expect(nested.rooms.find((r) => r.task.id === 'ta')!.subtaskCount).toBe(1)
-    const unnested = buildFloor(DATA, P1, { unnested: true })
-    expect(unnested.rooms.map((r) => r.task.id).sort()).toEqual(['ta', 'tb', 'tc', 'td', 'te'])
+describe('task level', () => {
+  it('the circles are the project’s top-level tasks; subtasks stand inside their rooms', () => {
+    const model = buildTaskLevel(DATA, P1)
+    expect(model.project.id).toBe('p1')
+    // Alpha's detail (te) is a subtask — it stands in Alpha's
+    // chamber, not as its own circle.
+    expect(model.tasks.map((t) => t.id).sort()).toEqual(['ta', 'tb', 'tc', 'td'])
   })
 
-  it('pierces a labelled doorway only where a recorded edge joins adjacent rooms of a column', () => {
-    const model = buildFloor(DATA, P1, { unnested: false })
-    // Sorted rooms: Alpha (col 0, row 0), Beta (col 1, row 0),
-    // Delta (col 0, row 1), Gamma (col 1, row 1). Delta→Alpha and
-    // Gamma→Beta are same-column adjacent pairs — both pierce.
-    const pairs = model.doorways.map((d) => [d.aId, d.bId].sort().join('-')).sort()
-    expect(pairs).toEqual(['ta-td', 'tb-tc'])
+  it('carries every recorded dependency pair between its tasks — the doorway data, unfiltered', () => {
+    const model = buildTaskLevel(DATA, P1)
+    // Delta waits on Alpha; Gamma waits on Beta. The retired
+    // floor plan drew these as doorways only because its plan
+    // happened to make them neighbours; the task level carries
+    // the pairs themselves, and the packing decides neighbours.
+    expect(model.links).toEqual([
+      { aId: 'ta', bId: 'td' },
+      { aId: 'tb', bId: 'tc' },
+    ])
   })
 
-  it('names edges that leave the floor instead of drawing them', () => {
-    const model = buildFloor(DATA, P2, { unnested: false })
-    // Convergent's two dependencies live on P1's floor — named as
-    // cross edges, never drawn as doorways here.
-    expect(model.crossEdges.map((e) => e.other.id).sort()).toEqual(['ta', 'tb'])
-    expect(model.doorways).toEqual([])
-    // But "Waits on convergent" → Convergent joins two rooms of THIS
-    // floor, so the mosaic is earned even here.
-    expect(model.mosaic).toBe(true)
+  it('a pair the old plan could never pierce still rides along', () => {
+    // Cross waits on Beta. In the retired plan's two columns the
+    // pair stood in different columns — no doorway ever pierced
+    // for it. The pair is recorded, so it shapes the packing.
+    const cross = task({ id: 'tx', title: 'Cross', dependency_ids: ['tb'] })
+    const model = buildTaskLevel({ ...DATA, tasks: [...DATA.tasks, cross] }, P1)
+    expect(model.links).toContainEqual({ aId: 'tb', bId: 'tx' })
   })
 
-  it('earns its hall furniture from the rooms’ records', () => {
-    const p1 = buildFloor(DATA, P1, { unnested: false })
-    expect(p1.cabinets).toBe(true) // Alpha holds recorded notes
-    expect(p1.mosaic).toBe(true) // recorded edges join rooms of this floor
-    const p2 = buildFloor(DATA, P2, { unnested: false })
-    expect(p2.cabinets).toBe(false)
-  })
-
-  it('floor scales stand only on recorded figures', () => {
-    const p1 = buildFloor(DATA, P1, { unnested: false })
-    expect(p1.scalesFigures).toEqual({ projectHours: 6, capacityHours: 20, ownerName: 'Jo Keeper' })
-    const p2 = buildFloor(DATA, P2, { unnested: false })
-    expect(p2.scalesFigures).toBeNull()
+  it('edges to another project’s tasks are not pairs of this level', () => {
+    const model = buildTaskLevel(DATA, P2)
+    expect(model.tasks.map((t) => t.id).sort()).toEqual(['tf', 'tg'])
+    // Convergent waits on Alpha and Beta — P1's tasks, not this
+    // level's. Only "Waits on convergent" → Convergent joins two
+    // tasks standing here.
+    expect(model.links).toEqual([{ aId: 'tf', bId: 'tg' }])
   })
 })
 

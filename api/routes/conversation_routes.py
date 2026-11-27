@@ -2006,6 +2006,70 @@ def list_chalk_drawings(
 
 
 # ---------------------------------------------------------------------------
+# Palace overhead layout records (the dome's task-level plan).
+#
+# The overhead plan's per-project layout record (the hybrid
+# packing port, 2026-11-27): the Palace surface computes the
+# layout, and this pair of routes is its persistence — a GET when
+# a project opens, a PUT only when a layout is computed or
+# changes. The record is derived geometry (task ids, weights,
+# coordinates), validated fail-closed by the store; the layout
+# rule itself lives client-side and is never recomputed here.
+# Strictly per-user: the store scopes every row by the caller's
+# id, so another user's record for the same project key is
+# simply absent — and a PUT can only ever write the caller's own
+# row. The loose-tasks grouping rides under the reserved key
+# "loose-tasks", owner-scoped like any other.
+# ---------------------------------------------------------------------------
+
+
+def _palace_layout_store():
+    """The Palace layout records store. Monkeypatched in tests."""
+    from local_ai.conversation.palace_layout_store import PalaceLayoutStore
+
+    return PalaceLayoutStore()
+
+
+class PalaceLayoutBody(BaseModel):
+    record: dict[str, Any]
+
+
+@router.get("/palace-layout/{project_id}")
+def get_palace_layout(
+    project_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """The caller's stored overhead layout for one project, or
+    null when none stands (a cold layout follows)."""
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    record = _palace_layout_store().get_layout(user_id, project_id)
+    return {"project_id": project_id, "layout": record}
+
+
+@router.put("/palace-layout/{project_id}")
+def put_palace_layout(
+    project_id: str,
+    body: PalaceLayoutBody,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Persist the caller's overhead layout for one project. The
+    store validates the record fail-closed: a malformed record is
+    refused whole (422) and nothing is written."""
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    try:
+        stored = _palace_layout_store().put_layout(
+            user_id=user_id, project_id=project_id, record=body.record
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"project_id": project_id, "layout": stored}
+
+
+# ---------------------------------------------------------------------------
 # Subject interactions (the Living Palace's ivy read, Scene 1).
 #
 # Ivy grows on a Palace building according to the seat interaction

@@ -78,13 +78,13 @@ import drawingTableImage from './assets/palace-drawing-table.webp'
 import { BONSAI_ASPECT, BONSAI_BASE_LIFT, useBenchBonsaiImage } from './palacePlant'
 import architectureImage from './assets/palace-architecture.webp'
 import plateImage from '../assets/living-sky/plate.webp'
-import domedLargeImage from './assets/founder-domed-large.png'
-import domedMediumImage from './assets/founder-domed-medium.png'
-import domedSmallImage from './assets/founder-domed-small.png'
-import shellImage from './assets/dome-shell-extracted-v2.png'
+import domedLargeImage from './assets/founder-domed-large.webp'
+import domedMediumImage from './assets/founder-domed-medium.webp'
+import domedSmallImage from './assets/founder-domed-small.webp'
+import shellImage from './assets/dome-shell-extracted-v2.webp'
 import pavingImage from './assets/palace-floor-paving.png'
-import skyBandImage from './assets/palace-sky-band.png'
-import palaceBelowImage from './assets/palace-below.png'
+import skyBandImage from './assets/palace-sky-band.webp'
+import palaceBelowImage from './assets/palace-below.webp'
 import { SEAT_COLORS, type SeatId } from '../council/colors'
 
 /* The prototype's material palette. */
@@ -970,7 +970,7 @@ export function BuildingScene({
 /*   → rooms back-to-front (the hearth among them) → shell FRONT.     */
 /*                                                                     */
 /* The shell is the palace's own domed wall with its stained glass    */
-/* baked in (dome-shell-extracted-v2.png), registered to the view's   */
+/* baked in (dome-shell-extracted-v2.webp), registered to the view's   */
 /* floor ellipse by the measured anisotropic affine of                */
 /* build_dome_shell_proof_v2.py: its floor ellipse (780.0, 628.4,     */
 /* 444.5, 271.9) in the shell's 1536×1024 frame maps onto this        */
@@ -1304,7 +1304,7 @@ export function OverheadScene({
         aria-label={`Inside ${model.project.title} from above — its tasks as domed rooms`}
       >
         {/* 1 — the sky band, and nothing else: a true crop of
-            the living-sky plate's top (palace-sky-band.png,
+            the living-sky plate's top (palace-sky-band.webp,
             the plate's own first 400 rows as its own asset —
             no mountains, no strata, no lake can ride it, at
             any aspect) */}

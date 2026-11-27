@@ -721,11 +721,13 @@ function FloorPlateImage({ plate, colour }: { plate: RoomPlate; colour: string |
   )
 }
 
-/** The flame's height in the hearth ring (frame units — 118, as
- *  on the compound; aspect from the shipped asset, as the
+/** The flame's height in the hearth ring (frame units — 295:
+ *  the founder sized the dome's fire at 2.5× the compound's 118,
+ *  2026-11-26, judging the task-level proof; the compound's own
+ *  bonfire keeps its size. Aspect from the shipped asset, as the
  *  compound's fire reads it). It stands static in the ring, its
  *  base at the ring's centre depth. */
-const HEARTH_FLAME_H = 118
+const HEARTH_FLAME_H = 295
 const FLAME_ASPECT = 989 / 1530
 
 const pct = (units: number) => `${(units / SCENE2_FRAME) * 100}%`

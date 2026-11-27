@@ -83,6 +83,8 @@ import domedMediumImage from './assets/founder-domed-medium.png'
 import domedSmallImage from './assets/founder-domed-small.png'
 import shellImage from './assets/dome-shell-extracted-v2.png'
 import pavingImage from './assets/palace-floor-paving.png'
+import skyBandImage from './assets/palace-sky-band.png'
+import palaceBelowImage from './assets/palace-below.png'
 import { SEAT_COLORS, type SeatId } from '../council/colors'
 
 /* The prototype's material palette. */
@@ -1301,18 +1303,42 @@ export function OverheadScene({
         role="img"
         aria-label={`Inside ${model.project.title} from above — its tasks as domed rooms`}
       >
-        {/* 1 — the sky band, and nothing else: the top of the
-            living-sky plate, stretched over the frame (no
-            mountains, no strata, no lake ride this crop) */}
-        <svg
+        {/* 1 — the sky band, and nothing else: a true crop of
+            the living-sky plate's top (palace-sky-band.png,
+            the plate's own first 400 rows as its own asset —
+            no mountains, no strata, no lake can ride it, at
+            any aspect) */}
+        <img
           data-testid="palace-sky"
-          className="absolute inset-0 block h-full w-full"
-          viewBox="0 0 1024 400"
-          preserveAspectRatio="none"
+          src={skyBandImage}
+          alt=""
+          draggable={false}
+          className="absolute inset-0 block h-full w-full object-cover"
           aria-hidden
-        >
-          <image href={plateImage} x={0} y={0} width={1024} height={1536} preserveAspectRatio="none" />
-        </svg>
+        />
+
+        {/* 1b — the palace below (founder, 2026-11-27): the
+            architecture's lower portion standing under the
+            plan, so the dome sits on the palace instead of
+            floating in the sky. Its drum flanks the plan's
+            lower sides; its stepped podium lands at the
+            frame's bottom; the shell's front wall, drawn
+            last, covers its top. Colour-graded to the same
+            palace family as the shell and rooms. */}
+        <img
+          data-testid="palace-below"
+          src={palaceBelowImage}
+          alt=""
+          draggable={false}
+          className="pointer-events-none absolute block"
+          style={{
+            left: 0,
+            top: ohPctY(1153),
+            width: ohPctX(OVERHEAD_FRAME_W),
+            height: ohPctY(737),
+          }}
+          aria-hidden
+        />
 
         {/* 2 — the shell's back half, above the floor's centre
             line, its floor opening cut away */}

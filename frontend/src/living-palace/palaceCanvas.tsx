@@ -1365,7 +1365,7 @@ export function RoomScene({
       >
         <title>The hearth</title>
         <rect x={19} y={310} width={48} height={92} fill="transparent" />
-        <HearthGlyph x={43} base={402} w={44} h={86} lit={lit} />
+        <HearthGlyph x={43} base={402} w={44} h={86} lit={lit} flame="founder" />
       </g>
 
       {/* the doorway, with its threshold slab */}

@@ -295,7 +295,11 @@ export function ellipseContainedInMask(
 export interface SceneStructureInput {
   /** Stable unique key (e.g. "initiative:<id>", "project:<id>"). */
   key: string
-  entityType: 'initiative' | 'project'
+  /** What stands here: an initiative, a project, or the loose
+   *  tasks gathered into one building (the compound completion,
+   *  founder 2026-11-26 — they carry no single entity id; the
+   *  key names the grouping). */
+  entityType: 'initiative' | 'project' | 'loose-tasks'
   entityId: string
   title: string
   /** Floors (projects) for an initiative, rooms (tasks) for a

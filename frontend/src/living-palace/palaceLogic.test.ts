@@ -30,6 +30,7 @@ import {
   attendingGuests,
   buildBuilding,
   buildCompound,
+  buildLooseTaskLevel,
   buildRoom,
   buildTaskLevel,
   councilFlameColors,
@@ -191,7 +192,7 @@ describe('growth readings', () => {
 })
 
 describe('compound', () => {
-  it('places the hierarchy: buildings, loose structures, grounds tasks, the table', () => {
+  it('places the hierarchy: buildings, loose structures, the gathered loose tasks, the table', () => {
     const model = buildCompound(DATA, { unnested: false })
     expect(model.buildings.map((b) => b.initiative.id)).toEqual(['i1'])
     expect(model.buildings[0].floors.map((p) => p.id).sort()).toEqual(['p1', 'p2'])
@@ -277,6 +278,29 @@ describe('task level', () => {
     // level's. Only "Waits on convergent" → Convergent joins two
     // tasks standing here.
     expect(model.links).toEqual([{ aId: 'tf', bId: 'tg' }])
+  })
+})
+
+describe('the loose-tasks level', () => {
+  it('the circles are the compound’s loose tasks, under the grouping’s own name', () => {
+    const model = buildLooseTaskLevel(DATA)
+    // The grouping is a stand-in, not a record: it carries the
+    // name the building wears in the compound's panels.
+    expect(model.project).toEqual({ id: 'loose-tasks', title: 'Loose tasks' })
+    expect(model.tasks.map((t) => t.id)).toEqual(['lt'])
+    expect(model.links).toEqual([])
+  })
+
+  it('carries dependency pairs between loose tasks — and only those', () => {
+    const second = task({ id: 'lt2', project_id: null, title: 'Second errand', dependency_ids: ['lt', 'ta'] })
+    const detail = task({ id: 'lt3', project_id: null, parent_task_id: 'lt', title: 'Errand detail' })
+    const model = buildLooseTaskLevel({ ...DATA, tasks: [...DATA.tasks, second, detail] })
+    // Title order, as a project's level lays its circles out.
+    expect(model.tasks.map((t) => t.id)).toEqual(['lt2', 'lt'])
+    // lt2 waits on lt (a pair of this level) and on Alpha (a
+    // project's task — not a pair here). The loose subtask stands
+    // inside its parent's chamber, not as a circle.
+    expect(model.links).toEqual([{ aId: 'lt', bId: 'lt2' }])
   })
 })
 

@@ -87,7 +87,7 @@ describe('scene geometry scan', () => {
     const scenes: [string, string][] = [
       ['compound', renderToHtml(React.createElement(CompoundScene, {
         model: buildCompound(DATA, { unnested: true }), attended: true,
-        onAttend: () => {}, onOpenBuilding: () => {}, onOpenProject: () => {}, onOpenTask: () => {},
+        onAttend: () => {}, onOpenBuilding: () => {}, onOpenProject: () => {}, onOpenLooseTasks: () => {},
         onSelectIdea: () => {}, selectedIdeaId: null,
       }))],
       ['tasks', renderToHtml(React.createElement(TaskScene, {
@@ -110,12 +110,14 @@ describe('scene geometry scan', () => {
       expect(html.length, name).toBeGreaterThan(800)
       expect(html, name).not.toMatch(/NaN|undefined/)
     }
-    // The compound still serializes SVG (its grounds strip), and
-    // the task level carries one SVG layer — the dependency
-    // lines beneath the circles. The room scenes are the
-    // furnished chamber now — positioned DOM over the founder's
-    // rose plate, no drawn room geometry to scan.
-    expect(scenes[0][1]).toContain('<svg')
+    // The compound serializes NO SVG anymore — the drawn strip
+    // below the plan is retired (founder, 2026-11-26: everything
+    // stands in the plan), so the compound is positioned DOM end
+    // to end. The task level still carries one SVG layer — the
+    // dependency lines beneath the circles. The room scenes are
+    // the furnished chamber now — positioned DOM over the
+    // founder's rose plate, no drawn room geometry to scan.
+    expect(scenes[0][1]).not.toContain('<svg')
     expect(scenes[1][1]).toContain('<svg')
     for (const [, html] of scenes.slice(2)) {
       expect(html).toContain('palace-room-rose')
@@ -125,6 +127,15 @@ describe('scene geometry scan', () => {
     // the lotus — an image, not the SVG council flames.
     const compound = scenes[0][1]
     expect(compound).toContain('palace-fire')
+    // The compound completed (founder, 2026-11-26 22:26 PT): the
+    // fixture's loose task gathers into the smallest building —
+    // no stone carries its testid anymore — and the drawing
+    // table stands in the plan as the founder's art, the fixture
+    // idea resting on it as a paper.
+    expect(compound).toContain('palace-loose-tasks-building')
+    expect(compound).not.toContain('palace-loose-task-lt')
+    expect(compound).toContain('palace-drawing-table')
+    expect(compound).toContain('palace-idea-id1')
     // The task level stands in the same dome: the project's
     // tasks as circles (its subtask stands in no circle), the
     // one hearth with the same founder flame, and exactly the

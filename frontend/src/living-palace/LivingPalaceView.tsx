@@ -61,6 +61,7 @@ import {
   attendingGuests,
   buildBuilding,
   buildCompound,
+  buildLooseTaskLevel,
   buildRoom,
   buildTaskLevel,
   GUEST_OBJECTS,
@@ -77,6 +78,11 @@ type PalaceLayer =
   | { layer: 'compound' }
   | { layer: 'building'; initiativeId: string }
   | { layer: 'tasks'; projectId: string }
+  /** The dome at task level over the loose tasks — the compound's
+   *  smallest building opens here (founder, 2026-11-26). The
+   *  grouping names no single record, so this layer rides the
+   *  compound's chat carriage until a task is entered. */
+  | { layer: 'loose-tasks' }
   | { layer: 'room'; taskId: string }
 
 const GUARDIAN = SEAT_COLORS.guardian
@@ -278,11 +284,12 @@ export default function LivingPalaceView({
     }
     return null
   }, [data, current])
-  const taskLevel = useMemo(
-    () =>
-      data && current.layer === 'tasks' && subjectProject ? buildTaskLevel(data, subjectProject) : null,
-    [data, current, subjectProject],
-  )
+  const taskLevel = useMemo(() => {
+    if (!data) return null
+    if (current.layer === 'tasks' && subjectProject) return buildTaskLevel(data, subjectProject)
+    if (current.layer === 'loose-tasks') return buildLooseTaskLevel(data)
+    return null
+  }, [data, current, subjectProject])
   /** The chamber plate of a project, read off the building
    *  scene's own plan (plateForFloor — the shared assignment,
    *  never re-derived): the task level's circles show it, and
@@ -352,6 +359,13 @@ export default function LivingPalaceView({
     },
     [push],
   )
+  /** The loose-tasks building opens the dome at TASK level over
+   *  the loose tasks — no project stands between the compound
+   *  and these circles. */
+  const openLooseTasks = useCallback(() => {
+    setSelectedIdeaId(null)
+    push({ layer: 'loose-tasks' })
+  }, [push])
 
   /* ---------------- furniture: taps stage, never settle ---------------- */
 
@@ -412,6 +426,8 @@ export default function LivingPalaceView({
       if (i === 0 || !data) return
       if (step.layer === 'building') {
         list.push({ label: data.initiatives.find((x) => x.id === step.initiativeId)?.title ?? 'Building', index: i })
+      } else if (step.layer === 'loose-tasks') {
+        list.push({ label: 'Loose tasks', index: i })
       } else if (step.layer === 'tasks') {
         list.push({ label: data.projects.find((x) => x.id === step.projectId)?.title ?? 'Project', index: i })
       } else if (step.layer === 'room') {
@@ -483,7 +499,7 @@ export default function LivingPalaceView({
             onAttend={setAttendedCompound}
             onOpenBuilding={openBuilding}
             onOpenProject={openProject}
-            onOpenTask={openTask}
+            onOpenLooseTasks={openLooseTasks}
             interactions={interactions}
             projectRoomCounts={projectRoomCounts}
             onSelectIdea={(id) => {
@@ -502,7 +518,7 @@ export default function LivingPalaceView({
             interactions={interactions}
           />
         )}
-        {data && taskLevel && current.layer === 'tasks' && (
+        {data && taskLevel && (current.layer === 'tasks' || current.layer === 'loose-tasks') && (
           <TaskScene
             model={taskLevel}
             plate={taskPlate}

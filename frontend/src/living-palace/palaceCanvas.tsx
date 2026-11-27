@@ -681,8 +681,6 @@ export function CompoundScene({
 
 /** The study's palette (build_study_v5.py), in the plates' tones. */
 const SCENE2_CIRCLE = '#e7cda4'
-const SCENE2_RING = '#927046'
-const SCENE2_RING_INNER = '#b29268'
 
 /** The plates render at 1/0.91 scale centred inside the circle,
  *  so the visible edge is the plate's own disc rim (frac ~0.455
@@ -821,8 +819,6 @@ export function BuildingScene({
                 width: pct(2 * p.r),
                 aspectRatio: '1 / 1',
                 background: SCENE2_CIRCLE,
-                border: `${attended ? 3 : 2}px solid ${attended ? PAL.maeve : SCENE2_RING}`,
-                boxShadow: attended ? '0 0 0 3px rgba(172, 124, 91, 0.35)' : undefined,
               }}
             >
               {/* the floor's room — the founder's unfurnished plate
@@ -838,10 +834,6 @@ export function BuildingScene({
                   background:
                     'radial-gradient(circle at 50% 42%, rgba(243, 234, 214, 0.30), rgba(243, 234, 214, 0.06) 72%)',
                 }}
-              />
-              <span
-                className="pointer-events-none absolute rounded-full"
-                style={{ inset: '4.5%', border: `1px solid ${SCENE2_RING_INNER}` }}
               />
               {/* no text rides the circle (the founder's ruling,
                   2026-11-26 14:03 PT) — the room alone; its name

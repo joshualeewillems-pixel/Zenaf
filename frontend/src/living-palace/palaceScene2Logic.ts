@@ -132,6 +132,24 @@ const CONTAINER_JSON = containerJson as unknown as ContainerJsonShape
 export const HEARTH_R = 88
 export const HEARTH = { x: 627, y: 1095 }
 
+/** The FLAME's breathing room (founder, 2026-11-26 22:28 PT, on
+ *  the live dome: "give the fire a little more breathing room
+ *  don't have rooms spawn directly covered by it"). The flame
+ *  stands 221 tall in the ring (palaceCanvas HEARTH_FLAME_H —
+ *  the two move together): its box spans y 874–1095, x 627±71.
+ *  No circle may seat where the flame would cover it, so seats
+ *  must clear an ellipse over that box with air around it —
+ *  ~30 units above the flame's top, ~40 at its sides. */
+export const FLAME_ZONE = { cx: 627, cy: 984, rx: 112, ry: 140 }
+
+/** True when a circle at (x, y, r) stays clear of the flame's
+ *  breathing room: the ellipse inflated by the circle's radius. */
+function clearsFlame(x: number, y: number, r: number): boolean {
+  const dx = (x - FLAME_ZONE.cx) / (FLAME_ZONE.rx + r)
+  const dy = (y - FLAME_ZONE.cy) / (FLAME_ZONE.ry + r)
+  return dx * dx + dy * dy >= 1
+}
+
 /** The anchor's home: the dome's centre, where the largest
  *  floor anchors the composition, and the composition's heart,
  *  the point pocket seats are scored for closeness to. */
@@ -391,8 +409,9 @@ interface PlacedCircle extends Scene2Circle {
 /** A seat is CLEAR when the whole circle stands inside the
  *  space — the centre's EDT clears r + CONTAINMENT_MARGIN and
  *  every rim sample at r + 1 lands on a container pixel — and
- *  it keeps the one gap from the hearth (strict) and every
- *  placed circle (within the sub-pixel tolerance). */
+ *  it keeps the one gap from the hearth (strict), clears the
+ *  flame's breathing room, and keeps the gap from every placed
+ *  circle (within the sub-pixel tolerance). */
 function isClear(x: number, y: number, r: number, placed: PlacedCircle[]): boolean {
   const { mask } = loadContainer()
   if (!(Math.trunc(x) >= 0 && Math.trunc(x) < SCENE2_FRAME && Math.trunc(y) >= 0 && Math.trunc(y) < SCENE2_FRAME)) {
@@ -407,6 +426,7 @@ function isClear(x: number, y: number, r: number, placed: PlacedCircle[]): boole
     if (mask[py * SCENE2_FRAME + px] === 0) return false
   }
   if (Math.hypot(x - HEARTH.x, y - HEARTH.y) < r + HEARTH_R + CIRCLE_GAP) return false
+  if (!clearsFlame(x, y, r)) return false
   return placed.every(
     (p) => Math.hypot(x - p.x, y - p.y) >= r + p.r + CIRCLE_GAP - CLEARANCE_TOLERANCE,
   )

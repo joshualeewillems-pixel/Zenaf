@@ -721,13 +721,16 @@ function FloorPlateImage({ plate, colour }: { plate: RoomPlate; colour: string |
   )
 }
 
-/** The flame's height in the hearth ring (frame units — 295:
- *  the founder sized the dome's fire at 2.5× the compound's 118,
- *  2026-11-26, judging the task-level proof; the compound's own
- *  bonfire keeps its size. Aspect from the shipped asset, as the
- *  compound's fire reads it). It stands static in the ring, its
- *  base at the ring's centre depth. */
-const HEARTH_FLAME_H = 295
+/** The flame's height in the hearth ring (frame units — 221:
+ *  the founder sized the dome's fire at 2.5× the compound's 118
+ *  judging the task-level proof (2026-11-26 22:11 PT), then
+ *  trimmed it ×0.75 on the live view (22:28 PT). The compound's
+ *  own bonfire keeps its size. The packer's FLAME_ZONE in
+ *  palaceScene2Logic tracks this height — the two move
+ *  together. Aspect from the shipped asset, as the compound's
+ *  fire reads it). It stands static in the ring, its base at
+ *  the ring's centre depth. */
+const HEARTH_FLAME_H = 221
 const FLAME_ASPECT = 989 / 1530
 
 const pct = (units: number) => `${(units / SCENE2_FRAME) * 100}%`

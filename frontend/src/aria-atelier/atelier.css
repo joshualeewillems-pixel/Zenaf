@@ -57,7 +57,9 @@
   background-repeat: no-repeat;
 }
 
-/* The painting's own ring and lotus, above the cast's live water. */
+/* The painting's own lotus, above the cast's live water. (The
+   painting's inner ring is deliberately not carried — founder,
+   2026-11-27: the well-within-a-well obstructed the formations.) */
 .atelier-scene-overlay {
   position: absolute;
   display: block;
@@ -279,8 +281,8 @@
 /* The live water disc over Screen 2's painted well: position and
    width are inline, from ./atelierLogic's SCENE2_DISC; the disc
    clips the water and the formation stack to the painting's
-   water. The painting's ring and lotus stand above it as
-   overlays (.atelier-scene-overlay). */
+   water. The painting's lotus stands above it as an overlay
+   (.atelier-scene-overlay); there is no inner wall. */
 .atelier-cast-circle {
   position: absolute;
   transform: translate(-50%, -50%);

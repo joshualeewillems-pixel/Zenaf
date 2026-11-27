@@ -579,3 +579,19 @@ export function planBuildingScene(floors: Scene2FloorInput[]): BuildingSceneLayo
   // than place a floor outside the law.
   throw new Error('Palace Scene 2: no lawful placement for the building’s floors')
 }
+
+/** The room plate of one floor, read off the SAME plan the
+ *  building scene renders: a room takes the chamber of the floor
+ *  it belongs to (founder, 2026-11-26 18:55 PT). The plan is the
+ *  assignment — shared, never re-derived. Unresolvable — an
+ *  empty building, an unknown key, a plan that cannot seat —
+ *  reads as the rose chamber, the plate the room's seats were
+ *  first tuned on. */
+export function plateForFloor(floors: Scene2FloorInput[], key: string): RoomPlate {
+  if (floors.length === 0) return 'rose'
+  try {
+    return planBuildingScene(floors).floors.find((f) => f.key === key)?.plate ?? 'rose'
+  } catch {
+    return 'rose'
+  }
+}

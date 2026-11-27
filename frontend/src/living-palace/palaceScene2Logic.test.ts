@@ -35,6 +35,7 @@ import {
   containerArea,
   containerEdtAt,
   planBuildingScene,
+  plateForFloor,
   type PlacedFloor,
   type Scene2FloorInput,
 } from './palaceScene2Logic'
@@ -252,6 +253,21 @@ describe('Palace Scene 2 — the relaxed Apollonian spacing, nested in the dome'
     ])
     // a single floor stands in the rose room
     expect(planBuildingScene([floor('only', 3)]).floors[0].plate).toBe('rose')
+  })
+
+  it('plateForFloor reads a floor’s chamber off the same plan', () => {
+    // The room view's read of the assignment: identical inputs,
+    // identical plates as the building scene renders — the
+    // largest floor's rooms stand in the rose chamber, the next
+    // in the spiral, the next in the tiers.
+    const shape = [floor('big', 9), floor('mid', 5), floor('small', 2)]
+    expect(plateForFloor(shape, 'big')).toBe('rose')
+    expect(plateForFloor(shape, 'mid')).toBe('spiral')
+    expect(plateForFloor(shape, 'small')).toBe('tiers')
+    // Unresolvable reads as the rose chamber: an unknown floor,
+    // an empty building.
+    expect(plateForFloor(shape, 'missing')).toBe('rose')
+    expect(plateForFloor([], 'big')).toBe('rose')
   })
 
   it('share monotonicity: more rooms never means a smaller circle', () => {

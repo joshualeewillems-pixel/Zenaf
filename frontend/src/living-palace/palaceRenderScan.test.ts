@@ -15,6 +15,7 @@ import { createRoot } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import { BuildingScene, CompoundScene, FloorScene, RoomScene } from './palaceCanvas'
 import { buildBuilding, buildCompound, buildFloor, buildRoom, type PalaceData } from './palaceLogic'
+import type { RoomPlate } from './palaceScene2Logic'
 import type { Initiative, Project, Task } from '../vision-execution/types'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -198,5 +199,59 @@ describe('scene geometry scan', () => {
     // percentages") — no share/count plaque, no released tag
     expect(building).not.toMatch(/\d+%\s*·/)
     expect(building).not.toContain('· released')
+  })
+
+  it('the room stands in its floor’s chamber — per-plate seats, the 1.5× flame, the hearth wall', () => {
+    // The three chambers (founder, 2026-11-26 18:55 PT): a room
+    // takes the plate of its floor; the flame stands 1.5× larger
+    // in all three (heights 150 / 188 / 177 frame units); the
+    // spiral and tiers hearths carry the plate's front wall back
+    // over the flame's base, the rose hearth does not.
+    const FLAME_ASPECT = 989 / 1530
+    const flameHeight = (html: string): number => {
+      const tag = html.match(/<img[^>]*palace-fire[^>]*>/)?.[0] ?? ''
+      const widthPct = Number(tag.match(/width:\s*([\d.]+)%/)?.[1])
+      return ((widthPct / 100) * 1254) / FLAME_ASPECT
+    }
+    const cases: { plate: RoomPlate; asset: string; flame: number; wall: boolean }[] = [
+      { plate: 'rose', asset: 'palace-room-rose', flame: 150, wall: false },
+      { plate: 'spiral', asset: 'palace-room-spiral', flame: 188, wall: true },
+      { plate: 'tiers', asset: 'palace-room-tiers', flame: 177, wall: true },
+    ]
+    for (const c of cases) {
+      const html = renderToHtml(React.createElement(RoomScene, {
+        model: buildRoom(DATA, TASKS[0]), lit: true, plate: c.plate,
+        onBringFire: () => {}, onThreshold: () => {},
+        onOpenWaitedOn: () => {}, onFurniture: () => {}, onOpenSubtask: () => {},
+      }))
+      expect(html, c.plate).toContain(c.asset)
+      expect(html, c.plate).not.toMatch(/NaN|undefined/)
+      // the chamber's furniture stands at its own seats
+      expect(html, c.plate).toContain('palace-room-scales')
+      expect(html, c.plate).toContain('palace-room-chest')
+      expect(html, c.plate).toContain('palace-room-table')
+      expect(html, c.plate).toContain('palace-room-vessel')
+      expect(html, c.plate).toContain('palace-room-hearth')
+      // the flame, at this chamber's 1.5× height
+      expect(html, c.plate).toContain('palace-fire')
+      expect(flameHeight(html), c.plate).toBeGreaterThan(c.flame - 1.5)
+      expect(flameHeight(html), c.plate).toBeLessThan(c.flame + 1.5)
+      // the hearth's front wall: present on spiral and tiers,
+      // absent on rose
+      if (c.wall) {
+        expect(html, c.plate).toContain('palace-room-hearth-wall')
+      } else {
+        expect(html, c.plate).not.toContain('palace-room-hearth-wall')
+      }
+    }
+    // No plate named: the room stands in the rose chamber, as it
+    // did before the three chambers were wired.
+    const unplated = renderToHtml(React.createElement(RoomScene, {
+      model: buildRoom(DATA, TASKS[0]), lit: true,
+      onBringFire: () => {}, onThreshold: () => {},
+      onOpenWaitedOn: () => {}, onFurniture: () => {}, onOpenSubtask: () => {},
+    }))
+    expect(unplated).toContain('palace-room-rose')
+    expect(unplated).not.toContain('palace-room-hearth-wall')
   })
 })

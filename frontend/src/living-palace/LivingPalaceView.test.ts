@@ -325,6 +325,28 @@ describe('Living Palace view', () => {
     expect(container.querySelector('[data-testid="palace-room-plant"]')).toBeNull()
   })
 
+  it('a room stands in the chamber of its floor', async () => {
+    await render()
+    // The workshop building's floors, by size: P1 (three rooms)
+    // is the largest — its rooms stand in the rose chamber, the
+    // plate the building scene shows for that floor.
+    await descendToGamma()
+    expect(container.querySelector('img[src*="palace-room-rose"]')).not.toBeNull()
+    expect(container.querySelector('img[src*="palace-room-spiral"]')).toBeNull()
+  })
+
+  it('the second floor’s rooms stand in the spiral chamber', async () => {
+    await render()
+    // P2 (two rooms) is next by size: the spiral chamber — the
+    // same plate assignment the building scene renders, shared
+    // through plateForFloor, never re-derived.
+    await click('palace-building-i1')
+    await click('palace-floor-p2')
+    await click('palace-room-tf')
+    expect(container.querySelector('img[src*="palace-room-spiral"]')).not.toBeNull()
+    expect(container.querySelector('img[src*="palace-room-rose"]')).toBeNull()
+  })
+
   it('the mandala stands only where recorded edges converge', async () => {
     await render()
     await click('palace-building-i1')

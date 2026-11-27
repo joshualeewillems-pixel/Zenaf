@@ -13,9 +13,10 @@
  * founder's own three-court plan art with the ivy buildings placed
  * by the ruled placement law — see the CompoundScene section and
  * palaceSceneLogic. The building layer is Scene 2 (founder,
- * 2026-11-26): the Apollonian circle — see the BuildingScene
- * section and palaceScene2Logic. The floor / room layers below
- * are unchanged.
+ * 2026-11-26): the room-circles in their relaxed Apollonian
+ * spacing — see the BuildingScene section and
+ * palaceScene2Logic. The floor / room layers below are
+ * unchanged.
  *
  * Surface rule: the scenes carry no legends, no vocabulary panels,
  * no explanations of themselves. What a tap reveals lives in the
@@ -46,14 +47,12 @@ import {
 } from './palaceSceneLogic'
 import { CONTAINER_CLIP_PATH, SCENE2_FRAME, planBuildingScene, type RoomPlate } from './palaceScene2Logic'
 import { useTintedMaster } from './palaceTint'
+import { glassColorFor, useGlassPlate } from './palaceGlass'
 import planImage from './assets/palace-plan.jpg'
 import frontWallImage from './assets/palace-front-wall.png'
 import fireImage from './assets/palace-fire.png'
-import shellImage from './assets/palace-shell.webp'
+import architectureImage from './assets/palace-architecture.webp'
 import plateImage from '../assets/living-sky/plate.webp'
-import roomRoseImage from './assets/palace-room-rose.jpg'
-import roomSpiralImage from './assets/palace-room-spiral.jpg'
-import roomTiersImage from './assets/palace-room-tiers.jpg'
 import { SEAT_COLORS, type SeatId } from '../council/colors'
 
 /* The prototype's material palette. */
@@ -635,33 +634,43 @@ export function CompoundScene({
 }
 
 /* ------------------------------------------------------------------ */
-/* building — Scene 2 (founder, 2026-11-26: "Great build it!")         */
+/* building — Scene 2 (founder, 2026-11-26: "Great build it!"; the   */
+/* Apollonian rebuild, founder 2026-11-26 16:27 PT: "Yep! That's    */
+/* it")                                                                */
 /*                                                                     */
-/* The building layer IS the Apollonian circle now, nested in the   */
-/* founder's dome shell (his ruling, 2026-11-26 13:33 PT: "It needs  */
-/* to nest In this geometry"), and the dome stands on the Zenaf      */
-/* background (his ruling, 2026-11-26 13:44 PT: "We need the Zenaf   */
-/* background also (no tree, just the background)"): the Living      */
-/* Sky's plate — parchment sky, mountains, waterfalls, strata,       */
-/* imported not copied — is the scene's ground, and the shell        */
-/* (its white surround cut to alpha) stands in that landscape.       */
-/* and the composition stands inside it under the packing rules     */
-/* (palaceScene2Logic; the founder's rules of 2026-11-26): the      */
-/* whole dome interior — wall cavity and floor together — is the     */
-/* space; each floor's AREA is its share of the building's rooms    */
-/* against that space's area, the whole set scaled together to      */
-/* the largest composition in which every circle still rests —      */
-/* on the floor, or nested in the pocket of the circles below       */
-/* it. Rooms only: no filler circles, and no text rides the         */
-/* circles (his ruling, 2026-11-26 14:03 PT: "Don't show the        */
-/* cards/tags/ percentages") — a circle is its room, and its        */
-/* identity travels through the chat. ONE hearth — the founder's    */
-/* flame in its stone ring — stands on the shell's floor at the     */
-/* bottom centre. Each floor circle's interior is one of the        */
+/* The building layer is the composition of room-circles nested in  */
+/* the founder's ARCHITECTURE dome — the background he supplied     */
+/* 2026-11-26 16:15 PT ("Use this photo as the bg"), its interior   */
+/* woven with staircases, galleries and arches, its white surround  */
+/* cut to alpha — standing on the Zenaf background (his ruling,     */
+/* 2026-11-26 13:44 PT): the Living Sky's plate, imported not       */
+/* copied. The composition stands inside it under the relaxed       */
+/* Apollonian spacing (palaceScene2Logic; his ruling, 2026-11-26    */
+/* 16:19 PT: "Forget gravity and try to space them all as           */
+/* relatively apalonian as possible"): the whole dome interior is   */
+/* the space; each floor's AREA is its share of the building's      */
+/* rooms against that space's area; the largest floor anchors the   */
+/* middle and the rest nestle into the pockets between the larger   */
+/* ones, sizes clearly differentiated and distributed — never all   */
+/* the big ones pooled at the bottom. Rooms only: no filler         */
+/* circles, and no text rides the circles (his ruling, 2026-11-26   */
+/* 14:03 PT) — a circle is its room, and its identity travels       */
+/* through the chat. ONE hearth — the SAME fire as everywhere in    */
+/* the Palace (his ruling, 2026-11-26 16:31 PT: "Fire- same         */
+/* fire"), the founder's flame standing in the dome's own stone     */
+/* ring on its floor. Each floor circle's interior is one of the    */
 /* three unfurnished room plates, by size rank cycling rose →       */
-/* spiral → tiers (addendum 2026-11-26 13:16 PT), and the circles   */
-/* draw back-to-front by depth. Plain positioned DOM throughout     */
-/* (the Scene 1 lesson): no SVG transform stacks.                    */
+/* spiral → tiers (addendum 2026-11-26 13:16 PT), drawn at the      */
+/* study's inset so the plate's paper margin never shows and its   */
+/* stone rim does (founder, 2026-11-26 16:24 PT: "Not the stone     */
+/* color just the paper around it"), and the circles draw           */
+/* back-to-front by depth. A floor's STAINED GLASS takes the        */
+/* colour of the seat that has been talking about its subject      */
+/* (his ruling, 2026-11-26 16:27 PT: "stain glass changes color     */
+/* with seat communication"; palaceGlass) — the same               */
+/* subject-interactions read that grows Scene 1's ivy. Plain        */
+/* positioned DOM throughout (the Scene 1 lesson): no SVG           */
+/* transform stacks.                                                */
 /*                                                                     */
 /* A tap does what it always did here: it descends into that         */
 /* floor, with the same chat subject carriage. A floor's earned      */
@@ -674,22 +683,40 @@ export function CompoundScene({
 const SCENE2_CIRCLE = '#e7cda4'
 const SCENE2_RING = '#927046'
 const SCENE2_RING_INNER = '#b29268'
-const SCENE2_HEARTH_FILL = '#e2cfaa'
 
-/** The founder's unfurnished room plates — each floor circle's
- *  interior (addendum 2026-11-26 13:16 PT), assigned by size rank
- *  in palaceScene2Logic. */
-const ROOM_PLATE_IMAGES: Record<RoomPlate, string> = {
-  rose: roomRoseImage,
-  spiral: roomSpiralImage,
-  tiers: roomTiersImage,
+/** The plates render at 1/0.91 scale centred inside the circle,
+ *  so the visible edge is the plate's own disc rim (frac ~0.455
+ *  of the plate): the paper margin never shows, the stone rim
+ *  does — the study's treatment (build_study_v21_apollonian.py). */
+const PLATE_SCALE = 1 / 0.91
+
+/** A floor's room — the founder's unfurnished plate for its size
+ *  rank, its stained glass tinted to the dominant seat's colour
+ *  where a seat has been talking about the floor's subject
+ *  (palaceGlass; natural glass when none has). */
+function FloorPlateImage({ plate, colour }: { plate: RoomPlate; colour: string | null }) {
+  const url = useGlassPlate(plate, colour)
+  return (
+    <img
+      src={url}
+      alt=""
+      draggable={false}
+      className="pointer-events-none absolute block object-cover"
+      style={{
+        width: `${PLATE_SCALE * 100}%`,
+        height: `${PLATE_SCALE * 100}%`,
+        left: `${-((PLATE_SCALE - 1) / 2) * 100}%`,
+        top: `${-((PLATE_SCALE - 1) / 2) * 100}%`,
+      }}
+    />
+  )
 }
 
-/** The flame's height inside the hearth disc (frame units — the
- *  study's proportion, 0.706 of the hearth disc's diameter, in
- *  the shell's 1254 frame; aspect from the shipped asset, as
- *  the compound's fire reads it). */
-const HEARTH_FLAME_H = 88
+/** The flame's height in the hearth ring (frame units — 118, as
+ *  on the compound; aspect from the shipped asset, as the
+ *  compound's fire reads it). It stands static in the ring, its
+ *  base at the ring's centre depth. */
+const HEARTH_FLAME_H = 118
 const FLAME_ASPECT = 989 / 1530
 
 const pct = (units: number) => `${(units / SCENE2_FRAME) * 100}%`
@@ -699,11 +726,17 @@ export function BuildingScene({
   attendedFloorId,
   onAttend,
   onOpenFloor,
+  interactions,
 }: {
   model: BuildingModel
   attendedFloorId: string | null
   onAttend: (projectId: string | null) => void
   onOpenFloor: (projectId: string) => void
+  /** Per-subject seat-interaction counts (the glass read — the
+   *  same read that grows Scene 1's ivy); absent or null while
+   *  loading or after a failed read — every floor then keeps
+   *  its natural glass. */
+  interactions?: SubjectInteraction[] | null
 }) {
   const layout = useMemo(
     () =>
@@ -712,6 +745,7 @@ export function BuildingScene({
       ),
     [model],
   )
+  const interactionIndex = useMemo(() => indexInteractions(interactions), [interactions])
   const floorByKey = new Map(model.floors.map((f) => [f.project.id, f]))
   const { hearth } = layout
   return (
@@ -741,22 +775,22 @@ export function BuildingScene({
           className="absolute inset-0 block h-full w-full object-cover"
         />
 
-        {/* the dome shell — the founder's art (alpha cutout)
-            standing in the landscape, the whole 1254 frame; the
-            composition nests in its cavity */}
+        {/* the architecture dome — the founder's art (alpha
+            cutout) standing in the landscape, the whole 1254
+            frame; the composition nests in its interior */}
         <img
-          data-testid="palace-shell"
-          src={shellImage}
+          data-testid="palace-architecture"
+          src={architectureImage}
           alt=""
           draggable={false}
           className="absolute inset-0 block h-full w-full"
         />
 
         {/* the composition, clipped to the container's outline —
-            the whole space, floor included, so a room standing
-            on the floor is not cut at the cavity's back rim;
-            belt-and-braces: the packing law's containment
-            already keeps every circle inside the space */}
+            the whole space, floor included, so a room is not cut
+            at the cavity's back rim; belt-and-braces: the
+            spacing law's containment already keeps every circle
+            inside the space */}
         <div className="absolute inset-0" style={{ clipPath: CONTAINER_CLIP_PATH }}>
 
         {/* the floors — one circle each, area = share of the
@@ -767,6 +801,9 @@ export function BuildingScene({
           .map((p) => {
           const floor = floorByKey.get(p.key)!
           const attended = attendedFloorId === floor.project.id
+          const glassColour = glassColorFor(
+            interactionIndex.get(interactionKey('project', floor.project.id)),
+          )
           return (
             <button
               key={floor.project.id}
@@ -789,13 +826,10 @@ export function BuildingScene({
               }}
             >
               {/* the floor's room — the founder's unfurnished plate
-                  for its size rank, clipped to the circle */}
-              <img
-                src={ROOM_PLATE_IMAGES[p.plate]}
-                alt=""
-                draggable={false}
-                className="pointer-events-none absolute inset-0 block h-full w-full object-cover"
-              />
+                  for its size rank, clipped to the circle at the
+                  study's inset (paper off, stone rim on), its
+                  stained glass in the dominant seat's colour */}
+              <FloorPlateImage plate={p.plate} colour={glassColour} />
               {/* a soft parchment wash over the art, so the room
                   reads as the building's interior, not a picture */}
               <span
@@ -830,34 +864,30 @@ export function BuildingScene({
         })}
         </div>
 
-        {/* the hearth — one per building, standing on the shell's
-            floor at the bottom centre: the founder's flame in
-            its stone ring */}
+        {/* the hearth — one per building: the dome's own stone
+            ring on its floor (painted in the architecture art
+            itself), and standing in it the SAME fire as
+            everywhere in the Palace — the founder's flame,
+            static, its base at the ring's centre depth */}
         <div
           data-testid="palace-building-hearth"
-          className="pointer-events-none absolute rounded-full"
+          className="pointer-events-none absolute"
           style={{
             left: pct(hearth.x - hearth.r),
             top: pct(hearth.y - hearth.r),
             width: pct(2 * hearth.r),
             aspectRatio: '1 / 1',
-            background: SCENE2_HEARTH_FILL,
-            border: `2px solid ${SCENE2_RING}`,
           }}
-        >
-          <span
-            className="absolute rounded-full"
-            style={{ inset: '11%', border: `1px solid ${SCENE2_RING_INNER}` }}
-          />
-        </div>
+        />
         <img
+          data-testid="palace-building-fire"
           src={fireImage}
           alt=""
           draggable={false}
           className="pointer-events-none absolute block"
           style={{
             left: pct(hearth.x - (HEARTH_FLAME_H * FLAME_ASPECT) / 2),
-            bottom: pct(SCENE2_FRAME - (hearth.y + hearth.r - 8)),
+            bottom: pct(SCENE2_FRAME - hearth.y),
             width: pct(HEARTH_FLAME_H * FLAME_ASPECT),
           }}
         />

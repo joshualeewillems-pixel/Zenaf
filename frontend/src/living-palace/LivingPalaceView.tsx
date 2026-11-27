@@ -464,6 +464,7 @@ export default function LivingPalaceView({
             attendedFloorId={attendedFloorId}
             onAttend={setAttendedFloorId}
             onOpenFloor={openProject}
+            interactions={interactions}
           />
         )}
         {data && floor && current.layer === 'floor' && (

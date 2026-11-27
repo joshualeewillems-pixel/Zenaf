@@ -254,3 +254,70 @@ describe('overhead packing — the standing composition and honest capacity', ()
     120_000,
   )
 })
+
+/* The standing artifact rooms (founder addendum, 2026-11-27
+ * 12:22 PT): fixtures like the hearth — always present, at the
+ * compass points, cleared by the task packer, never counted. */
+describe('overhead packing — the standing artifact rooms', () => {
+  const EXPECTED_IDS = ['artifact:chest', 'artifact:scales', 'artifact:table', 'artifact:vessel']
+
+  for (const n of [0, 3, 12, 30]) {
+    it(
+      `the four fixtures stand at the compass points with ${n} task rooms`,
+      () => {
+        const result = planOverheadLayout(rooms(n), new Map(), null, { fixtures: true })
+        const s = result.record.scale
+        expect(result.unplaced).toEqual([])
+        expect(result.fixtures).toHaveLength(4)
+        expect(result.fixtures.map((f) => f.id).sort()).toEqual(EXPECTED_IDS)
+        const d = 12 + 6 + s // hearth disc + preferred passage + one unit share
+        const byKind = Object.fromEntries(result.fixtures.map((f) => [f.kind, f]))
+        // The compass points, exactly (y south).
+        expect(byKind.vessel.x).toBeCloseTo(0, 6)
+        expect(byKind.vessel.y).toBeCloseTo(-d, 6)
+        expect(byKind.scales.x).toBeCloseTo(d, 6)
+        expect(byKind.scales.y).toBeCloseTo(0, 6)
+        expect(byKind.table.x).toBeCloseTo(0, 6)
+        expect(byKind.table.y).toBeCloseTo(d, 6)
+        expect(byKind.chest.x).toBeCloseTo(-d, 6)
+        expect(byKind.chest.y).toBeCloseTo(0, 6)
+        for (const f of result.fixtures) {
+          expect(f.r).toBeCloseTo(s, 9)
+          // Clear of the hearth by the preferred passage.
+          expect(Math.hypot(f.x, f.y) - f.r - 12).toBeGreaterThanOrEqual(6 - 1e-6)
+          // Contained.
+          expect(Math.hypot(f.x, f.y) + f.r).toBeLessThanOrEqual(100 + 1e-6)
+          // Clear of every other fixture by the hard clearance.
+          for (const g of result.fixtures) {
+            if (g.id === f.id) continue
+            expect(Math.hypot(f.x - g.x, f.y - g.y) - f.r - g.r).toBeGreaterThanOrEqual(1.2 - 1e-6)
+          }
+          // Clear of every task room by the hard clearance.
+          for (const p of result.placed) {
+            expect(Math.hypot(f.x - p.x, f.y - p.y) - f.r - p.r).toBeGreaterThanOrEqual(1.2 - 1e-4)
+          }
+        }
+        // The fixtures are not task rooms: the record holds only
+        // the collection's own positions and weights.
+        expect(Object.keys(result.record.positions)).toHaveLength(n)
+        expect(Object.keys(result.record.weights)).toHaveLength(n)
+      },
+      180_000,
+    )
+  }
+
+  it(
+    'fixtures are obstacles, not decoration: the same collection packs to a different scale around them',
+    () => {
+      const bare = planOverheadLayout(rooms(12), new Map(), null)
+      const withFix = planOverheadLayout(rooms(12), new Map(), null, { fixtures: true })
+      expect(withFix.fixtures).toHaveLength(4)
+      expect(bare.fixtures).toEqual([])
+      // Four extra rooms' worth of floor is spoken for; the
+      // common scale answers for it (never by distorting a room).
+      expect(withFix.record.scale).toBeLessThan(bare.record.scale)
+      expect(withFix.unplaced).toEqual([])
+    },
+    180_000,
+  )
+})

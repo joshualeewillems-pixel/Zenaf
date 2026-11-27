@@ -108,6 +108,64 @@ export interface PlacementResult {
 
 type Partners = Map<string, Set<string>>
 
+/* ------------------------------------------------------------------ */
+/* the standing artifact rooms (founder addendum, 2026-11-27         */
+/* 12:22 PT)                                                           */
+/*                                                                     */
+/* Four rooms stand in every project's overhead plan besides the     */
+/* task rooms: the vessel room, the scales room, the drawing-table   */
+/* room and the chest room. They are FIXTURES, as the hearth is:     */
+/* seated before the task rooms, never counted as task rooms (not    */
+/* in the packing law's counts, not in occupancy), and the task      */
+/* packer clears them by the same clearance law. Each carries one    */
+/* equal unit share at the layout's scale (r = s), and they stand    */
+/* at the compass points around the hearth, one preferred passage    */
+/* (SPACING) from the fire's disc: centre distance 12 + 6 + s. At    */
+/* any scale the search can return (s <= 40) that ring is lawful     */
+/* by construction: neighbours sit d x sqrt(2) apart against a       */
+/* 2s + 1.2 need (holds to s = 41.4), and the outer reach            */
+/* 18 + 2s stays inside the floor (98 of 100 at s = 40).             */
+/* ------------------------------------------------------------------ */
+
+export type OverheadArtifactKind = 'vessel' | 'scales' | 'table' | 'chest'
+
+export interface OverheadFixture {
+  id: string
+  kind: OverheadArtifactKind
+  x: number
+  y: number
+  r: number
+}
+
+/** The compass assignment (y south): the vessel to the north, the
+ *  scales to the east, the drawing table to the south — the
+ *  visitor's side — and the chest to the west. */
+const ARTIFACT_COMPASS: { id: string; kind: OverheadArtifactKind; angleDeg: number }[] = [
+  { id: 'artifact:vessel', kind: 'vessel', angleDeg: -90 },
+  { id: 'artifact:scales', kind: 'scales', angleDeg: 0 },
+  { id: 'artifact:table', kind: 'table', angleDeg: 90 },
+  { id: 'artifact:chest', kind: 'chest', angleDeg: 180 },
+]
+
+export function overheadFixtureCircles(scale: number): OverheadFixture[] {
+  const d = OVERHEAD_HEARTH_R + OVERHEAD_SPACING + scale
+  return ARTIFACT_COMPASS.map(({ id, kind, angleDeg }) => {
+    const a = (angleDeg * Math.PI) / 180
+    return { id, kind, x: d * Math.cos(a), y: d * Math.sin(a), r: scale }
+  })
+}
+
+/** The scale an empty palace stands at (no task rooms to search
+ *  against): a declared, calm size near the small-palace scales,
+ *  so the hearth and the four artifact rooms stand at a modest
+ *  radius even before the first task arrives. */
+export const OVERHEAD_EMPTY_SCALE = 12
+
+/** Extra standing obstacles (the artifact fixtures) the placer
+ *  must clear, as a function of the candidate scale — their
+ *  radius IS the scale, so they are rebuilt at every candidate. */
+type ObstaclesForScale = (scale: number) => PlacedCircle[]
+
 /** Python's round(): round-half-even on the binary double. */
 function pyRound(x: number, digits = 0): number {
   const m = 10 ** digits
@@ -417,6 +475,7 @@ export function placeOverheadRooms(
   prior: Record<string, [number, number]>,
   scale: number,
   partners: Partners = new Map(),
+  obstaclesForScale?: ObstaclesForScale,
 ): PlacementResult {
   const radii: Record<string, number> = {}
   for (const room of rooms) radii[room.id] = overheadRadiusOf(room.weight, scale)
@@ -428,7 +487,10 @@ export function placeOverheadRooms(
     Object.values(radii).reduce((sum, r) => sum + (r + OVERHEAD_CLEARANCE / 2) ** 2, 0) /
     (OVERHEAD_R_FLOOR + OVERHEAD_CLEARANCE / 2) ** 2
 
-  const placed: PlacedCircle[] = [{ id: HEARTH_ID, x: 0, y: 0, r: OVERHEAD_HEARTH_R }]
+  const placed: PlacedCircle[] = [
+    { id: HEARTH_ID, x: 0, y: 0, r: OVERHEAD_HEARTH_R },
+    ...(obstaclesForScale ? obstaclesForScale(scale) : []),
+  ]
   const positions: Record<string, [number, number]> = {}
   const kept: string[] = []
   const repairs: PlacementResult['repairs'] = []
@@ -488,7 +550,10 @@ export function placeOverheadRooms(
     return dr !== 0 ? dr : a < b ? -1 : a > b ? 1 : 0
   })
   const basePlaced = [...placed]
-  const baseCount = basePlaced.length - 1 // minus the hearth
+  // Task rooms already standing (kept + repaired), for the
+  // founding-site index: minus the hearth, minus any fixture
+  // obstacles — fixtures are not placements.
+  const baseCount = basePlaced.length - 1 - (obstaclesForScale ? obstaclesForScale(scale).length : 0)
   const sites: Record<string, [number, number] | null> = {}
   queue.forEach((rid, j) => {
     sites[rid] = baseCount + j < 9 ? sitePoint(baseCount + j, radii[rid]) : null
@@ -601,12 +666,13 @@ export function searchOverheadScale(
   rooms: OverheadRoomInput[],
   prior: Record<string, [number, number]> = {},
   partners: Partners = new Map(),
+  obstaclesForScale?: ObstaclesForScale,
 ): number {
   let lo = 1.0
   let hi = 40.0
   for (let i = 0; i < 22; i++) {
     const mid = (lo + hi) / 2
-    const lay = placeOverheadRooms(rooms, prior, mid, partners)
+    const lay = placeOverheadRooms(rooms, prior, mid, partners, obstaclesForScale)
     if (lay.unplaced.length === 0) lo = mid
     else hi = mid
   }
@@ -621,6 +687,7 @@ function ladder(
   prior: Record<string, [number, number]>,
   scale: number,
   partners: Partners,
+  obstaclesForScale?: ObstaclesForScale,
 ): { layout: PlacementResult; rung: string } | null {
   const weights: Record<string, number> = {}
   for (const room of rooms) weights[room.id] = room.weight
@@ -636,7 +703,7 @@ function ladder(
     ['cold', {}],
   ]
   for (const [name, pr] of rungs) {
-    const lay = placeOverheadRooms(rooms, pr, scale, partners)
+    const lay = placeOverheadRooms(rooms, pr, scale, partners, obstaclesForScale)
     if (lay.unplaced.length === 0) return { layout: lay, rung: name }
   }
   return null
@@ -679,6 +746,10 @@ export interface OverheadLayout {
   /** Render-ready rooms in ground units, in placement order. */
   placed: { id: string; x: number; y: number; r: number }[]
   unplaced: UnplacedRoom[]
+  /** The four standing artifact rooms at this layout's scale —
+   *  present when the layout was computed with fixtures (the
+   *  app's path); empty on the study's bare packing path. */
+  fixtures: OverheadFixture[]
   /** The ladder rung that produced this layout ('standing' when
    *  the stored record was reused verbatim). */
   rung: string
@@ -691,12 +762,16 @@ function integrityClean(
   positions: Record<string, [number, number]>,
   radii: Record<string, number>,
   tol: number,
+  obstacles: PlacedCircle[] = [],
 ): boolean {
   const ids = Object.keys(positions)
   for (const rid of ids) {
     const [x, y] = positions[rid]
     if (Math.hypot(x, y) + radii[rid] > OVERHEAD_R_FLOOR - MARGIN + tol) return false
     if (Math.hypot(x, y) < radii[rid] + OVERHEAD_HEARTH_R + OVERHEAD_CLEARANCE - tol) return false
+    for (const ob of obstacles) {
+      if (Math.hypot(x - ob.x, y - ob.y) < radii[rid] + ob.r + OVERHEAD_CLEARANCE - tol) return false
+    }
   }
   for (let i = 0; i < ids.length; i++) {
     for (let j = i + 1; j < ids.length; j++) {
@@ -756,7 +831,14 @@ export function planOverheadLayout(
   rooms: OverheadRoomInput[],
   partners: Partners = new Map(),
   stored: PalaceLayoutRecord | null = null,
+  options: { fixtures?: boolean } = {},
 ): OverheadLayout {
+  const withFixtures = options.fixtures === true
+  const obstaclesForScale: ObstaclesForScale | undefined = withFixtures
+    ? (s) => overheadFixtureCircles(s)
+    : undefined
+  const fixturesAt = (s: number): OverheadFixture[] =>
+    withFixtures ? overheadFixtureCircles(s) : []
   const weights: Record<string, number> = {}
   for (const room of rooms) weights[room.id] = room.weight
 
@@ -769,14 +851,21 @@ export function planOverheadLayout(
       for (const room of rooms) radii[room.id] = pyRound(overheadRadiusOf(room.weight, stored.scale), 6)
       // Stored positions were rounded to 6dp when written; the
       // standing check allows 1e-4 of slack for that rounding.
-      if (integrityClean(stored.positions, radii, 1e-4)) {
+      if (integrityClean(stored.positions, radii, 1e-4, fixturesAt(stored.scale))) {
         const placed = Object.entries(stored.positions).map(([id, [x, y]]) => ({
           id,
           x,
           y,
           r: radii[id],
         }))
-        return { record: stored, placed, unplaced: stored.unplaced, rung: 'standing', changed: false }
+        return {
+          record: stored,
+          placed,
+          unplaced: stored.unplaced,
+          fixtures: fixturesAt(stored.scale),
+          rung: 'standing',
+          changed: false,
+        }
       }
     }
   }
@@ -784,13 +873,20 @@ export function planOverheadLayout(
   if (rooms.length === 0) {
     const record: PalaceLayoutRecord = {
       version: PALACE_LAYOUT_VERSION,
-      scale: stored?.scale ?? 1,
+      scale: stored?.scale ?? (withFixtures ? OVERHEAD_EMPTY_SCALE : 1),
       positions: {},
       weights: {},
       lastTransition: { reflow: false, steppedDown: 0, movedRooms: 0 },
       unplaced: [],
     }
-    return { record, placed: [], unplaced: [], rung: stored ? 'seeded' : 'cold', changed: true }
+    return {
+      record,
+      placed: [],
+      unplaced: [],
+      fixtures: fixturesAt(record.scale),
+      rung: stored ? 'seeded' : 'cold',
+      changed: true,
+    }
   }
 
   const priorPos = stored?.positions ?? {}
@@ -802,15 +898,15 @@ export function planOverheadLayout(
 
   if (!stored) {
     // Founding: the cold search scale, a fresh composition.
-    scale = searchOverheadScale(rooms, {}, partners)
-    layout = placeOverheadRooms(rooms, {}, scale, partners)
+    scale = searchOverheadScale(rooms, {}, partners, obstaclesForScale)
+    layout = placeOverheadRooms(rooms, {}, scale, partners, obstaclesForScale)
     rung = 'cold'
   } else if (rooms.length < priorCount) {
     // Contraction: the scale moves in full, in the same
     // operation, to the cold-search target for the smaller
     // collection; placement descends the ladder.
-    scale = searchOverheadScale(rooms, {}, partners)
-    const via = ladder(rooms, priorPos, scale, partners)
+    scale = searchOverheadScale(rooms, {}, partners, obstaclesForScale)
+    const via = ladder(rooms, priorPos, scale, partners, obstaclesForScale)
     if (via) {
       layout = via.layout
       rung = via.rung
@@ -823,14 +919,14 @@ export function planOverheadLayout(
       while (fallback === null && steppedDown < 12) {
         s *= 0.97
         steppedDown += 1
-        fallback = ladder(rooms, priorPos, s, partners)
+        fallback = ladder(rooms, priorPos, s, partners, obstaclesForScale)
       }
       if (fallback) {
         scale = s
         layout = fallback.layout
         rung = fallback.rung
       } else {
-        layout = placeOverheadRooms(rooms, {}, s, partners)
+        layout = placeOverheadRooms(rooms, {}, s, partners, obstaclesForScale)
         scale = s
         rung = 'cold'
       }
@@ -839,17 +935,17 @@ export function planOverheadLayout(
     // Growth (or a same-count change): damped halfway toward the
     // seeded-search target; seeded placement; the ladder on
     // failure; the x0.97 step-down as the last resort.
-    const target = searchOverheadScale(rooms, priorPos, partners)
+    const target = searchOverheadScale(rooms, priorPos, partners, obstaclesForScale)
     scale = stored.scale + 0.5 * (target - stored.scale)
-    layout = placeOverheadRooms(rooms, priorPos, scale, partners)
+    layout = placeOverheadRooms(rooms, priorPos, scale, partners, obstaclesForScale)
     if (layout.unplaced.length === 0) {
       rung = 'seeded'
     } else {
-      let via = ladder(rooms, priorPos, scale, partners)
+      let via = ladder(rooms, priorPos, scale, partners, obstaclesForScale)
       while (via === null && steppedDown < 8) {
         scale *= 0.97
         steppedDown += 1
-        via = ladder(rooms, priorPos, scale, partners)
+        via = ladder(rooms, priorPos, scale, partners, obstaclesForScale)
       }
       if (via) {
         layout = via.layout
@@ -857,8 +953,8 @@ export function planOverheadLayout(
       } else {
         // Safety net (see header): a cold place at the
         // cold-search scale, with honest unplaced records.
-        scale = searchOverheadScale(rooms, {}, partners)
-        layout = placeOverheadRooms(rooms, {}, scale, partners)
+        scale = searchOverheadScale(rooms, {}, partners, obstaclesForScale)
+        layout = placeOverheadRooms(rooms, {}, scale, partners, obstaclesForScale)
         rung = 'cold'
       }
     }
@@ -870,7 +966,14 @@ export function planOverheadLayout(
     steppedDown,
     movedRooms: Object.keys(moved).length,
   })
-  return { record, placed: placedList(layout), unplaced: record.unplaced, rung, changed: true }
+  return {
+    record,
+    placed: placedList(layout),
+    unplaced: record.unplaced,
+    fixtures: fixturesAt(scale),
+    rung,
+    changed: true,
+  }
 }
 
 /** Occupancy of a layout: the rooms' share of the floor's area —

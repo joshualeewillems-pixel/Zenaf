@@ -83,6 +83,22 @@
  * net, not the design. Everything
  * is deterministic: fixed grids, fixed candidate order, the
  * study's scoring — same input, same layout.
+ *
+ * THE TASK LEVEL (founder, 2026-11-26 20:07 PT). The dome
+ * serves both levels now: a project's tasks are circles in the
+ * same composition, under the same law — sizes from recorded
+ * data (a task's estimate when recorded, else one equal unit),
+ * one common fill, the same ladder and fallback. The recorded
+ * dependencies between a project's tasks — the data the
+ * retired floor plan drew as doorways — shape this packing:
+ * "instead of a door, we can set it up to where the room
+ * itself moves next to another room where it's connected or
+ * at least draws a line to it". A task being seated PREFERS a
+ * seat adjacent to an already-seated dependency partner (the
+ * preference leads the seat score; containment, the common
+ * fill and the one gap still gate every seat). A pair the
+ * finished packing did not seat adjacent is reported in the
+ * layout's `links`, and the scene draws one line for it.
  */
 import containerJson from './assets/palace-container.json'
 import { distanceTransform } from './palaceSceneLogic'
@@ -292,12 +308,82 @@ export interface BuildingSceneLayout {
 }
 
 /* ------------------------------------------------------------------ */
+/* the task level — a project's tasks as circles in the same dome      */
+/* ------------------------------------------------------------------ */
+
+export interface Scene2TaskInput {
+  /** Stable unique key — the task's id. */
+  key: string
+  /** The size weight: the task's recorded estimate when it has
+   *  one, else one equal unit (taskSizeWeight). */
+  weight: number
+}
+
+/** A recorded dependency pair between two tasks of one project
+ *  (either direction — the pair is symmetric here). */
+export interface TaskLinkPair {
+  aKey: string
+  bKey: string
+}
+
+export interface PlacedTask extends Scene2Circle {
+  key: string
+  weight: number
+  /** The task's share of the project's total weight (0..1). */
+  share: number
+}
+
+export interface TaskSceneLayout {
+  /** The placed tasks, in size-rank order (largest first;
+   *  equal radii keep input order). */
+  tasks: PlacedTask[]
+  hearth: Scene2Circle
+  /** The fill the packing settled at. */
+  fillUsed: number
+  /** Dependency pairs the packing seated adjacent — neighbours,
+   *  no line drawn. */
+  adjacent: TaskLinkPair[]
+  /** Dependency pairs the packing did NOT seat adjacent — the
+   *  scene draws one line for each. */
+  links: TaskLinkPair[]
+}
+
+/** A task circle's size weight, from its recorded estimate
+ *  (the Task record's estimated_hours): the estimate itself
+ *  when recorded and > 0, else one equal unit share — a task
+ *  with no estimate still stands, at the common unit size. */
+export function taskSizeWeight(estimatedHours: number | null | undefined): number {
+  return estimatedHours != null && estimatedHours > 0 ? estimatedHours : 1
+}
+
+/** The slack on the standard gap within which two circles read
+ *  as NEIGHBOURS: tangent seats sit exactly at CIRCLE_GAP, and
+ *  the packing's own clearance tolerance lets a rim sit a
+ *  fraction inside it; a seat beyond gap + slack is a
+ *  neighbour in name only, and its pair takes the line. */
+export const ADJACENCY_SLACK = 1.5
+
+/** The rim distance between two circles: centre distance less
+ *  the two radii — the gap the eye reads between their rims. */
+export function rimDistance(a: Scene2Circle, b: Scene2Circle): number {
+  return Math.hypot(a.x - b.x, a.y - b.y) - (a.r + b.r)
+}
+
+/** Two placed circles are adjacent when their rims sit at the
+ *  composition's standard gap, within the adjacency slack. */
+export function areAdjacent(a: Scene2Circle, b: Scene2Circle): boolean {
+  return rimDistance(a, b) <= CIRCLE_GAP + ADJACENCY_SLACK
+}
+
+/* ------------------------------------------------------------------ */
 /* clearance — the study's reading, exactly                            */
 /* ------------------------------------------------------------------ */
 
 interface PlacedCircle extends Scene2Circle {
   key: string
-  roomCount: number
+  /** The size weight the circle was sized from — a floor's
+   *  rooms, a task's estimate-or-unit. */
+  weight: number
   share: number
   inputIndex: number
 }
@@ -348,18 +434,38 @@ function pyRound(v: number): number {
   return f % 2 === 0 ? f : f + 1
 }
 
-/** The seat score: the tightest pocket first (snugness,
- *  bucketed), then the seat closest to the composition's
- *  heart. Lower is better; the study's strict ordering. */
-function seatScore(x: number, y: number, r: number, placed: PlacedCircle[]): [number, number] {
+/** The seat score: at the task level, a seat ADJACENT to an
+ *  already-seated dependency partner leads (the founder's
+ *  adjacency preference — 0 when the seat touches a partner,
+ *  or when no partner stands yet to touch); then the tightest
+ *  pocket (snugness, bucketed); then the seat closest to the
+ *  composition's heart. Lower is better; the study's strict
+ *  ordering, with the partner component constant 0 wherever
+ *  no partners are in play (the project level packs exactly
+ *  as it always did). */
+function seatScore(
+  x: number,
+  y: number,
+  r: number,
+  placed: PlacedCircle[],
+  partners?: ReadonlySet<string>,
+): [number, number, number] {
+  let partnerMiss = 0
+  if (partners && partners.size > 0) {
+    const standing = placed.filter((p) => partners.has(p.key))
+    if (standing.length > 0) {
+      partnerMiss = standing.some((p) => areAdjacent({ x, y, r }, p)) ? 0 : 1
+    }
+  }
   return [
+    partnerMiss,
     pyRound(snugness(x, y, r, placed) / SNUG_BUCKET),
     Math.hypot(x - COMPOSITION_HEART.x, y - COMPOSITION_HEART.y),
   ]
 }
 
-function scoreLess(a: [number, number], b: [number, number]): boolean {
-  return a[0] < b[0] || (a[0] === b[0] && a[1] < b[1])
+function scoreLess(a: [number, number, number], b: [number, number, number]): boolean {
+  return a[0] < b[0] || (a[0] === b[0] && (a[1] < b[1] || (a[1] === b[1] && a[2] < b[2])))
 }
 
 /* ------------------------------------------------------------------ */
@@ -388,7 +494,11 @@ function anchorSeat(r: number): { x: number; y: number } | null {
  *  and the hearth — and the sampled seats tangent to a single
  *  obstacle, the clear seat with the best score: the tightest
  *  pocket it fits, nearest the composition's heart. */
-function pocketSeat(r: number, placed: PlacedCircle[]): { x: number; y: number } | null {
+function pocketSeat(
+  r: number,
+  placed: PlacedCircle[],
+  partners?: ReadonlySet<string>,
+): { x: number; y: number } | null {
   const obstacles: Scene2Circle[] = [
     ...placed.map((p) => ({ x: p.x, y: p.y, r: p.r })),
     { x: HEARTH.x, y: HEARTH.y, r: HEARTH_R },
@@ -425,10 +535,10 @@ function pocketSeat(r: number, placed: PlacedCircle[]): { x: number; y: number }
       })
     }
   }
-  let best: { score: [number, number]; x: number; y: number } | null = null
+  let best: { score: [number, number, number]; x: number; y: number } | null = null
   for (const c of candidates) {
     if (!isClear(c.x, c.y, r, placed)) continue
-    const score = seatScore(c.x, c.y, r, placed)
+    const score = seatScore(c.x, c.y, r, placed, partners)
     if (best === null || scoreLess(score, best.score)) best = { score, x: c.x, y: c.y }
   }
   return best === null ? null : { x: best.x, y: best.y }
@@ -438,13 +548,17 @@ function pocketSeat(r: number, placed: PlacedCircle[]): { x: number; y: number }
  *  clear seat, scored like a pocket seat. The fallback's net —
  *  the study's pockets are the design; this only guarantees a
  *  floor is never dropped. */
-function rescueSeat(r: number, placed: PlacedCircle[]): { x: number; y: number } | null {
+function rescueSeat(
+  r: number,
+  placed: PlacedCircle[],
+  partners?: ReadonlySet<string>,
+): { x: number; y: number } | null {
   const container = loadContainer()
-  let best: { score: [number, number]; x: number; y: number } | null = null
+  let best: { score: [number, number, number]; x: number; y: number } | null = null
   for (let x = container.minX; x <= container.maxX; x += RESCUE_GRID_STEP) {
     for (let y = container.minY; y <= container.maxY; y += RESCUE_GRID_STEP) {
       if (!isClear(x, y, r, placed)) continue
-      const score = seatScore(x, y, r, placed)
+      const score = seatScore(x, y, r, placed, partners)
       if (best === null || scoreLess(score, best.score)) best = { score, x, y }
     }
   }
@@ -455,42 +569,55 @@ function rescueSeat(r: number, placed: PlacedCircle[]): { x: number; y: number }
 /* the packing — relative scaling over the fill ladder                 */
 /* ------------------------------------------------------------------ */
 
-interface SizedFloor extends Scene2FloorInput {
+interface SizedItem {
+  key: string
+  weight: number
   share: number
   r: number
   inputIndex: number
 }
 
-function sizedFloors(floors: Scene2FloorInput[], fill: number): SizedFloor[] {
+/** Size a set of circles from their weights under one common
+ *  fill: each circle's AREA is its weight's share of the whole,
+ *  taken against the space's area — the relative-scaling law,
+ *  for floors (weight = rooms) and tasks (weight = estimate
+ *  or unit) alike. */
+function sizedItems(items: { key: string; weight: number }[], fill: number): SizedItem[] {
   const area = loadContainer().area
-  const total = floors.reduce((s, f) => s + f.roomCount, 0)
-  return floors.map((f, inputIndex) => {
-    const share = total > 0 ? f.roomCount / total : 1 / floors.length
+  const total = items.reduce((s, f) => s + f.weight, 0)
+  return items.map((f, inputIndex) => {
+    const share = total > 0 ? f.weight / total : 1 / items.length
     const r = Math.max(Math.sqrt((share * fill * area) / Math.PI), MIN_FLOOR_RADIUS)
-    return { ...f, share, r, inputIndex }
+    return { key: f.key, weight: f.weight, share, r, inputIndex }
   })
 }
 
 /** Placement order: largest first — supports and pockets alike
  *  exist only once the big rooms stand (equal radii keep input
  *  order, as the study's stable sort did). */
-function bySizeDesc(sized: SizedFloor[]): SizedFloor[] {
+function bySizeDesc(sized: SizedItem[]): SizedItem[] {
   return [...sized].sort((a, b) => b.r - a.r || a.inputIndex - b.inputIndex)
 }
 
+/** Dependency partners by key, for the task level's seating
+ *  preference. Absent at the project level — floors pack
+ *  exactly as the study did. */
+type PartnerMap = Map<string, ReadonlySet<string>>
+
 /** One packing attempt at a fill: anchor the largest, then
- *  seat each next floor in its tightest pocket. Null when any
- *  floor finds no pocket. */
-function tryPack(sized: SizedFloor[]): PlacedCircle[] | null {
+ *  seat each next circle in its tightest pocket — at the task
+ *  level, preferring a seat beside its dependency partners.
+ *  Null when any circle finds no pocket. */
+function tryPack(sized: SizedItem[], partnersByKey?: PartnerMap): PlacedCircle[] | null {
   const order = bySizeDesc(sized)
   const placed: PlacedCircle[] = []
   for (let i = 0; i < order.length; i++) {
     const f = order[i]
-    const seat = i === 0 ? anchorSeat(f.r) : pocketSeat(f.r, placed)
+    const seat = i === 0 ? anchorSeat(f.r) : pocketSeat(f.r, placed, partnersByKey?.get(f.key))
     if (seat === null) return null
     placed.push({
       key: f.key,
-      roomCount: f.roomCount,
+      weight: f.weight,
       share: f.share,
       inputIndex: f.inputIndex,
       x: seat.x,
@@ -506,26 +633,32 @@ function tryPack(sized: SizedFloor[]): PlacedCircle[] | null {
  *  proportions never change — until every floor seats in its
  *  pocket; behind the last scale, a per-floor rescue scan.
  *  Every floor placed, contained and separated, never dropped. */
-function fallbackPack(floors: Scene2FloorInput[]): PlacedCircle[] | null {
+function fallbackPack(
+  items: { key: string; weight: number }[],
+  partnersByKey?: PartnerMap,
+): PlacedCircle[] | null {
   for (let k = 0; k <= FALLBACK_MAX_SCALES; k++) {
     const scale = FALLBACK_SCALE ** k
-    const sized = sizedFloors(floors, FILL_BOTTOM).map((f) => ({ ...f, r: f.r * scale }))
-    const placed = tryPack(sized)
+    const sized = sizedItems(items, FILL_BOTTOM).map((f) => ({ ...f, r: f.r * scale }))
+    const placed = tryPack(sized, partnersByKey)
     if (placed) return placed
   }
   // The last resort: at the smallest common scale, seat each
-  // floor in its pocket or, failing that, anywhere clear.
+  // circle in its pocket or, failing that, anywhere clear.
   const scale = FALLBACK_SCALE ** FALLBACK_MAX_SCALES
-  const sized = sizedFloors(floors, FILL_BOTTOM).map((f) => ({ ...f, r: f.r * scale }))
+  const sized = sizedItems(items, FILL_BOTTOM).map((f) => ({ ...f, r: f.r * scale }))
   const order = bySizeDesc(sized)
   const placed: PlacedCircle[] = []
   for (let i = 0; i < order.length; i++) {
     const f = order[i]
-    const seat = (i === 0 ? anchorSeat(f.r) : pocketSeat(f.r, placed)) ?? rescueSeat(f.r, placed)
+    const partners = partnersByKey?.get(f.key)
+    const seat =
+      (i === 0 ? anchorSeat(f.r) : pocketSeat(f.r, placed, partners)) ??
+      rescueSeat(f.r, placed, partners)
     if (seat === null) return null
     placed.push({
       key: f.key,
-      roomCount: f.roomCount,
+      weight: f.weight,
       share: f.share,
       inputIndex: f.inputIndex,
       x: seat.x,
@@ -543,7 +676,7 @@ function finishLayout(placed: PlacedCircle[], fillUsed: number): BuildingSceneLa
   return {
     floors: ranked.map((p, rank) => ({
       key: p.key,
-      roomCount: p.roomCount,
+      roomCount: p.weight,
       share: p.share,
       x: p.x,
       y: p.y,
@@ -563,21 +696,101 @@ export function planBuildingScene(floors: Scene2FloorInput[]): BuildingSceneLayo
   if (floors.length === 0) {
     return { floors: [], hearth: { x: HEARTH.x, y: HEARTH.y, r: HEARTH_R }, fillUsed: FILL_TOP }
   }
+  const items = floors.map((f) => ({ key: f.key, weight: f.roomCount }))
   // The ladder: the first fill at which every floor seats in
   // its pocket is the largest composition the spacing finds.
   for (const fill of FILL_LADDER) {
-    const placed = tryPack(sizedFloors(floors, fill))
+    const placed = tryPack(sizedItems(items, fill))
     if (placed) return finishLayout(placed, fill)
   }
   // The safety net: the lowest fill's best attempt — the whole
   // set scaled together, the rescue scan behind the pockets —
   // never drop a floor, never lose access.
-  const fallback = fallbackPack(floors)
+  const fallback = fallbackPack(items)
   if (fallback) return finishLayout(fallback, FILL_BOTTOM)
   // Unreachable: at the last scale the circles are a few units
   // wide and seat anywhere in the space. Fail loudly rather
   // than place a floor outside the law.
   throw new Error('Palace Scene 2: no lawful placement for the building’s floors')
+}
+
+/** Plan the task level: a project's tasks as circles in the
+ *  same dome, under the same spacing law, their recorded
+ *  dependency pairs shaping the seating — partners as
+ *  neighbours where the packing can achieve it, and the pairs
+ *  it could not seat adjacent reported as `links` for the
+ *  scene to draw. Pairs naming a task outside the set, a task
+ *  paired with itself, and duplicate pairs are set aside:
+ *  only pairs of standing circles can sit together or be
+ *  joined by a line. */
+export function planTaskScene(tasks: Scene2TaskInput[], pairs: TaskLinkPair[]): TaskSceneLayout {
+  const hearth = { x: HEARTH.x, y: HEARTH.y, r: HEARTH_R }
+  if (tasks.length === 0) {
+    return { tasks: [], hearth, fillUsed: FILL_TOP, adjacent: [], links: [] }
+  }
+  const keys = new Set(tasks.map((t) => t.key))
+  const seen = new Set<string>()
+  const cleanPairs: TaskLinkPair[] = []
+  for (const p of pairs) {
+    if (p.aKey === p.bKey || !keys.has(p.aKey) || !keys.has(p.bKey)) continue
+    const [aKey, bKey] = p.aKey < p.bKey ? [p.aKey, p.bKey] : [p.bKey, p.aKey]
+    const id = `${aKey}|${bKey}`
+    if (seen.has(id)) continue
+    seen.add(id)
+    cleanPairs.push({ aKey, bKey })
+  }
+  cleanPairs.sort((a, b) => (a.aKey < b.aKey ? -1 : a.aKey > b.aKey ? 1 : a.bKey < b.bKey ? -1 : 1))
+  const partnersByKey: PartnerMap = new Map()
+  for (const p of cleanPairs) {
+    for (const [k, other] of [
+      [p.aKey, p.bKey],
+      [p.bKey, p.aKey],
+    ] as const) {
+      const set = new Set(partnersByKey.get(k) ?? [])
+      set.add(other)
+      partnersByKey.set(k, set)
+    }
+  }
+  const items = tasks.map((t) => ({ key: t.key, weight: t.weight }))
+  let placed: PlacedCircle[] | null = null
+  let fillUsed = FILL_BOTTOM
+  for (const fill of FILL_LADDER) {
+    placed = tryPack(sizedItems(items, fill), partnersByKey)
+    if (placed) {
+      fillUsed = fill
+      break
+    }
+  }
+  if (!placed) {
+    placed = fallbackPack(items, partnersByKey)
+    fillUsed = FILL_BOTTOM
+  }
+  if (!placed) {
+    throw new Error('Palace Scene 2: no lawful placement for the project’s tasks')
+  }
+  const ranked = [...placed].sort((a, b) => b.r - a.r || a.inputIndex - b.inputIndex)
+  const byKey = new Map(ranked.map((p) => [p.key, p]))
+  const adjacent: TaskLinkPair[] = []
+  const links: TaskLinkPair[] = []
+  for (const p of cleanPairs) {
+    const a = byKey.get(p.aKey)!
+    const b = byKey.get(p.bKey)!
+    ;(areAdjacent(a, b) ? adjacent : links).push(p)
+  }
+  return {
+    tasks: ranked.map((p) => ({
+      key: p.key,
+      weight: p.weight,
+      share: p.share,
+      x: p.x,
+      y: p.y,
+      r: p.r,
+    })),
+    hearth,
+    fillUsed,
+    adjacent,
+    links,
+  }
 }
 
 /** The room plate of one floor, read off the SAME plan the

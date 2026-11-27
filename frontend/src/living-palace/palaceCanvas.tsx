@@ -18,7 +18,10 @@
  * palaceScene2Logic. The room layer is the founder's furnished
  * chamber (2026-11-26): his rose plate as the room itself, his
  * artifacts standing at the seats he marked in the studies —
- * see the RoomScene section. The floor layer below is unchanged.
+ * see the RoomScene section. The floor-plan layer is RETIRED
+ * (founder, 2026-11-26 20:07 PT): the dome serves both levels —
+ * projects as circles, then the project's tasks as circles in
+ * the same dome — see the TaskScene section.
  *
  * Surface rule: the scenes carry no legends, no vocabulary panels,
  * no explanations of themselves. What a tap reveals lives in the
@@ -29,8 +32,8 @@ import { useMemo } from 'react'
 import type {
   BuildingModel,
   CompoundModel,
-  FloorModel,
   RoomModel,
+  TaskLevelModel,
 } from './palaceLogic'
 import { councilFlameColors, isDoneStatus } from './palaceLogic'
 import {
@@ -47,7 +50,14 @@ import {
   type SceneStructureInput,
   type SubjectInteraction,
 } from './palaceSceneLogic'
-import { CONTAINER_CLIP_PATH, SCENE2_FRAME, planBuildingScene, type RoomPlate } from './palaceScene2Logic'
+import {
+  CONTAINER_CLIP_PATH,
+  SCENE2_FRAME,
+  planBuildingScene,
+  planTaskScene,
+  taskSizeWeight,
+  type RoomPlate,
+} from './palaceScene2Logic'
 import { useTintedMaster } from './palaceTint'
 import { PLATE_URLS, glassColorFor, useGlassPlate } from './palaceGlass'
 import planImage from './assets/palace-plan.jpg'
@@ -178,64 +188,6 @@ export function Bonfire({ x, y, lit }: { x: number; y: number; lit: boolean }) {
       {stones.map((s, i) => (
         <ellipse key={i} cx={s.sx} cy={s.sy} rx={8} ry={5.5} fill={PAL.stone} stroke={PAL.stoneDark} />
       ))}
-    </g>
-  )
-}
-
-/** The stone hearth — surround, mantel, firebox; lit carries the
- *  seven tongues, unlit keeps embers. The floor hearth passes
- *  flame="founder": the founder ruled "Fire — same fire"
- *  (2026-11-26) — his own flame image, as on the compound and in
- *  the dome, not the drawn tongues. */
-export function HearthGlyph({
-  x,
-  base,
-  w,
-  h,
-  lit,
-  flame = 'council',
-}: {
-  x: number
-  base: number
-  w: number
-  h: number
-  lit: boolean
-  flame?: 'council' | 'founder'
-}) {
-  const fbW = w * 0.52
-  const fbH = h * 0.52
-  const founderFlameH = fbH * 1.5
-  const founderFlameW = founderFlameH * FLAME_ASPECT
-  return (
-    <g pointerEvents="none">
-      <rect x={x - w / 2} y={base - h} width={w} height={h} fill={PAL.stone} stroke={PAL.stoneDark} />
-      <rect x={x - w / 2 - 3} y={base - h - 5} width={w + 6} height={7} fill={PAL.woodDark} />
-      <rect
-        x={x - fbW / 2}
-        y={base - fbH}
-        width={fbW}
-        height={fbH}
-        fill={lit ? '#5a3a22' : '#4c4034'}
-      />
-      {lit ? (
-        flame === 'founder' ? (
-          <image
-            href={fireImage}
-            x={x - founderFlameW / 2}
-            y={base - founderFlameH}
-            width={founderFlameW}
-            height={founderFlameH}
-            preserveAspectRatio="xMidYMax meet"
-          />
-        ) : (
-          <CouncilFlames cx={x} base={base - 1} h={fbH * 0.92} w={Math.max(10, fbH * 0.92 * 0.95)} />
-        )
-      ) : (
-        <g fill="#c96a2c">
-          <circle cx={x - 3} cy={base - 3} r={1.8} opacity={0.85} />
-          <circle cx={x + 4} cy={base - 2} r={1.4} opacity={0.7} />
-        </g>
-      )}
     </g>
   )
 }
@@ -375,8 +327,8 @@ export function DrawingTable({ x, y, w }: { x: number; y: number; w: number }) {
 /* south gate. Nothing the compound offered is dropped.              */
 /*                                                                     */
 /* A tap does what it always did here: an initiative enters its      */
-/* building layer; a project enters its floor. The scene writes      */
-/* nothing — the chat is the work.                                   */
+/* building layer; a project enters the dome at task level. The      */
+/* scene writes nothing — the chat is the work.                      */
 /* ------------------------------------------------------------------ */
 
 const PLAN_W = PALACE_GEOMETRY.width
@@ -956,294 +908,198 @@ export function BuildingScene({
 }
 
 /* ------------------------------------------------------------------ */
-/* floor                                                               */
+/* task level — the dome's second level (founder, 2026-11-26          */
+/* 20:07 PT: the floor-plan frame retired, "Build it")                 */
+/*                                                                     */
+/* The same dome, recomposed: the project's TASKS as circles in      */
+/* the same architecture, under the same relaxed Apollonian          */
+/* spacing (palaceScene2Logic.planTaskScene), the same one hearth    */
+/* — the project frame's one fire. Circle sizes come from            */
+/* recorded data: a task's estimate when it has one, else one        */
+/* equal unit. Every circle shows the project's chamber plate —      */
+/* the room its task opens into (plateForFloor's assignment,         */
+/* shared with the chamber itself) — its stained glass in the        */
+/* colour of the seat that has been talking about that TASK          */
+/* (palaceGlass, the same subject-interactions read).                */
+/*                                                                     */
+/* The recorded dependencies between the project's tasks shape       */
+/* the seating (the founder, same direction: "instead of a door,      */
+/* we can set it up to where the room itself moves next to            */
+/* another room where it's connected or at least draws a line        */
+/* to it"): partners sit as neighbours where the packing can         */
+/* achieve it; for every pair it could not, ONE plain stone-toned    */
+/* line runs beneath the circles, rim to rim — no labels, no         */
+/* arrows. A tap on a task circle stages the task in the chat        */
+/* and opens its chamber, exactly as a room tap did on the retired    */
+/* floor. No text rides the circles. The scene writes nothing.       */
 /* ------------------------------------------------------------------ */
 
-export function FloorScene({
+export function TaskScene({
   model,
-  onOpenRoom,
-  onThreshold,
-  onScales,
-  guests = [],
-  onGuest,
+  plate,
+  onOpenTask,
+  interactions,
 }: {
-  model: FloorModel
-  onOpenRoom: (taskId: string) => void
-  onThreshold: () => void
-  onScales: () => void
-  /** Seats the attributed read shows attending this floor's subject
-   *  — their marks stand in the hall, and only theirs. */
-  guests?: SeatId[]
-  onGuest?: (seat: SeatId) => void
+  model: TaskLevelModel
+  /** The project's chamber plate — the plate the project's
+   *  rooms open into (plateForFloor); every task circle shows
+   *  it, as every floor circle showed its own plate. */
+  plate: RoomPlate
+  onOpenTask: (taskId: string) => void
+  /** Per-subject seat-interaction counts (the glass read);
+   *  absent or null while loading or after a failed read —
+   *  every task then keeps its natural glass. */
+  interactions?: SubjectInteraction[] | null
 }) {
-  const W = 640
-  const pad = 14
-  const hallL = 272
-  const hallR = 368
-  const rowH = 118
-  const rows = Math.max(1, Math.ceil(model.rooms.length / 2))
-  const planH = rows * rowH
-  const top = 16
-  const H = top + planH + 118
-  const roomW = hallL - pad
-  const doorwayPairs = new Map<string, string>()
-  for (const d of model.doorways) {
-    doorwayPairs.set(d.aId, d.bId)
-    doorwayPairs.set(d.bId, d.aId)
-  }
+  const layout = useMemo(
+    () =>
+      planTaskScene(
+        model.tasks.map((t) => ({ key: t.id, weight: taskSizeWeight(t.estimated_hours) })),
+        model.links.map((l) => ({ aKey: l.aId, bKey: l.bId })),
+      ),
+    [model],
+  )
+  const interactionIndex = useMemo(() => indexInteractions(interactions), [interactions])
+  const taskByKey = new Map(model.tasks.map((t) => [t.id, t]))
+  const placedByKey = new Map(layout.tasks.map((p) => [p.key, p]))
+  const { hearth } = layout
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block" role="img" aria-label={`Floor plan — ${model.project.title}`}>
-      <rect x={0} y={0} width={W} height={H} fill={PAL.sky} />
-      {/* the hall */}
-      <rect x={hallL} y={top} width={hallR - hallL} height={planH} fill={PAL.hall} />
-      {/* rooms */}
-      {model.rooms.map((room) => {
-        const rx = room.col === 0 ? pad : hallR
-        const ry = top + room.row * rowH
-        return (
-          <g
-            key={room.task.id}
-            data-testid={`palace-room-${room.task.id}`}
-            onClick={() => onOpenRoom(room.task.id)}
-            style={{ cursor: 'pointer' }}
-          >
-            <title>{room.task.title}</title>
-            <rect x={rx} y={ry} width={roomW} height={rowH} fill={PAL.wall} stroke={WALL_LINE} strokeWidth={3} />
-            {/* exterior window */}
-            <rect
-              x={room.col === 0 ? rx + 2 : rx + roomW - 14}
-              y={ry + 30}
-              width={12}
-              height={44}
-              fill={room.waitsOn.length ? '#f2dfae' : '#f6e7bd'}
-              stroke={WALL_LINE}
-            />
-            {/* door leaf + swing, off the hall */}
-            <g stroke={PAL.woodDark} strokeWidth={2.5} fill="none">
-              <line
-                x1={room.col === 0 ? rx + roomW : rx}
-                y1={ry + rowH - 12}
-                x2={room.col === 0 ? rx + roomW - 30 : rx + 30}
-                y2={ry + rowH - 12}
-              />
-              <path
-                d={
-                  room.col === 0
-                    ? `M ${rx + roomW - 30} ${ry + rowH - 12} A 30 30 0 0 1 ${rx + roomW} ${ry + rowH - 42}`
-                    : `M ${rx + 30} ${ry + rowH - 12} A 30 30 0 0 0 ${rx} ${ry + rowH - 42}`
-                }
-                strokeWidth={1.2}
-                opacity={0.6}
-              />
-            </g>
-            {wrapTitle(room.task.title, 21, 2).map((line, li) => (
-              <text key={li} x={rx + roomW / 2} y={ry + 40 + li * 16} textAnchor="middle" fontSize={13} fontWeight={600} fill={PAL.ink}>
-                {line}
-              </text>
-            ))}
-            <text x={rx + roomW / 2} y={ry + 82} textAnchor="middle" fontSize={10.5} fill={PAL.inkSoft}>
-              {room.task.status}
-              {room.subtaskCount ? ` · ${room.subtaskCount} within` : ''}
-            </text>
-            {room.growth && <PlantMark x={rx + roomW - 30} base={ry + rowH - 8} state={room.growth} scale={0.62} />}
-            {room.holdsMaterial && (
-              <g transform={`translate(${rx + 26} ${ry + rowH - 24})`}>
-                <rect x={-11} y={-9} width={22} height={15} rx={2} fill={PAL.wood} stroke={PAL.woodDark} />
-                <rect x={-11} y={-13} width={22} height={6} rx={2} fill={PAL.woodDark} />
-              </g>
-            )}
-          </g>
-        )
-      })}
-      {/* labelled dependency doorways in shared partitions */}
-      {model.doorways.map((d) => {
-        const a = model.rooms.find((r) => r.task.id === d.aId)
-        const b = model.rooms.find((r) => r.task.id === d.bId)
-        if (!a || !b) return null
-        const upper = a.row < b.row ? a : b
-        const rx = upper.col === 0 ? pad : hallR
-        const yMid = top + (upper.row + 1) * rowH
-        return (
-          <g key={`${d.aId}-${d.bId}`} pointerEvents="none">
-            <rect x={rx + roomW / 2 - 21} y={yMid - 4} width={42} height={8} fill={PAL.hall} />
-            <g stroke={PAL.woodDark} strokeWidth={2.4}>
-              <line x1={rx + roomW / 2 - 20} y1={yMid} x2={rx + roomW / 2 - 20} y2={yMid - 22} />
-              <line x1={rx + roomW / 2 + 20} y1={yMid} x2={rx + roomW / 2 + 20} y2={yMid - 22} />
-            </g>
-            <text x={rx + roomW / 2} y={yMid + 16} textAnchor="middle" fontSize={8.6} letterSpacing={0.6} fill={PAL.inkSoft}>
-              RECORDED EDGE · DOORWAY
-            </text>
-          </g>
-        )
-      })}
-      {/* the floor's ONE hearth, set into the hall's north wall —
-          its fire is the founder's own flame ("Fire — same fire",
-          2026-11-26), not the drawn council tongues */}
-      <g data-testid="palace-floor-hearth">
-        <HearthGlyph x={(hallL + hallR) / 2} base={top + 44} w={46} h={44} lit flame="founder" />
-      </g>
-      {/* hall furniture, each piece earned */}
-      {model.cabinets && (
-        <g pointerEvents="none">
-          <rect x={hallL + 8} y={top + 120} width={26} height={54} fill={PAL.wood} stroke={PAL.woodDark} />
-          <line x1={hallL + 21} y1={top + 120} x2={hallL + 21} y2={top + 174} stroke={PAL.woodDark} />
-        </g>
-      )}
-      {model.mosaic && (
-        <g pointerEvents="none" opacity={0.85}>
-          <circle cx={(hallL + hallR) / 2} cy={top + planH / 2 + 26} r={17} fill="none" stroke={PAL.maeve} strokeWidth={2} />
-          <circle cx={(hallL + hallR) / 2} cy={top + planH / 2 + 26} r={10} fill="none" stroke={PAL.maeve} strokeWidth={1.4} />
-          <circle cx={(hallL + hallR) / 2} cy={top + planH / 2 + 26} r={3.4} fill={PAL.maeve} />
-        </g>
-      )}
-      {model.scalesFigures && (
-        <g
-          data-testid="palace-floor-scales"
-          onClick={onScales}
-          style={{ cursor: 'pointer' }}
-          transform={`translate(${hallR - 24} ${top + 132})`}
-        >
-          <title>The floor's scales</title>
-          <circle cx={0} cy={-8} r={30} fill="transparent" />
-          <ScalesArt weighed={false} cx={0} base={12} height={62} />
-        </g>
-      )}
-      {/* gathering table in the hall — recorded people, empty places */}
-      <g pointerEvents="none" transform={`translate(${(hallL + hallR) / 2} ${top + planH - 44})`}>
-        <ellipse cx={0} cy={0} rx={34} ry={13} fill={PAL.wood} stroke={PAL.woodDark} />
-        {Array.from({ length: Math.max(4, model.people.length) }, (_, i) => {
-          const a = (i / Math.max(4, model.people.length)) * Math.PI * 2
-          const px = Math.cos(a) * 42
-          const py = Math.sin(a) * 18
-          const person = model.people[i]
-          return person ? (
-            <g key={i}>
-              <circle cx={px} cy={py} r={8} fill={PAL.maeve} />
-              <text x={px} y={py + 3.4} textAnchor="middle" fontSize={8.5} fill="#fff">
-                {person.name.slice(0, 1)}
-              </text>
-            </g>
-          ) : (
-            <circle key={i} cx={px} cy={py} r={7.5} fill="none" stroke={PAL.stoneDark} strokeDasharray="3 2.4" />
-          )
-        })}
-      </g>
-      {/* the drawing table stands on every floor */}
-      <DrawingTable x={(hallL + hallR) / 2} y={top + planH + 30} w={120} />
-      {/* guest marks in the hall — a seat's token stands here only
-          where the attributed read shows that seat attending this
-          floor's subject (Guests-1) */}
-      {onGuest &&
-        guests.map((seat, i) => {
-          const cx = (hallL + hallR) / 2 + (i - (guests.length - 1) / 2) * 30
-          const cy = top + planH + 84
-          return (
-            <g
-              key={seat}
-              data-testid={`palace-floor-guest-${seat}`}
-              onClick={() => onGuest(seat)}
-              style={{ cursor: 'pointer' }}
-            >
-              <title>A guest attends this floor</title>
-              <circle cx={cx} cy={cy} r={12} fill={SEAT_COLORS[seat]} stroke="#fffaf0" strokeWidth={2} />
-              <circle cx={cx} cy={cy} r={12} fill="none" stroke={PAL.stoneDark} strokeWidth={0.8} />
-            </g>
-          )
-        })}
-      {/* the entrance — a threshold, and an affordance */}
-      <g
-        data-testid="palace-floor-threshold"
-        onClick={onThreshold}
-        style={{ cursor: 'pointer' }}
+    <div style={{ containerType: 'inline-size' }}>
+      <div className="pb-1 pt-2 text-center">
+        <div style={{ fontSize: '2.2cqw', fontWeight: 600, color: PAL.ink }}>
+          {model.project.title}
+        </div>
+        <div style={{ fontSize: '1.55cqw', color: PAL.inkSoft }}>
+          each circle is one of its tasks — tap a task to enter its room
+        </div>
+      </div>
+
+      <div
+        className="relative w-full select-none"
+        style={{ aspectRatio: '1 / 1' }}
+        role="img"
+        aria-label={`Inside ${model.project.title} — its tasks`}
       >
-        <title>The threshold</title>
-        <rect x={(hallL + hallR) / 2 - 30} y={top + planH} width={60} height={10} fill="transparent" />
-        <rect x={(hallL + hallR) / 2 - 27} y={top + planH + 1} width={54} height={7} rx={2} fill={PAL.stone} stroke={PAL.stoneDark} />
-        <g stroke={PAL.woodDark} strokeWidth={2.6}>
-          <line x1={(hallL + hallR) / 2 - 24} y1={top + planH} x2={(hallL + hallR) / 2 - 24} y2={top + planH - 26} />
-          <line x1={(hallL + hallR) / 2 + 24} y1={top + planH} x2={(hallL + hallR) / 2 + 24} y2={top + planH - 26} />
-        </g>
-      </g>
-      {model.rooms.length === 0 && (
-        <text x={W / 2} y={top + 60} textAnchor="middle" fontSize={13} fill={PAL.inkSoft}>
-          An empty floor — no tasks stand here yet.
-        </text>
-      )}
-    </svg>
-  )
-}
+        {/* the Zenaf background and the architecture dome — the
+            same frame the project level stands in */}
+        <img
+          data-testid="palace-zenaf-background"
+          src={plateImage}
+          alt=""
+          draggable={false}
+          className="absolute inset-0 block h-full w-full object-cover"
+        />
+        <img
+          data-testid="palace-architecture"
+          src={architectureImage}
+          alt=""
+          draggable={false}
+          className="absolute inset-0 block h-full w-full"
+        />
 
-/* ------------------------------------------------------------------ */
-/* the founder's furniture — supplied art (2026-11-26), standing     */
-/* where the drawn glyphs stood. Each asset is a square canvas; the  */
-/* fractions below are the object's own extent within it (measured   */
-/* off the alpha), so placement anchors the OBJECT — its centre and  */
-/* its base — not the canvas.                                        */
-/* ------------------------------------------------------------------ */
+        <div className="absolute inset-0" style={{ clipPath: CONTAINER_CLIP_PATH }}>
+          {/* the dependency lines — one for every pair the
+              packing did not seat as neighbours, drawn beneath
+              the circles, rim to rim, in plain stone tone */}
+          <svg
+            className="pointer-events-none absolute inset-0 block h-full w-full"
+            viewBox={`0 0 ${SCENE2_FRAME} ${SCENE2_FRAME}`}
+            aria-hidden
+          >
+            {layout.links.map((l) => {
+              const a = placedByKey.get(l.aKey)!
+              const b = placedByKey.get(l.bKey)!
+              const d = Math.hypot(b.x - a.x, b.y - a.y) || 1
+              const ux = (b.x - a.x) / d
+              const uy = (b.y - a.y) / d
+              return (
+                <line
+                  key={`${l.aKey}|${l.bKey}`}
+                  data-testid="palace-task-link"
+                  x1={a.x + ux * a.r}
+                  y1={a.y + uy * a.r}
+                  x2={b.x - ux * b.r}
+                  y2={b.y - uy * b.r}
+                  stroke={PAL.stoneDark}
+                  strokeWidth={3}
+                />
+              )
+            })}
+          </svg>
 
-interface ArtExtent {
-  /** object height / canvas side */
-  h: number
-  /** object base / canvas side, from the top */
-  base: number
-  /** object centre-x / canvas side */
-  cx: number
-}
-const VESSEL_EXTENT: ArtExtent = { h: 0.957, base: 0.98, cx: 0.493 }
-const SCALES_EXTENT: ArtExtent = { h: 0.973, base: 0.977, cx: 0.5 }
-const CHEST_EXTENT: ArtExtent = { h: 0.763, base: 0.884, cx: 0.497 }
+          {/* the tasks — one circle each, drawn back-to-front
+              by depth, as the floors are */}
+          {[...layout.tasks]
+            .sort((a, b) => a.y + a.r - (b.y + b.r))
+            .map((p) => {
+              const task = taskByKey.get(p.key)!
+              const glassColour = glassColorFor(
+                interactionIndex.get(interactionKey('task', task.id)),
+              )
+              return (
+                <button
+                  key={task.id}
+                  type="button"
+                  data-testid={`palace-task-${task.id}`}
+                  title={task.title}
+                  aria-label={task.title}
+                  onClick={() => onOpenTask(task.id)}
+                  className="absolute block cursor-pointer overflow-hidden rounded-full p-0"
+                  style={{
+                    left: pct(p.x - p.r),
+                    top: pct(p.y - p.r),
+                    width: pct(2 * p.r),
+                    aspectRatio: '1 / 1',
+                    background: SCENE2_CIRCLE,
+                  }}
+                >
+                  <FloorPlateImage plate={plate} colour={glassColour} />
+                  <span
+                    className="pointer-events-none absolute inset-0 rounded-full"
+                    style={{
+                      background:
+                        'radial-gradient(circle at 50% 42%, rgba(243, 234, 214, 0.30), rgba(243, 234, 214, 0.06) 72%)',
+                    }}
+                  />
+                </button>
+              )
+            })}
+        </div>
 
-function ArtImage({
-  href,
-  extent,
-  cx,
-  base,
-  height,
-}: {
-  href: string
-  extent: ArtExtent
-  cx: number
-  base: number
-  /** the object's own height, in scene units */
-  height: number
-}) {
-  const side = height / extent.h
-  return (
-    <image
-      href={href}
-      x={cx - extent.cx * side}
-      y={base - extent.base * side}
-      width={side}
-      height={side}
-      pointerEvents="none"
-    />
-  )
-}
+        {/* the hearth — the project frame's one fire, the same
+            ring and the same founder flame as the level above */}
+        <div
+          data-testid="palace-building-hearth"
+          className="pointer-events-none absolute"
+          style={{
+            left: pct(hearth.x - hearth.r),
+            top: pct(hearth.y - hearth.r),
+            width: pct(2 * hearth.r),
+            aspectRatio: '1 / 1',
+          }}
+        />
+        <img
+          data-testid="palace-building-fire"
+          src={fireImage}
+          alt=""
+          draggable={false}
+          className="pointer-events-none absolute block"
+          style={{
+            left: pct(hearth.x - (HEARTH_FLAME_H * FLAME_ASPECT) / 2),
+            bottom: pct(SCENE2_FRAME - hearth.y),
+            width: pct(HEARTH_FLAME_H * FLAME_ASPECT),
+          }}
+        />
 
-/** The scales — an instrument. Its pans stand empty unless
- *  weighed: a room whose task carries a recorded estimate shows
- *  the weight resting in the pan (Scales-1 — established material
- *  is the room scales' to show; an unweighed room keeps the
- *  weight beside the base). */
-export function ScalesArt({
-  weighed,
-  cx,
-  base,
-  height,
-}: {
-  weighed: boolean
-  cx: number
-  base: number
-  height: number
-}) {
-  return (
-    <ArtImage
-      href={weighed ? scalesWeighedImage : scalesImage}
-      extent={SCALES_EXTENT}
-      cx={cx}
-      base={base}
-      height={height}
-    />
+        {model.tasks.length === 0 && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <span style={{ fontSize: '1.8cqw', color: PAL.inkSoft }}>
+              No tasks yet — no tasks stand in this project.
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 

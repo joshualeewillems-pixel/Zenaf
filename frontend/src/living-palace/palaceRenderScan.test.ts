@@ -1,22 +1,40 @@
 // @vitest-environment jsdom
 /**
  * Geometry sanity scan (throwaway-grade gate, kept because it is
- * cheap): render all four Palace scenes from a fixture body of work
+ * cheap): render the Palace scenes from a fixture body of work
  * and assert the serialized output carries no NaN / undefined /
  * broken coordinates — the failure mode jsdom cannot see by
  * painting. (The compound and building scenes are positioned DOM
  * since Scenes 1 and 2, and the room scene since the chamber
- * rebuild; the floor scene remains SVG.)
+ * rebuild. The floor-plan scene is retired — founder, 2026-11-26:
+ * the dome serves both levels, so the task level renders here in
+ * its place: positioned DOM circles over one SVG lines layer.)
  * True on-device painting remains the founder's visual acceptance.
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import * as React from 'react'
 import { createRoot } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
-import { BuildingScene, CompoundScene, FloorScene, RoomScene } from './palaceCanvas'
-import { buildBuilding, buildCompound, buildFloor, buildRoom, type PalaceData } from './palaceLogic'
-import type { RoomPlate } from './palaceScene2Logic'
+import { BuildingScene, CompoundScene, RoomScene, TaskScene } from './palaceCanvas'
+import { buildBuilding, buildCompound, buildRoom, buildTaskLevel, type PalaceData } from './palaceLogic'
+import { planTaskScene, taskSizeWeight, type RoomPlate } from './palaceScene2Logic'
+import type { SubjectInteraction } from './palaceSceneLogic'
 import type { Initiative, Project, Task } from '../vision-execution/types'
+
+/* The glass hook is stubbed to a marker URL: jsdom cannot load or
+ * recolour the plates, so the tint itself is pinned at the pixel
+ * level in palaceGlass.test.ts — what THIS suite pins is the
+ * wiring: which (plate, colour) each circle asks for. A null
+ * colour returns the natural master, exactly as the real hook
+ * does. */
+vi.mock('./palaceGlass', async (importActual) => {
+  const actual = await importActual<typeof import('./palaceGlass')>()
+  return {
+    ...actual,
+    useGlassPlate: (plate: RoomPlate, colour: string | null) =>
+      colour ? `glass-tinted:${plate}:${colour}` : actual.PLATE_URLS[plate],
+  }
+})
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -72,8 +90,8 @@ describe('scene geometry scan', () => {
         onAttend: () => {}, onOpenBuilding: () => {}, onOpenProject: () => {}, onOpenTask: () => {},
         onSelectIdea: () => {}, selectedIdeaId: null,
       }))],
-      ['floor', renderToHtml(React.createElement(FloorScene, {
-        model: buildFloor(DATA, P1, { unnested: true }), onOpenRoom: () => {}, onThreshold: () => {}, onScales: () => {},
+      ['tasks', renderToHtml(React.createElement(TaskScene, {
+        model: buildTaskLevel(DATA, P1), plate: 'rose', onOpenTask: () => {},
       }))],
       ['room-waiting', renderToHtml(React.createElement(RoomScene, {
         model: buildRoom(DATA, TASKS[2]), lit: true, onBringFire: () => {}, onThreshold: () => {},
@@ -92,9 +110,11 @@ describe('scene geometry scan', () => {
       expect(html.length, name).toBeGreaterThan(800)
       expect(html, name).not.toMatch(/NaN|undefined/)
     }
-    // The compound and floor scenes still serialize SVG; the room
-    // scenes are the furnished chamber now — positioned DOM over
-    // the founder's rose plate, no drawn room geometry to scan.
+    // The compound still serializes SVG (its grounds strip), and
+    // the task level carries one SVG layer — the dependency
+    // lines beneath the circles. The room scenes are the
+    // furnished chamber now — positioned DOM over the founder's
+    // rose plate, no drawn room geometry to scan.
     expect(scenes[0][1]).toContain('<svg')
     expect(scenes[1][1]).toContain('<svg')
     for (const [, html] of scenes.slice(2)) {
@@ -105,21 +125,24 @@ describe('scene geometry scan', () => {
     // the lotus — an image, not the SVG council flames.
     const compound = scenes[0][1]
     expect(compound).toContain('palace-fire')
-    // The floor hearth burns the SAME fire (founder, 2026-11-26:
-    // "Fire — same fire") — the founder's flame image stands in
-    // the floor's firebox, not the drawn council tongues.
-    const floor = scenes[1][1]
-    expect(floor).toContain('palace-floor-hearth')
-    expect(floor).toContain('palace-fire')
-    // The floor's scales are the founder's supplied art.
-    expect(floor).toContain('palace-floor-scales')
-    expect(floor).toContain('palace-scales')
-    // The plants: jsdom has no canvas, so the Bench-bonsai bridge
-    // (palacePlant) yields no image here and the PlantGlyph
-    // stands, as it does in any canvas-less browser. The bridge
-    // itself — grow, paint, image — is proven in
-    // palacePlant.test.ts against a fake 2d context.
-    expect(floor).not.toContain('data:image/png')
+    // The task level stands in the same dome: the project's
+    // tasks as circles (its subtask stands in no circle), the
+    // one hearth with the same founder flame, and exactly the
+    // dependency lines the packer itself reports — a line for
+    // every pair it did not seat as neighbours, none for the
+    // pairs it did.
+    const tasksHtml = scenes[1][1]
+    expect(tasksHtml).toContain('palace-task-ta')
+    expect(tasksHtml).toContain('palace-task-tf')
+    expect(tasksHtml).not.toContain('palace-task-te')
+    expect(tasksHtml).toContain('palace-building-hearth')
+    expect(tasksHtml).toContain('palace-fire')
+    const taskLevel = buildTaskLevel(DATA, P1)
+    const expectedLinks = planTaskScene(
+      taskLevel.tasks.map((t) => ({ key: t.id, weight: taskSizeWeight(t.estimated_hours) })),
+      taskLevel.links.map((l) => ({ aKey: l.aId, bKey: l.bId })),
+    ).links.length
+    expect((tasksHtml.match(/palace-task-link/g) ?? []).length).toBe(expectedLinks)
     // The room furniture is the founder's supplied art (2026-11-26),
     // state-selected: this room's task carries no estimate, no
     // recorded repair and no held material, so the vessel stands
@@ -253,5 +276,84 @@ describe('scene geometry scan', () => {
     }))
     expect(unplated).toContain('palace-room-rose')
     expect(unplated).not.toContain('palace-room-hearth-wall')
+  })
+})
+
+describe('the task level — dependencies drawn only where the packing could not join them', () => {
+  function taskLevelData(
+    specs: { id: string; hours: number | null; deps?: string[] }[],
+  ): PalaceData {
+    const proj = { ...P1, id: 'px', title: 'Fixture project' }
+    return {
+      ideas: [],
+      initiatives: [I1],
+      projects: [proj],
+      tasks: specs.map((s) =>
+        task({
+          id: s.id,
+          project_id: 'px',
+          title: s.id.toUpperCase(),
+          estimated_hours: s.hours,
+          dependency_ids: s.deps ?? [],
+        }),
+      ),
+      persons: [],
+      assets: [],
+      capacityProfiles: [],
+    }
+  }
+
+  function renderTasks(data: PalaceData, interactions?: SubjectInteraction[]): string {
+    const proj = data.projects[0]
+    return renderToHtml(
+      React.createElement(TaskScene, {
+        model: buildTaskLevel(data, proj),
+        plate: 'rose' as RoomPlate,
+        onOpenTask: () => {},
+        interactions,
+      }),
+    )
+  }
+
+  it('a pair seated as neighbours draws no line', () => {
+    // Six tasks; Gamma-of-this-fixture (t4) waits on t3 — the
+    // packing seats them tangent, so no line is drawn for them.
+    const data = taskLevelData([
+      { id: 't1', hours: 10 }, { id: 't2', hours: 6 }, { id: 't3', hours: 4 },
+      { id: 't4', hours: 3, deps: ['t3'] }, { id: 't5', hours: 2 }, { id: 't6', hours: 1 },
+    ])
+    const html = renderTasks(data)
+    expect(html).toContain('palace-task-t4')
+    expect(html).not.toContain('palace-task-link')
+  })
+
+  it('a pair the packing cannot join draws exactly one line', () => {
+    // Ten tasks; the pair joins the two unit-estimate tasks,
+    // which seat last into separate pockets — exactly one line,
+    // and no other pair exists to draw one.
+    const data = taskLevelData([
+      { id: 'a', hours: 30 }, { id: 'b', hours: 22 }, { id: 'c', hours: 18 },
+      { id: 'd', hours: 15 }, { id: 'e', hours: 12 }, { id: 'f', hours: 10 },
+      { id: 'g', hours: 8 }, { id: 'h', hours: 6 }, { id: 'x', hours: 1 },
+      { id: 'y', hours: 1, deps: ['x'] },
+    ])
+    const html = renderTasks(data)
+    expect((html.match(/palace-task-link/g) ?? []).length).toBe(1)
+  })
+
+  it('a task’s stained glass takes the colour of the seat talking about that task', () => {
+    const data = taskLevelData([
+      { id: 't1', hours: 10 }, { id: 't2', hours: 6 }, { id: 't3', hours: 4 },
+      { id: 't4', hours: 3, deps: ['t3'] }, { id: 't5', hours: 2 }, { id: 't6', hours: 1 },
+    ])
+    const interactions: SubjectInteraction[] = [
+      { entity_type: 'task', entity_id: 't3', total: 2, per_seat: { champion: 2 } },
+    ]
+    const html = renderTasks(data, interactions)
+    // t3's circle asks for the rose plate tinted with Valen's
+    // colour (the marker the stubbed glass hook returns); the
+    // uninteracted tasks keep the natural master.
+    expect(html).toContain('glass-tinted:rose:#e24e4e')
+    expect(html).toContain('palace-room-rose')
   })
 })

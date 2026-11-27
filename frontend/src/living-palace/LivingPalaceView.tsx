@@ -5,10 +5,15 @@
  * the split screen, the world on the left and Maeve's chat on the
  * right, the divider draggable, the panes scrolling independently,
  * and the chat's subject following the visitor's selections — a
- * building, a floor, a room, or an idea on the drawing table rides
+ * building, a project, a room, or an idea on the drawing table rides
  * into her conversation through the same subject carriage the other
  * worlds use (sheet_type "living_palace", PRs #422/#424/#425's seam,
- * extended to this sheet).
+ * extended to this sheet). The descent is the founder's frame model
+ * (2026-11-26): compound (parent tier) → the dome at project level
+ * → the dome at task level → the room (task frame). The floor-plan
+ * frame that once stood between the dome and the room is retired;
+ * the dome serves both levels, and a project's subject carriage is
+ * exactly what it was on the floor layer.
  *
  * The world reads the visitor's real Vision Execution records via
  * palaceApi. This surface writes NOTHING — the chat-is-the-work law
@@ -31,7 +36,7 @@
  *
  * The shared attributed subject read (founder ruling 2026-11-25)
  * still composes this world's drawn expressions per subject,
- * fetched as the visitor enters a floor or room: the vessel's gold
+ * fetched as the visitor enters a project or room: the vessel's gold
  * seam, earned only by an accepted supersession, and the guest
  * objects — a seat's object stands only where the read shows that
  * seat attending the subject, with two slim doors: explore here
@@ -56,8 +61,8 @@ import {
   attendingGuests,
   buildBuilding,
   buildCompound,
-  buildFloor,
   buildRoom,
+  buildTaskLevel,
   GUEST_OBJECTS,
   type AttributedRead,
   type PalaceData,
@@ -65,13 +70,13 @@ import {
 import { fetchAttributedRead, fetchPalaceEntities, fetchSubjectInteractions } from './palaceApi'
 import type { SubjectInteraction } from './palaceSceneLogic'
 import { plateForFloor, type RoomPlate } from './palaceScene2Logic'
-import { BuildingScene, CompoundScene, FloorScene, RoomScene } from './palaceCanvas'
+import { BuildingScene, CompoundScene, RoomScene, TaskScene } from './palaceCanvas'
 import './palace.css'
 
 type PalaceLayer =
   | { layer: 'compound' }
   | { layer: 'building'; initiativeId: string }
-  | { layer: 'floor'; projectId: string }
+  | { layer: 'tasks'; projectId: string }
   | { layer: 'room'; taskId: string }
 
 const GUARDIAN = SEAT_COLORS.guardian
@@ -131,7 +136,6 @@ export default function LivingPalaceView({
   const [attendedCompound, setAttendedCompound] = useState(false)
   const [attendedFloorId, setAttendedFloorId] = useState<string | null>(null)
   const [unnestedCompound, setUnnestedCompound] = useState(false)
-  const [unnestedFloor, setUnnestedFloor] = useState(false)
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null)
   const [roomLit, setRoomLit] = useState(false)
   /** Tentative population: the object a tap staged in the chat.
@@ -166,11 +170,11 @@ export default function LivingPalaceView({
 
   /* ---------------- the attributed subject read ---------------- */
 
-  /** The subject the read is fetched for on this layer: a floor's
-   *  project, a room's task. Compound and building layers have no
-   *  per-subject read in these expressions. */
+  /** The subject the read is fetched for on this layer: the task
+   *  level's project, a room's task. Compound and building layers
+   *  have no per-subject read in these expressions. */
   const subjectKey =
-    current.layer === 'floor'
+    current.layer === 'tasks'
       ? `project:${current.projectId}`
       : current.layer === 'room'
         ? `task:${current.taskId}`
@@ -263,39 +267,58 @@ export default function LivingPalaceView({
     const initiative = data.initiatives.find((i) => i.id === current.initiativeId)
     return initiative ? buildBuilding(data, initiative) : null
   }, [data, current])
-  const floorProject = useMemo(() => {
+  /** The project in view: the task level's own project, or the
+   *  project the open room belongs to. */
+  const subjectProject = useMemo(() => {
     if (!data) return null
-    if (current.layer === 'floor') return data.projects.find((p) => p.id === current.projectId) ?? null
+    if (current.layer === 'tasks') return data.projects.find((p) => p.id === current.projectId) ?? null
     if (current.layer === 'room') {
       const task = data.tasks.find((t) => t.id === current.taskId)
       return task?.project_id ? (data.projects.find((p) => p.id === task.project_id) ?? null) : null
     }
     return null
   }, [data, current])
-  const floor = useMemo(
-    () => (data && floorProject ? buildFloor(data, floorProject, { unnested: unnestedFloor }) : null),
-    [data, floorProject, unnestedFloor],
+  const taskLevel = useMemo(
+    () =>
+      data && current.layer === 'tasks' && subjectProject ? buildTaskLevel(data, subjectProject) : null,
+    [data, current, subjectProject],
+  )
+  /** The chamber plate of a project, read off the building
+   *  scene's own plan (plateForFloor — the shared assignment,
+   *  never re-derived): the task level's circles show it, and
+   *  the project's rooms open into it. A project with no
+   *  initiative — a loose project — stands in the rose chamber. */
+  const plateForProject = useCallback(
+    (project: { id: string; initiative_id: string | null } | null): RoomPlate => {
+      if (!data || !project?.initiative_id) return 'rose'
+      const initiative = data.initiatives.find((i) => i.id === project.initiative_id)
+      if (!initiative) return 'rose'
+      const buildingModel = buildBuilding(data, initiative)
+      return plateForFloor(
+        buildingModel.floors.map((f) => ({ key: f.project.id, roomCount: f.roomCount })),
+        project.id,
+      )
+    },
+    [data],
+  )
+  const taskPlate: RoomPlate = useMemo(
+    () => (current.layer === 'tasks' ? plateForProject(subjectProject) : 'rose'),
+    [current, plateForProject, subjectProject],
   )
   const room = useMemo(() => {
     if (!data || current.layer !== 'room') return null
     const task = data.tasks.find((t) => t.id === current.taskId)
     return task ? buildRoom(data, task) : null
   }, [data, current])
-  /** The room's chamber: the plate of the floor the room belongs
-   *  to, read off the building scene's own plan (plateForFloor —
-   *  the shared assignment, never re-derived). A room whose floor
-   *  cannot be resolved — a loose task, a loose project — stands
-   *  in the rose chamber. */
+  /** The room's chamber: the plate of the project the room
+   *  belongs to, read off the building scene's own plan
+   *  (plateForFloor — the shared assignment, never re-derived).
+   *  A room whose project cannot be resolved — a loose task, a
+   *  loose project — stands in the rose chamber. */
   const roomPlate: RoomPlate = useMemo(() => {
-    if (!data || current.layer !== 'room' || !floorProject?.initiative_id) return 'rose'
-    const initiative = data.initiatives.find((i) => i.id === floorProject.initiative_id)
-    if (!initiative) return 'rose'
-    const buildingModel = buildBuilding(data, initiative)
-    return plateForFloor(
-      buildingModel.floors.map((f) => ({ key: f.project.id, roomCount: f.roomCount })),
-      floorProject.id,
-    )
-  }, [data, current, floorProject])
+    if (current.layer !== 'room') return 'rose'
+    return plateForProject(subjectProject)
+  }, [current, plateForProject, subjectProject])
   const selectedIdea: Idea | null = useMemo(() => {
     if (!data || !selectedIdeaId || current.layer !== 'compound') return null
     return data.ideas.find((i) => i.id === selectedIdeaId) ?? null
@@ -310,10 +333,15 @@ export default function LivingPalaceView({
     },
     [push],
   )
+  /** A project opens the dome at TASK level: from the building
+   *  layer (a floor circle tapped — the project stages in the
+   *  chat exactly as a floor tap staged it) and from the compound
+   *  alike (a loose or standing project has no building layer to
+   *  pass through). */
   const openProject = useCallback(
     (projectId: string) => {
       setSelectedIdeaId(null)
-      push({ layer: 'floor', projectId })
+      push({ layer: 'tasks', projectId })
     },
     [push],
   )
@@ -350,7 +378,7 @@ export default function LivingPalaceView({
         },
       }
     }
-    if (current.layer === 'floor') {
+    if (current.layer === 'tasks') {
       return {
         conversationId: `living-palace:project:${current.projectId}`,
         context: {
@@ -384,8 +412,8 @@ export default function LivingPalaceView({
       if (i === 0 || !data) return
       if (step.layer === 'building') {
         list.push({ label: data.initiatives.find((x) => x.id === step.initiativeId)?.title ?? 'Building', index: i })
-      } else if (step.layer === 'floor') {
-        list.push({ label: data.projects.find((x) => x.id === step.projectId)?.title ?? 'Floor', index: i })
+      } else if (step.layer === 'tasks') {
+        list.push({ label: data.projects.find((x) => x.id === step.projectId)?.title ?? 'Project', index: i })
       } else if (step.layer === 'room') {
         list.push({ label: data.tasks.find((x) => x.id === step.taskId)?.title ?? 'Room', index: i })
       }
@@ -427,16 +455,7 @@ export default function LivingPalaceView({
                 {unnestedCompound ? 'Nest the projects' : 'Un-nest the projects'}
               </button>
             )}
-            {current.layer === 'floor' && (
-              <button
-                type="button"
-                data-testid="palace-unnest-toggle"
-                className="rounded-full border border-[#c9b995] bg-white/60 px-2.5 py-1 text-xs text-[#4a3f30]"
-                onClick={() => setUnnestedFloor((v) => !v)}
-              >
-                {unnestedFloor ? 'Nest the subtasks' : 'Un-nest the subtasks'}
-              </button>
-            )}
+
           </span>
         </div>
         {selectedIdea && current.layer === 'compound' && (
@@ -483,14 +502,12 @@ export default function LivingPalaceView({
             interactions={interactions}
           />
         )}
-        {data && floor && current.layer === 'floor' && (
-          <FloorScene
-            model={floor}
-            guests={subjectGuestSeats}
-            onGuest={(seat) => setGuestDoorSeat(seat)}
-            onOpenRoom={openTask}
-            onThreshold={() => stage('threshold')}
-            onScales={() => stage('scales')}
+        {data && taskLevel && current.layer === 'tasks' && (
+          <TaskScene
+            model={taskLevel}
+            plate={taskPlate}
+            onOpenTask={openTask}
+            interactions={interactions}
           />
         )}
         {data && room && current.layer === 'room' && (

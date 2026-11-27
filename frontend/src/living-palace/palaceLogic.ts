@@ -11,9 +11,11 @@
  *             bonfire at the centre burning in the seven council
  *             colours;
  *   building  floors = the initiative's projects;
- *   floor     ONE continuous plan — rooms (tasks) sharing walls, the
- *             hall as real circulation, labelled doorways where a
- *             recorded dependency joins two rooms of the floor;
+ *   task level the project's tasks as circles in the same dome
+ *             (the floor-plan frame is retired, founder
+ *             2026-11-26 20:07 PT — the dome serves both levels);
+ *             recorded dependency pairs between its tasks ride
+ *             along, to shape the circles' seating;
  *   room      a cutaway carrying the ruled furniture vocabulary.
  *
  * The vocabulary's discipline (founder rulings, 2026-11-25): a
@@ -239,141 +241,47 @@ export function buildBuilding(data: PalaceData, initiative: Initiative): Buildin
 }
 
 /* ------------------------------------------------------------------ */
-/* floor                                                               */
+/* task level                                                          */
 /* ------------------------------------------------------------------ */
 
-export interface FloorRoom {
-  task: Task
-  col: 0 | 1
-  row: number
-  /** Recorded dependencies, resolved against the whole body of work
-   *  (a dependency may live on another floor — the window still
-   *  shows its state). */
-  waitsOn: Task[]
-  /** Dependencies whose other end is a room of THIS floor. */
-  internalWaits: Task[]
-  /** Recorded edges in + out — the room's convergence degree. */
-  convergence: number
-  growth: GrowthState | null
-  holdsMaterial: boolean
-  subtaskCount: number
-}
-
-export interface FloorScalesFigures {
-  /** The project's own recorded weekly ask. */
-  projectHours: number
-  /** The recorded capacity of the person who keeps this floor. */
-  capacityHours: number
-  ownerName: string
-}
-
-export interface FloorModel {
+export interface TaskLevelModel {
   project: Project
-  rooms: FloorRoom[]
-  /** Labelled doorways: recorded edges joining two rooms of this
-   *  floor that stand in adjacent rows of the same column — the edge
-   *  pierces their shared partition. */
-  doorways: { aId: string; bId: string }[]
-  /** Recorded edges leaving the floor, named in the floor's panel. */
-  crossEdges: { room: Task; other: Task }[]
-  /** A cabinet stands in the hall only where rooms hold material. */
-  cabinets: boolean
-  /** Aria's mosaic is earned where a recorded edge joins two rooms
-   *  of this floor. */
-  mosaic: boolean
-  /** Floor scales stand only on recorded figures: the project's
-   *  weekly hours AND its keeper's capacity profile. */
-  scalesFigures: FloorScalesFigures | null
-  /** People recorded against the project (owner + supporting). */
-  people: Person[]
+  /** The project's rooms: its top-level tasks, in the title
+   *  order the retired floor plan laid them out in. A subtask
+   *  stands inside its room's chamber, not as its own circle. */
+  tasks: Task[]
+  /** Recorded dependency pairs joining two of these tasks, in
+   *  either direction — the data the retired floor plan drew
+   *  as labelled doorways (there, only the pairs its plan made
+   *  neighbours; here EVERY internal pair, because the pairs
+   *  now shape the packing itself: partners seat as neighbours
+   *  where the dome can achieve it, and a line joins the rest). */
+  links: { aId: string; bId: string }[]
 }
 
-export function buildFloor(
-  data: PalaceData,
-  project: Project,
-  opts: { unnested: boolean },
-): FloorModel {
-  const byId = new Map(data.tasks.map((t) => [t.id, t]))
+export function buildTaskLevel(data: PalaceData, project: Project): TaskLevelModel {
   const projectTasks = data.tasks.filter((t) => t.project_id === project.id)
   const projectTaskIds = new Set(projectTasks.map((t) => t.id))
-  const roomTasks = (
-    opts.unnested
-      ? projectTasks
-      : projectTasks.filter((t) => !t.parent_task_id || !projectTaskIds.has(t.parent_task_id))
-  )
+  const tasks = projectTasks
+    .filter((t) => !t.parent_task_id || !projectTaskIds.has(t.parent_task_id))
     .slice()
     .sort((a, b) => a.title.localeCompare(b.title))
-  const roomIds = new Set(roomTasks.map((t) => t.id))
-  const inbound = new Map<string, number>()
-  for (const t of data.tasks) {
+  const roomIds = new Set(tasks.map((t) => t.id))
+  const pairs = new Set<string>()
+  for (const t of tasks) {
     for (const dep of t.dependency_ids ?? []) {
-      inbound.set(dep, (inbound.get(dep) ?? 0) + 1)
-    }
-  }
-  const rooms: FloorRoom[] = roomTasks.map((task, i) => {
-    const waitsOn = (task.dependency_ids ?? [])
-      .map((id) => byId.get(id))
-      .filter((t): t is Task => Boolean(t))
-    return {
-      task,
-      col: (i % 2) as 0 | 1,
-      row: Math.floor(i / 2),
-      waitsOn,
-      internalWaits: waitsOn.filter((t) => roomIds.has(t.id)),
-      convergence: (task.dependency_ids ?? []).length + (inbound.get(task.id) ?? 0),
-      growth: growthOf(task.status),
-      holdsMaterial: taskHoldsMaterial(task),
-      subtaskCount: data.tasks.filter((t) => t.parent_task_id === task.id).length,
-    }
-  })
-  const roomById = new Map(rooms.map((r) => [r.task.id, r]))
-  const crossEdges: { room: Task; other: Task }[] = []
-  const internalPairs = new Set<string>()
-  for (const room of rooms) {
-    for (const other of room.waitsOn) {
-      if (roomById.has(other.id)) {
-        internalPairs.add([room.task.id, other.id].sort().join('|'))
-      } else {
-        crossEdges.push({ room: room.task, other })
+      if (dep !== t.id && roomIds.has(dep)) {
+        pairs.add([t.id, dep].sort().join('|'))
       }
     }
   }
-  // A recorded edge pierces the shared partition as a labelled
-  // doorway only where the two rooms stand in adjacent rows of the
-  // same column; other internal edges live in the rooms' windows.
-  const doorways: { aId: string; bId: string }[] = [...internalPairs]
-    .map((key) => key.split('|') as [string, string])
-    .filter(([aId, bId]) => {
-      const a = roomById.get(aId)!
-      const b = roomById.get(bId)!
-      return a.col === b.col && Math.abs(a.row - b.row) === 1
-    })
-    .map(([aId, bId]) => ({ aId, bId }))
-  const owner = project.owner_id ? data.persons.find((p) => p.id === project.owner_id) : undefined
-  const profile = project.owner_id
-    ? data.capacityProfiles.find((c) => c.person_id === project.owner_id)
-    : undefined
-  const scalesFigures: FloorScalesFigures | null =
-    project.estimated_weekly_hours != null && profile
-      ? {
-          projectHours: project.estimated_weekly_hours,
-          capacityHours: profile.weekly_capacity_hours,
-          ownerName: owner?.name ?? 'The keeper of this floor',
-        }
-      : null
-  const peopleIds = new Set<string>([
-    ...(project.owner_id ? [project.owner_id] : []),
-    ...(project.supporting_owner_ids ?? []),
-  ])
   return {
     project,
-    rooms,
-    doorways,
-    crossEdges,
-    cabinets: rooms.some((r) => r.holdsMaterial),
-    mosaic: rooms.some((r) => r.internalWaits.length > 0),
-    scalesFigures,
-    people: data.persons.filter((p) => peopleIds.has(p.id)),
+    tasks,
+    links: [...pairs].sort().map((key) => {
+      const [aId, bId] = key.split('|') as [string, string]
+      return { aId, bId }
+    }),
   }
 }
 

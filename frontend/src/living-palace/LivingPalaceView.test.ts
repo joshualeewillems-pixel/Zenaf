@@ -7,7 +7,9 @@
  *
  * The fixture body of work: one initiative with two floors, one
  * loose project, one loose task, one undeveloped idea. The suite
- * asserts the descent compound → building → floor → room; that the
+ * asserts the descent compound → building → task level → room
+ * (the dome serves both levels since the floor-plan frame
+ * retired, founder 2026-11-26); that the
  * chat's subject follows each selection through the living_palace
  * carriage; that a room's furniture is earned (the dependency
  * window's reading, the mandala only at convergence) while the
@@ -121,6 +123,7 @@ const TASKS = [
   taskRow({ id: 'tc', title: 'Gamma', dependency_ids: ['tb'] }),
   taskRow({ id: 'tf', project_id: 'p2', title: 'Convergent', dependency_ids: ['ta', 'tb'] }),
   taskRow({ id: 'tg', project_id: 'p2', title: 'After convergent', dependency_ids: ['tf'] }),
+  taskRow({ id: 'lpt', project_id: 'lp', title: 'Loose project task' }),
   taskRow({ id: 'lt', project_id: null, title: 'Standalone errand' }),
 ]
 
@@ -163,6 +166,10 @@ const EMPTY_READ = {
 }
 let attributedPayload: unknown = EMPTY_READ
 
+/** The subject-interactions payload the stub serves — the ivy /
+ *  glass read. Empty by default; the task-glass test replaces it. */
+let interactionsPayload: unknown = { subjects: [] }
+
 /** Every non-GET the view makes, recorded by the fetch stub: the
  *  Palace pass surface must make NONE, ever — staging included. */
 const writes: { url: string; method: string }[] = []
@@ -198,6 +205,9 @@ function installFetchStub() {
       if (url.includes('/attributed-read/')) {
         attributedGets += 1
         return jsonResponse(attributedPayload)
+      }
+      if (url.includes('/subject-interactions')) {
+        return jsonResponse(interactionsPayload)
       }
       for (const [path, body] of Object.entries(routes)) {
         if (url.endsWith(path)) return jsonResponse(body)
@@ -241,7 +251,19 @@ function lastChat() {
 async function descendToGamma() {
   await click('palace-building-i1')
   await click('palace-floor-p1')
-  await click('palace-room-tc')
+  await click('palace-task-tc')
+}
+
+async function clickCrumb(label: string) {
+  const nav = container.querySelector('nav[aria-label="Palace trail"]')
+  const el = [...(nav?.querySelectorAll('button') ?? [])].find((b) => b.textContent === label)
+  expect(el, `missing crumb ${label}`).not.toBeUndefined()
+  await act(async () => {
+    el!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 0))
+  })
 }
 
 beforeEach(() => {
@@ -249,6 +271,7 @@ beforeEach(() => {
   writes.length = 0
   attributedGets = 0
   attributedPayload = EMPTY_READ
+  interactionsPayload = { subjects: [] }
   installFetchStub()
 })
 
@@ -278,7 +301,7 @@ describe('Living Palace view', () => {
     expect(container.querySelector('[data-testid="palace-standing-project-p1"]')).not.toBeNull()
   })
 
-  it('descends building → floor → room, the chat subject following', async () => {
+  it('descends building → task level → room, the chat subject following', async () => {
     await render()
     await click('palace-building-i1')
     expect(container.querySelector('[data-testid="palace-floor-p1"]')).not.toBeNull()
@@ -289,22 +312,84 @@ describe('Living Palace view', () => {
       entity_id: 'i1',
     })
     await click('palace-floor-p1')
-    expect(container.querySelector('[data-testid="palace-room-ta"]')).not.toBeNull()
-    // The floor's scales stand: P1 records weekly hours and its
-    // keeper a capacity profile.
-    expect(container.querySelector('[data-testid="palace-floor-scales"]')).not.toBeNull()
+    // The dome recomposes at task level: P1's tasks as circles,
+    // the project staged in the chat exactly as the floor tap
+    // staged it. The retired floor frame is gone — no hall
+    // hearth, no floor scales, no room tiles from the old plan.
+    expect(container.querySelector('[data-testid="palace-task-ta"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="palace-task-tc"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="palace-floor-hearth"]')).toBeNull()
+    expect(container.querySelector('[data-testid="palace-floor-scales"]')).toBeNull()
+    expect(container.querySelector('[data-testid="palace-floor-threshold"]')).toBeNull()
+    expect(container.querySelector('[data-testid="palace-room-ta"]')).toBeNull()
     expect(lastChat().context).toEqual({
       sheet_type: 'living_palace',
       entity_type: 'project',
       entity_id: 'p1',
     })
-    await click('palace-room-tc')
+    await click('palace-task-tc')
     expect(lastChat().conversationId).toBe('living-palace:task:tc')
     expect(lastChat().context).toEqual({
       sheet_type: 'living_palace',
       entity_type: 'task',
       entity_id: 'tc',
     })
+  })
+
+  it('a loose project opens the dome directly at task level', async () => {
+    await render()
+    await click('palace-loose-project-lp')
+    // No building layer stands between the compound and this
+    // project's tasks — its one task stands as a circle at once.
+    expect(container.querySelector('[data-testid="palace-task-lpt"]')).not.toBeNull()
+    expect(lastChat().context).toEqual({
+      sheet_type: 'living_palace',
+      entity_type: 'project',
+      entity_id: 'lp',
+    })
+    await click('palace-task-lpt')
+    expect(lastChat().conversationId).toBe('living-palace:task:lpt')
+    expect(container.querySelector('[data-testid="palace-room-vessel"]')).not.toBeNull()
+  })
+
+  it('back navigation unwinds one level at a time', async () => {
+    await render()
+    await descendToGamma()
+    // room → the task-level dome of its project
+    await clickCrumb('Winter client season')
+    expect(container.querySelector('[data-testid="palace-task-tc"]')).not.toBeNull()
+    expect(lastChat().context).toEqual({
+      sheet_type: 'living_palace',
+      entity_type: 'project',
+      entity_id: 'p1',
+    })
+    // task level → the project-level dome of its building
+    await clickCrumb('Rebuild the workshop business')
+    expect(container.querySelector('[data-testid="palace-floor-p1"]')).not.toBeNull()
+    expect(lastChat().context).toEqual({
+      sheet_type: 'living_palace',
+      entity_type: 'initiative',
+      entity_id: 'i1',
+    })
+    // building → the compound
+    await clickCrumb('Compound')
+    expect(container.querySelector('[data-testid="palace-building-i1"]')).not.toBeNull()
+    expect(lastChat().conversationId).toBe('living-palace:compound')
+  })
+
+  it('a task interaction in the read leaves the task level standing (glass fails soft in jsdom)', async () => {
+    interactionsPayload = {
+      subjects: [{ entity_type: 'task', entity_id: 'tc', total: 3, per_seat: { champion: 3 } }],
+    }
+    await render()
+    await click('palace-building-i1')
+    await click('palace-floor-p1')
+    // The read carries a task subject; the circle stands and the
+    // descent continues — the tint wiring itself is pinned in
+    // the render scan, where the glass hook can be observed.
+    expect(container.querySelector('[data-testid="palace-task-tc"]')).not.toBeNull()
+    await click('palace-task-tc')
+    expect(lastChat().conversationId).toBe('living-palace:task:tc')
   })
 
   it('a room carries its earned furniture and its unpopulated instruments', async () => {
@@ -342,7 +427,7 @@ describe('Living Palace view', () => {
     // through plateForFloor, never re-derived.
     await click('palace-building-i1')
     await click('palace-floor-p2')
-    await click('palace-room-tf')
+    await click('palace-task-tf')
     expect(container.querySelector('img[src*="palace-room-spiral"]')).not.toBeNull()
     expect(container.querySelector('img[src*="palace-room-rose"]')).toBeNull()
   })
@@ -351,7 +436,7 @@ describe('Living Palace view', () => {
     await render()
     await click('palace-building-i1')
     await click('palace-floor-p2')
-    await click('palace-room-tf')
+    await click('palace-task-tf')
     expect(container.querySelector('[data-testid="palace-room-mandala"]')).not.toBeNull()
   })
 
@@ -535,11 +620,22 @@ describe('Living Palace — chat-is-the-work', () => {
     expect(container.querySelector('[data-testid*="count"]')).toBeNull()
   })
 
-  it('a floor scales tap stages the scales in the chat — and writes nothing', async () => {
+  it('the retired floor frame is gone from the source: no floor scene, no floor testids', () => {
+    const canvas = readFileSync('src/living-palace/palaceCanvas.tsx', 'utf8')
+    expect(canvas).not.toContain('FloorScene')
+    expect(canvas).not.toContain('palace-floor-hearth')
+    expect(canvas).not.toContain('palace-floor-scales')
+    expect(canvas).not.toContain('palace-floor-threshold')
+    expect(canvas).not.toContain('palace-floor-guest')
+    const view = readFileSync('src/living-palace/LivingPalaceView.tsx', 'utf8')
+    expect(view).not.toContain('FloorScene')
+    expect(view).not.toContain('buildFloor')
+  })
+
+  it('a room scales tap stages the scales in the chat — and writes nothing', async () => {
     await render()
-    await click('palace-building-i1')
-    await click('palace-floor-p1')
-    await click('palace-floor-scales')
+    await descendToGamma()
+    await click('palace-room-scales')
     // The staging manifests IN THE CHAT: the chip stands inside
     // the chat pane carrying the instrument's name. No staged line
     // stands in the world pane, and no mechanism copy with it.
@@ -552,8 +648,8 @@ describe('Living Palace — chat-is-the-work', () => {
     expect(container.textContent).not.toContain('a tap settles nothing')
     expect(lastChat().context).toEqual({
       sheet_type: 'living_palace',
-      entity_type: 'project',
-      entity_id: 'p1',
+      entity_type: 'task',
+      entity_id: 'tc',
       palace_focus: 'scales',
     })
     // Tentative: not one write left this surface.

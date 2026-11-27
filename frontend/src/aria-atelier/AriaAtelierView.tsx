@@ -105,7 +105,6 @@ import {
   SCENE1_WELL_SCALE_Y,
   SCENE2_DISC,
   SCENE2_LOTUS_OVERLAY,
-  SCENE2_RING_OVERLAY,
   STACK_DEFAULT,
   STAGE_COUNT,
   VOICES,
@@ -164,7 +163,6 @@ import valenFill from './assets/layer-valen-fill.png'
 import gardenScene1 from './assets/garden-scene1.webp'
 import gardenScene2 from './assets/garden-scene2.webp'
 import gardenScene2Lotus from './assets/garden-scene2-lotus.png'
-import gardenScene2Ring from './assets/garden-scene2-ring.png'
 
 /** A scene fraction as a CSS percentage string. */
 const pct = (f: number): string => `${Math.round(f * 10000) / 100}%`
@@ -1457,17 +1455,6 @@ function CastView({
             </div>
             <span className="atelier-cast-shade" aria-hidden="true" />
         </div>
-        <img
-          className="atelier-scene-overlay"
-          src={gardenScene2Ring}
-          alt=""
-          aria-hidden="true"
-          style={{
-            left: pct(SCENE2_RING_OVERLAY.left),
-            top: pct(SCENE2_RING_OVERLAY.top),
-            width: pct(SCENE2_RING_OVERLAY.width),
-          }}
-        />
         <img
           className="atelier-scene-overlay"
           src={gardenScene2Lotus}

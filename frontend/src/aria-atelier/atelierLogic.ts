@@ -308,11 +308,13 @@ export const SCENE1_WELL_SCALE_Y = 0.338
  * Screen 2's well, measured on the painting: the disc the live
  * water and the formation stack are clipped to (centre as
  * fractions of the scene, r of its width), and the painting's own
- * stone ring and lotus, carried as overlays above the water at
- * their cropped placements (fractions of the scene).
+ * lotus, carried as an overlay above the water at its cropped
+ * placement (fractions of the scene). The painting's inner stone
+ * ring is NOT carried: the founder ruled it obstructive on device
+ * (2026-11-27) — the well has no inner wall, and the water and the
+ * formations run out to the outer rim.
  */
 export const SCENE2_DISC = { cx: 0.488, cy: 0.49, r: 0.164 }
-export const SCENE2_RING_OVERLAY = { left: 352 / 1086, top: 532 / 1448, width: 356 / 1086 }
 export const SCENE2_LOTUS_OVERLAY = { left: 311 / 1086, top: 616 / 1448, width: 163 / 1086 }
 
 /** The basin ellipse on the reference scene, px. */

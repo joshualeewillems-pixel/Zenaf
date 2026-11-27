@@ -228,18 +228,16 @@ describe('AriaAtelierView', () => {
     expect(container.querySelector('[data-testid="atelier-cast-circle"]')).not.toBeNull()
     // Screen 2 is the cast's scene: the overhead painting, the
     // live water clipped to its well disc, and the painting's own
-    // ring and lotus standing above the water.
+    // lotus standing above the water. There is no inner ring: the
+    // founder ruled the well-within-a-well obstructive (2026-11-27),
+    // so the formations run out to the outer rim.
     const castScene = container.querySelector('[data-testid="atelier-cast-scene"]') as HTMLElement | null
     expect(castScene?.style.backgroundImage).toContain('garden-scene2')
     const disc = container.querySelector('[data-testid="atelier-cast-circle"]') as HTMLElement | null
     expect(disc?.style.left).toBe('48.8%')
     expect(disc?.style.top).toBe('49%')
     expect(disc?.style.width).toBe('32.8%')
-    const ring = castScene?.querySelector('img[src*="garden-scene2-ring"]') as HTMLImageElement | null
-    expect(ring).not.toBeNull()
-    expect(parseFloat(ring?.style.left ?? '')).toBeCloseTo((352 / 1086) * 100, 1)
-    expect(parseFloat(ring?.style.top ?? '')).toBeCloseTo((532 / 1448) * 100, 1)
-    expect(parseFloat(ring?.style.width ?? '')).toBeCloseTo((356 / 1086) * 100, 1)
+    expect(castScene?.querySelector('img[src*="garden-scene2-ring"]')).toBeNull()
     const lotus = castScene?.querySelector('img[src*="garden-scene2-lotus"]') as HTMLImageElement | null
     expect(lotus).not.toBeNull()
     expect(parseFloat(lotus?.style.left ?? '')).toBeCloseTo((311 / 1086) * 100, 1)

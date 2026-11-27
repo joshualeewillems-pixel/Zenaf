@@ -22,7 +22,6 @@ import {
   SCENE1_WELL_SCALE_Y,
   SCENE2_DISC,
   SCENE2_LOTUS_OVERLAY,
-  SCENE2_RING_OVERLAY,
   SCENE_BASIN_REF,
   SCENE_REF_H,
   SCENE_REF_W,
@@ -387,11 +386,8 @@ describe('the painted scenes — measured geometry', () => {
     expect(SCENE_BASIN_REF.ry).toBeCloseTo(0.036 * SCENE_REF_H)
   })
 
-  it('pins Screen 2’s disc and the ring/lotus overlay placements', () => {
+  it('pins Screen 2’s disc and the lotus overlay placement', () => {
     expect(SCENE2_DISC).toEqual({ cx: 0.488, cy: 0.49, r: 0.164 })
-    expect(SCENE2_RING_OVERLAY.left).toBeCloseTo(352 / 1086)
-    expect(SCENE2_RING_OVERLAY.top).toBeCloseTo(532 / 1448)
-    expect(SCENE2_RING_OVERLAY.width).toBeCloseTo(356 / 1086)
     expect(SCENE2_LOTUS_OVERLAY.left).toBeCloseTo(311 / 1086)
     expect(SCENE2_LOTUS_OVERLAY.top).toBeCloseTo(616 / 1448)
     expect(SCENE2_LOTUS_OVERLAY.width).toBeCloseTo(163 / 1086)

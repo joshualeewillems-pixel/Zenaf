@@ -7,12 +7,17 @@
  * routes the Board and the Bench read) plus the capacity profiles
  * and core profiles the VE workspace already serves.
  *
- * Reads only (Palace pass, chat-is-the-work): this surface writes
- * nothing. The verdict-door callers and the weighing settle writes
- * that lived here (#432/#433) are superseded as forms — rulings and
- * weighings happen in Maeve's conversation now, through the chat's
- * own carriage. There is NO per-subject boundary store and this
- * module invents none.
+ * Reads (Palace pass, chat-is-the-work). The verdict-door callers
+ * and the weighing settle writes that lived here (#432/#433) are
+ * superseded as forms — rulings and weighings happen in Maeve's
+ * conversation now, through the chat's own carriage. There is NO
+ * per-subject boundary store and this module invents none.
+ *
+ * One write stands, added with the overhead plan (2026-11-27):
+ * the per-project layout record (fetchPalaceLayout /
+ * savePalaceLayout below) — derived geometry, persisted only
+ * when a layout is computed or changes, in the chalk store's
+ * owner-scoped pattern. It carries no visitor work and no words.
  */
 import { apiBase } from '../apiBase'
 import {
@@ -22,6 +27,7 @@ import {
 } from '../vision-execution/types'
 import { fetchVisionMapEntities } from '../vision-map/veMapApi'
 import type { AttributedRead, PalaceData } from './palaceLogic'
+import type { PalaceLayoutRecord } from './palaceOverheadLogic'
 import type { SubjectInteraction } from './palaceSceneLogic'
 
 export interface PalaceEntities extends PalaceData {
@@ -80,6 +86,63 @@ export async function fetchPalaceEntities(): Promise<PalaceEntities> {
  *  from the messages' own live-context snapshots. Degrades to an
  *  empty list on any failure: the Palace then stands with resting
  *  ivy (stage 1, natural green) rather than failing. */
+/** The stored overhead layout record for one project (or the
+ *  loose-tasks grouping, under its reserved key) — null when
+ *  none stands, on any failure: a missing record means a cold
+ *  layout, never a broken world. The record's shape is checked
+ *  lightly here so a malformed stored record degrades to a cold
+ *  layout instead of corrupting the scene; the store validates
+ *  strictly at write time. */
+export async function fetchPalaceLayout(projectKey: string): Promise<PalaceLayoutRecord | null> {
+  try {
+    const res = await fetch(
+      `${apiBase()}/conversation/palace-layout/${encodeURIComponent(projectKey)}`,
+      { credentials: 'include' },
+    )
+    if (!res.ok) return null
+    const data = (await res.json()) as { layout?: unknown }
+    return isLayoutRecord(data.layout) ? data.layout : null
+  } catch {
+    return null
+  }
+}
+
+function isLayoutRecord(value: unknown): value is PalaceLayoutRecord {
+  if (typeof value !== 'object' || value === null) return false
+  const r = value as Record<string, unknown>
+  return (
+    typeof r.version === 'number' &&
+    typeof r.scale === 'number' &&
+    typeof r.positions === 'object' &&
+    r.positions !== null &&
+    typeof r.weights === 'object' &&
+    r.weights !== null &&
+    typeof r.lastTransition === 'object' &&
+    r.lastTransition !== null &&
+    Array.isArray(r.unplaced)
+  )
+}
+
+/** Persist one project's overhead layout record — called only
+ *  when a layout is computed or changes. Failures are swallowed:
+ *  the plan on screen stands either way, and the next open
+ *  recomputes from whatever record survived. */
+export async function savePalaceLayout(
+  projectKey: string,
+  record: PalaceLayoutRecord,
+): Promise<void> {
+  try {
+    await fetch(`${apiBase()}/conversation/palace-layout/${encodeURIComponent(projectKey)}`, {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ record }),
+    })
+  } catch {
+    /* the world stands; the next open recomputes */
+  }
+}
+
 export async function fetchSubjectInteractions(): Promise<SubjectInteraction[]> {
   try {
     const res = await fetch(`${apiBase()}/conversation/subject-interactions`, {

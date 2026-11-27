@@ -390,6 +390,45 @@ def _vessel_lines(read: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _unplaced_lines(user_id: str, entity_type: str, row: dict[str, Any], ve: Any) -> list[str]:
+    """The overhead plan's unseated rooms, named for the keeper.
+
+    The plan (the dome's third layer) seats what it lawfully can;
+    a room it cannot seat is never resized, overlapped or hidden
+    — its name is carried here instead, from the project's stored
+    layout record (owner-scoped; the record is read only when one
+    stands). Project subjects only: the plan is the project's.
+    """
+    if entity_type != "project":
+        return []
+    try:
+        from local_ai.conversation import palace_layout_store as layout_store_mod
+
+        if not layout_store_mod.DEFAULT_DB_PATH.exists():
+            return []
+        record = layout_store_mod.PalaceLayoutStore().get_layout(user_id, str(row["id"]))
+    except Exception:  # noqa: BLE001 — the plan's absence never breaks the room
+        return []
+    if not record:
+        return []
+    names: list[str] = []
+    for entry in record.get("unplaced") or []:
+        task = ve.get_task(str(entry.get("id") or ""), user_id)
+        if task:
+            names.append(_sc._clean(str(task.get("title") or "")) or "(untitled)")
+    if not names:
+        return []
+    return [
+        "The overhead plan of this floor: "
+        + ", ".join(f'"{name}"' for name in names)
+        + " could not be seated in it — the floor cannot hold them "
+        "at their recorded sizes beside the rooms that stand. They "
+        "are not in the plan; their names are kept here, with you. "
+        "If the visitor asks after them, speak of them plainly — "
+        "never invent a seat for them."
+    ]
+
+
 def _pending_lines(read: dict[str, Any]) -> list[str]:
     """The subject's undecided steward proposals, itemized as the
     attributed read composes them — no counts, no queue: resting
@@ -635,6 +674,7 @@ def build_room_state_context(
             lines.extend(_scales_lines(user_id, entity_type, row, ve))
         lines.extend(_vessel_lines(read))
         lines.extend(_room_fact_lines(user_id, entity_type, row, ve))
+        lines.extend(_unplaced_lines(user_id, entity_type, row, ve))
         lines.extend(_guest_lines(read))
         lines.extend(_pending_lines(read))
         focus = validated_palace_focus(context.get("palace_focus"))

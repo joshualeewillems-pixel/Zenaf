@@ -96,6 +96,44 @@ describe('scene geometry scan', () => {
     // the lotus — an image, not the SVG council flames.
     const compound = scenes[0][1]
     expect(compound).toContain('palace-fire')
+    // The floor hearth burns the SAME fire (founder, 2026-11-26:
+    // "Fire — same fire") — the founder's flame image stands in
+    // the floor's firebox, not the drawn council tongues.
+    const floor = scenes[1][1]
+    expect(floor).toContain('palace-floor-hearth')
+    expect(floor).toContain('palace-fire')
+    // The floor's scales are the founder's supplied art.
+    expect(floor).toContain('palace-floor-scales')
+    expect(floor).toContain('palace-scales')
+    // The plants: jsdom has no canvas, so the Bench-bonsai bridge
+    // (palacePlant) yields no image here and the PlantGlyph
+    // stands, as it does in any canvas-less browser. The bridge
+    // itself — grow, paint, image — is proven in
+    // palacePlant.test.ts against a fake 2d context.
+    expect(floor).not.toContain('data:image/png')
+    // The room furniture is the founder's supplied art (2026-11-26),
+    // state-selected: this room's task carries no estimate and no
+    // recorded repair, so the vessel stands plain and the scales
+    // unweighed; the chest stands as supplied.
+    const roomWaiting = scenes[2][1]
+    expect(roomWaiting).toContain('palace-room-vessel')
+    expect(roomWaiting).toContain('palace-vessel-plain')
+    expect(roomWaiting).not.toContain('palace-vessel-gold')
+    expect(roomWaiting).toContain('palace-room-scales')
+    expect(roomWaiting).toContain('palace-scales')
+    expect(roomWaiting).not.toContain('palace-scales-weighed')
+    expect(roomWaiting).toContain('palace-room-chest')
+    expect(roomWaiting).toContain('palace-chest')
+    // Gold iff vesselGold, weighed iff the task carries an
+    // estimate: a gilded, estimated room flips both states.
+    const gilded = renderToHtml(React.createElement(RoomScene, {
+      model: buildRoom(DATA, task({ id: 'tg', title: 'Gilded', estimated_hours: 3 })),
+      lit: true, vesselGold: true, onBringFire: () => {}, onThreshold: () => {},
+      onOpenWaitedOn: () => {}, onFurniture: () => {}, onOpenSubtask: () => {},
+    }))
+    expect(gilded).toContain('palace-vessel-gold')
+    expect(gilded).not.toContain('palace-vessel-plain')
+    expect(gilded).toContain('palace-scales-weighed')
     // The building scene is Scene 2 (founder, 2026-11-26): plain
     // positioned DOM, not SVG — the founder's architecture dome
     // as the ground, floors as room-circles spaced in its whole

@@ -51,6 +51,12 @@ import { glassColorFor, useGlassPlate } from './palaceGlass'
 import planImage from './assets/palace-plan.jpg'
 import frontWallImage from './assets/palace-front-wall.png'
 import fireImage from './assets/palace-fire.png'
+import vesselGoldImage from './assets/palace-vessel-gold.webp'
+import vesselPlainImage from './assets/palace-vessel-plain.webp'
+import scalesImage from './assets/palace-scales.webp'
+import scalesWeighedImage from './assets/palace-scales-weighed.webp'
+import chestImage from './assets/palace-chest.webp'
+import { BONSAI_ASPECT, BONSAI_BASE_LIFT, useBenchBonsaiImage } from './palacePlant'
 import architectureImage from './assets/palace-architecture.webp'
 import plateImage from '../assets/living-sky/plate.webp'
 import { SEAT_COLORS, type SeatId } from '../council/colors'
@@ -173,22 +179,29 @@ export function Bonfire({ x, y, lit }: { x: number; y: number; lit: boolean }) {
 }
 
 /** The stone hearth — surround, mantel, firebox; lit carries the
- *  seven tongues, unlit keeps embers. */
+ *  seven tongues, unlit keeps embers. The floor hearth passes
+ *  flame="founder": the founder ruled "Fire — same fire"
+ *  (2026-11-26) — his own flame image, as on the compound and in
+ *  the dome, not the drawn tongues. */
 export function HearthGlyph({
   x,
   base,
   w,
   h,
   lit,
+  flame = 'council',
 }: {
   x: number
   base: number
   w: number
   h: number
   lit: boolean
+  flame?: 'council' | 'founder'
 }) {
   const fbW = w * 0.52
   const fbH = h * 0.52
+  const founderFlameH = fbH * 1.5
+  const founderFlameW = founderFlameH * FLAME_ASPECT
   return (
     <g pointerEvents="none">
       <rect x={x - w / 2} y={base - h} width={w} height={h} fill={PAL.stone} stroke={PAL.stoneDark} />
@@ -201,7 +214,18 @@ export function HearthGlyph({
         fill={lit ? '#5a3a22' : '#4c4034'}
       />
       {lit ? (
-        <CouncilFlames cx={x} base={base - 1} h={fbH * 0.92} w={Math.max(10, fbH * 0.92 * 0.95)} />
+        flame === 'founder' ? (
+          <image
+            href={fireImage}
+            x={x - founderFlameW / 2}
+            y={base - founderFlameH}
+            width={founderFlameW}
+            height={founderFlameH}
+            preserveAspectRatio="xMidYMax meet"
+          />
+        ) : (
+          <CouncilFlames cx={x} base={base - 1} h={fbH * 0.92} w={Math.max(10, fbH * 0.92 * 0.95)} />
+        )
       ) : (
         <g fill="#c96a2c">
           <circle cx={x - 3} cy={base - 3} r={1.8} opacity={0.85} />
@@ -245,6 +269,37 @@ export function PlantGlyph({
         </g>
       )}
     </g>
+  )
+}
+
+/** A Palace plant: Severine's Bench bonsai, grown and painted by
+ *  the Bench's own machinery and placed as an image (palacePlant).
+ *  Where canvas painting is unavailable the PlantGlyph stands, as
+ *  it always has — no other art is substituted. */
+export function PlantMark({
+  x,
+  base,
+  state,
+  scale = 1,
+}: {
+  x: number
+  base: number
+  state: 'growing' | 'fruiting'
+  scale?: number
+}) {
+  const href = useBenchBonsaiImage(state)
+  if (!href) return <PlantGlyph x={x} base={base} state={state} scale={scale} />
+  const w = 62 * scale
+  const h = w * BONSAI_ASPECT
+  return (
+    <image
+      href={href}
+      x={x - w / 2}
+      y={base - h * (1 - BONSAI_BASE_LIFT)}
+      width={w}
+      height={h}
+      pointerEvents="none"
+    />
   )
 }
 
@@ -846,8 +901,8 @@ export function BuildingScene({
                   className="pointer-events-none absolute"
                   style={{ left: '50%', top: 0, width: '18%', transform: 'translate(-50%, 4%)' }}
                 >
-                  <svg viewBox="-20 -40 40 42" className="block h-auto w-full" aria-hidden>
-                    <PlantGlyph x={0} base={0} state={floor.plant} scale={0.8} />
+                  <svg viewBox="-26 -42 52 44" className="block h-auto w-full" aria-hidden>
+                    <PlantMark x={0} base={0} state={floor.plant} scale={0.8} />
                   </svg>
                 </span>
               )}
@@ -986,7 +1041,7 @@ export function FloorScene({
               {room.task.status}
               {room.subtaskCount ? ` · ${room.subtaskCount} within` : ''}
             </text>
-            {room.growth && <PlantGlyph x={rx + roomW - 30} base={ry + rowH - 8} state={room.growth} scale={0.62} />}
+            {room.growth && <PlantMark x={rx + roomW - 30} base={ry + rowH - 8} state={room.growth} scale={0.62} />}
             {room.holdsMaterial && (
               <g transform={`translate(${rx + 26} ${ry + rowH - 24})`}>
                 <rect x={-11} y={-9} width={22} height={15} rx={2} fill={PAL.wood} stroke={PAL.woodDark} />
@@ -1017,9 +1072,11 @@ export function FloorScene({
           </g>
         )
       })}
-      {/* the floor's ONE hearth, set into the hall's north wall */}
+      {/* the floor's ONE hearth, set into the hall's north wall —
+          its fire is the founder's own flame ("Fire — same fire",
+          2026-11-26), not the drawn council tongues */}
       <g data-testid="palace-floor-hearth">
-        <HearthGlyph x={(hallL + hallR) / 2} base={top + 44} w={46} h={44} lit />
+        <HearthGlyph x={(hallL + hallR) / 2} base={top + 44} w={46} h={44} lit flame="founder" />
       </g>
       {/* hall furniture, each piece earned */}
       {model.cabinets && (
@@ -1044,7 +1101,7 @@ export function FloorScene({
         >
           <title>The floor's scales</title>
           <circle cx={0} cy={-8} r={30} fill="transparent" />
-          <ScalesGlyph scale={0.8} />
+          <ScalesArt weighed={false} cx={0} base={12} height={62} />
         </g>
       )}
       {/* gathering table in the hall — recorded people, empty places */}
@@ -1112,32 +1169,110 @@ export function FloorScene({
   )
 }
 
-/** The scales glyph — an instrument. Its pans stand empty unless
- *  weighed: a room whose task carries a recorded estimate shows a
- *  weight resting in the pan (Scales-1 — established material is
- *  the room scales' to show; an unweighed room keeps empty pans). */
-export function ScalesGlyph({ scale = 1, weighed = false }: { scale?: number; weighed?: boolean }) {
+/* ------------------------------------------------------------------ */
+/* the founder's furniture — supplied art (2026-11-26), standing     */
+/* where the drawn glyphs stood. Each asset is a square canvas; the  */
+/* fractions below are the object's own extent within it (measured   */
+/* off the alpha), so placement anchors the OBJECT — its centre and  */
+/* its base — not the canvas.                                        */
+/* ------------------------------------------------------------------ */
+
+interface ArtExtent {
+  /** object height / canvas side */
+  h: number
+  /** object base / canvas side, from the top */
+  base: number
+  /** object centre-x / canvas side */
+  cx: number
+}
+const VESSEL_EXTENT: ArtExtent = { h: 0.957, base: 0.98, cx: 0.493 }
+const SCALES_EXTENT: ArtExtent = { h: 0.973, base: 0.977, cx: 0.5 }
+const CHEST_EXTENT: ArtExtent = { h: 0.763, base: 0.884, cx: 0.497 }
+
+function ArtImage({
+  href,
+  extent,
+  cx,
+  base,
+  height,
+}: {
+  href: string
+  extent: ArtExtent
+  cx: number
+  base: number
+  /** the object's own height, in scene units */
+  height: number
+}) {
+  const side = height / extent.h
   return (
-    <g transform={`scale(${scale})`} pointerEvents="none">
-      <line x1={0} y1={-26} x2={0} y2={10} stroke={PAL.inkSoft} strokeWidth={2.6} />
-      <line x1={-24} y1={-22} x2={24} y2={-22} stroke={PAL.inkSoft} strokeWidth={2.6} />
-      <circle cx={0} cy={-28} r={3.4} fill={PAL.inkSoft} />
-      {[-24, 24].map((px) => (
-        <g key={px}>
-          <line x1={px} y1={-22} x2={px - 8} y2={-8} stroke={PAL.inkSoft} strokeWidth={1.3} />
-          <line x1={px} y1={-22} x2={px + 8} y2={-8} stroke={PAL.inkSoft} strokeWidth={1.3} />
-          <path d={`M ${px - 11} -8 A 11 5 0 0 0 ${px + 11} -8 Z`} fill={PAL.stone} stroke={PAL.stoneDark} />
-        </g>
-      ))}
-      {weighed && (
-        <g>
-          <path d="M -29.5 -15.5 L -18.5 -15.5 L -20.8 -9.2 L -27.2 -9.2 Z" fill={PAL.stoneDark} />
-          <path d="M -26.5 -15.5 A 2.5 2.5 0 0 1 -21.5 -15.5" fill="none" stroke={PAL.stoneDark} strokeWidth={1.4} />
-        </g>
-      )}
-      <rect x={-10} y={10} width={20} height={5} rx={2} fill={PAL.stoneDark} />
-    </g>
+    <image
+      href={href}
+      x={cx - extent.cx * side}
+      y={base - extent.base * side}
+      width={side}
+      height={side}
+      pointerEvents="none"
+    />
   )
+}
+
+/** The Kintsugi vessel — the founder's art. Gold seams only where
+ *  a recorded repair stands (vesselGold); otherwise the same
+ *  vessel with its seams as unfilled stone cracks. */
+export function VesselArt({
+  gold,
+  cx,
+  base,
+  height,
+}: {
+  gold: boolean
+  cx: number
+  base: number
+  height: number
+}) {
+  return (
+    <ArtImage
+      href={gold ? vesselGoldImage : vesselPlainImage}
+      extent={VESSEL_EXTENT}
+      cx={cx}
+      base={base}
+      height={height}
+    />
+  )
+}
+
+/** The scales — an instrument. Its pans stand empty unless
+ *  weighed: a room whose task carries a recorded estimate shows
+ *  the weight resting in the pan (Scales-1 — established material
+ *  is the room scales' to show; an unweighed room keeps the
+ *  weight beside the base). */
+export function ScalesArt({
+  weighed,
+  cx,
+  base,
+  height,
+}: {
+  weighed: boolean
+  cx: number
+  base: number
+  height: number
+}) {
+  return (
+    <ArtImage
+      href={weighed ? scalesWeighedImage : scalesImage}
+      extent={SCALES_EXTENT}
+      cx={cx}
+      base={base}
+      height={height}
+    />
+  )
+}
+
+/** The chest — the founder's art, a single state. (Whether the
+ *  room's task holds recorded material is carried by the chest's
+ *  presence and its panel, as before.) */
+export function ChestArt({ cx, base, height }: { cx: number; base: number; height: number }) {
+  return <ArtImage href={chestImage} extent={CHEST_EXTENT} cx={cx} base={base} height={height} />
 }
 
 /* ------------------------------------------------------------------ */
@@ -1217,7 +1352,7 @@ export function RoomScene({
       {model.growth && (
         <g data-testid="palace-room-plant" onClick={() => onFurniture('plant')} style={{ cursor: 'pointer' }}>
           <circle cx={556} cy={292} r={30} fill="transparent" />
-          <PlantGlyph x={556} base={316} state={model.growth} scale={0.9} />
+          <PlantMark x={556} base={316} state={model.growth} scale={0.9} />
         </g>
       )}
 
@@ -1318,38 +1453,21 @@ export function RoomScene({
           where the room's task carries a recorded estimate */}
       <g data-testid="palace-room-scales" onClick={() => onFurniture('scales')} style={{ cursor: 'pointer' }}>
         <circle cx={452} cy={362} r={36} fill="transparent" />
-        <g transform="translate(452 372)">
-          <ScalesGlyph scale={1.15} weighed={model.task.estimated_hours != null} />
-        </g>
+        <ScalesArt weighed={model.task.estimated_hours != null} cx={452} base={400} height={96} />
       </g>
 
-      {/* the chest — ajar only where the task holds recorded material */}
+      {/* the chest — the founder's art, a single state: it stands
+          in the room as it always has (the glyph's ajar-when-held
+          lid is retired with the glyph; held-ness speaks in the
+          chest's panel and in Maeve's chat) */}
       <g data-testid="palace-room-chest" onClick={() => onFurniture('chest')} style={{ cursor: 'pointer' }}>
-        <g transform="translate(120 384)">
-          <rect x={-34} y={-16} width={68} height={34} rx={3} fill={PAL.wood} stroke={PAL.woodDark} strokeWidth={2} />
-          {model.held ? (
-            <path d="M -34 -16 L -40 -30 L 28 -30 L 34 -16 Z" fill={PAL.woodDark} />
-          ) : (
-            <rect x={-34} y={-24} width={68} height={10} rx={3} fill={PAL.woodDark} />
-          )}
-          <rect x={-5} y={-6} width={10} height={12} fill="#d8b25c" stroke="#a97e2f" />
-        </g>
+        <ChestArt cx={120} base={402} height={74} />
       </g>
 
-      {/* the Kintsugi vessel — whole and empty; gold only on recorded repair */}
+      {/* the Kintsugi vessel — the founder's art; gold seams only
+          on recorded repair, otherwise the same vessel, unfilled */}
       <g data-testid="palace-room-vessel" onClick={() => onFurniture('vessel')} style={{ cursor: 'pointer' }}>
-        <g transform="translate(520 388)">
-          <path
-            d="M -16 14 C -20 -2, -14 -14, -6 -20 L 6 -20 C 14 -14, 20 -2, 16 14 C 10 20, -10 20, -16 14 Z"
-            fill="#e6dcc4"
-            stroke={PAL.stoneDark}
-            strokeWidth={1.8}
-          />
-          <ellipse cx={0} cy={-20} rx={7} ry={2.6} fill="#d9cbaa" stroke={PAL.stoneDark} />
-          {(model.vesselGold || vesselGold) && (
-            <path d="M -8 -18 C -2 -6, 2 4, -3 16" stroke="#d4af37" strokeWidth={2.2} fill="none" />
-          )}
-        </g>
+        <VesselArt gold={model.vesselGold || vesselGold} cx={520} base={404} height={78} />
       </g>
 
       {/* guest objects — each stands ONLY where the attributed read

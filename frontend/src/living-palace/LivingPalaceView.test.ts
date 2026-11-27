@@ -406,17 +406,19 @@ describe('Living Palace — the attributed read', () => {
     await render()
     await descendToGamma()
     const vessel = container.querySelector('[data-testid="palace-room-vessel"]')
-    expect(vessel!.innerHTML).not.toContain('#d4af37')
+    expect(vessel!.innerHTML).toContain('palace-vessel-plain')
+    expect(vessel!.innerHTML).not.toContain('palace-vessel-gold')
     expect(container.querySelector('[data-testid="palace-room-guest-ambassador"]')).toBeNull()
     expect(container.querySelector('[data-testid="palace-room-guest-champion"]')).toBeNull()
   })
 
-  it('Kintsugi-1: accepted supersession gilds the seam — drawn, not paneled', async () => {
+  it('Kintsugi-1: accepted supersession gilds the seam — the gold vessel stands, not paneled', async () => {
     attributedPayload = READ_WITH_MATERIAL
     await render()
     await descendToGamma()
     const vessel = container.querySelector('[data-testid="palace-room-vessel"]')
-    expect(vessel!.innerHTML).toContain('#d4af37')
+    expect(vessel!.innerHTML).toContain('palace-vessel-gold')
+    expect(vessel!.innerHTML).not.toContain('palace-vessel-plain')
     // The vessel's substance lives in Maeve's conversation now:
     // no panel opens, and the held questions appear nowhere here.
     await click('palace-room-vessel')

@@ -5,7 +5,8 @@
  * and assert the serialized output carries no NaN / undefined /
  * broken coordinates — the failure mode jsdom cannot see by
  * painting. (The compound and building scenes are positioned DOM
- * since Scenes 1 and 2; the floor and room scenes remain SVG.)
+ * since Scenes 1 and 2, and the room scene since the chamber
+ * rebuild; the floor scene remains SVG.)
  * True on-device painting remains the founder's visual acceptance.
  */
 import { describe, it, expect } from 'vitest'
@@ -89,7 +90,14 @@ describe('scene geometry scan', () => {
     for (const [name, html] of scenes) {
       expect(html.length, name).toBeGreaterThan(800)
       expect(html, name).not.toMatch(/NaN|undefined/)
-      expect(html, name).toContain('<svg')
+    }
+    // The compound and floor scenes still serialize SVG; the room
+    // scenes are the furnished chamber now — positioned DOM over
+    // the founder's rose plate, no drawn room geometry to scan.
+    expect(scenes[0][1]).toContain('<svg')
+    expect(scenes[1][1]).toContain('<svg')
+    for (const [, html] of scenes.slice(2)) {
+      expect(html).toContain('palace-room-rose')
     }
     // The compound fire is the founder's own flame (his ruling,
     // 2026-11-26 12:09 PT: "use the fire I gave you"), standing on
@@ -112,9 +120,11 @@ describe('scene geometry scan', () => {
     // palacePlant.test.ts against a fake 2d context.
     expect(floor).not.toContain('data:image/png')
     // The room furniture is the founder's supplied art (2026-11-26),
-    // state-selected: this room's task carries no estimate and no
-    // recorded repair, so the vessel stands plain and the scales
-    // unweighed; the chest stands as supplied.
+    // state-selected: this room's task carries no estimate, no
+    // recorded repair and no held material, so the vessel stands
+    // plain, the scales unweighed and the chest CLOSED; the room
+    // is lit, so the founder's flame stands in the plate's ring,
+    // and the drawing table is his art.
     const roomWaiting = scenes[2][1]
     expect(roomWaiting).toContain('palace-room-vessel')
     expect(roomWaiting).toContain('palace-vessel-plain')
@@ -124,6 +134,36 @@ describe('scene geometry scan', () => {
     expect(roomWaiting).not.toContain('palace-scales-weighed')
     expect(roomWaiting).toContain('palace-room-chest')
     expect(roomWaiting).toContain('palace-chest')
+    expect(roomWaiting).not.toContain('palace-chest-open')
+    expect(roomWaiting).toContain('palace-room-table')
+    expect(roomWaiting).toContain('palace-drawing-table')
+    expect(roomWaiting).toContain('palace-fire')
+    // The window state reads on the plate's lancets: Gamma waits
+    // on unfinished Beta — a wall still building.
+    expect(roomWaiting).toContain('palace-room-window')
+    expect(roomWaiting).toContain('data-window-state="building"')
+    // The convergent room is unlit: no flame stands in its ring.
+    // (It waits on two unfinished rooms — its window is building.)
+    const roomConvergent = scenes[3][1]
+    expect(roomConvergent).not.toContain('palace-fire')
+    expect(roomConvergent).toContain('data-window-state="building"')
+    // A room that waits on nothing carries no window overlay.
+    const roomNoWait = renderToHtml(React.createElement(RoomScene, {
+      model: buildRoom(DATA, TASKS[1]), lit: false, onBringFire: () => {}, onThreshold: () => {},
+      onOpenWaitedOn: () => {}, onFurniture: () => {}, onOpenSubtask: () => {},
+    }))
+    expect(roomNoWait).toContain('data-window-state="none"')
+    // The room with chambers: Alpha holds recorded material
+    // (notes), so its chest stands OPEN. A room waiting only on
+    // finished Delta reads a completed wall in its window.
+    const roomChambers = scenes[4][1]
+    expect(roomChambers).toContain('palace-chest-open')
+    const roomComplete = renderToHtml(React.createElement(RoomScene, {
+      model: buildRoom(DATA, task({ id: 'tx', title: 'After Delta', dependency_ids: ['td'] })),
+      lit: false, onBringFire: () => {}, onThreshold: () => {},
+      onOpenWaitedOn: () => {}, onFurniture: () => {}, onOpenSubtask: () => {},
+    }))
+    expect(roomComplete).toContain('data-window-state="complete"')
     // Gold iff vesselGold, weighed iff the task carries an
     // estimate: a gilded, estimated room flips both states.
     const gilded = renderToHtml(React.createElement(RoomScene, {

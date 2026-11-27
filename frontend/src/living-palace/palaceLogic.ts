@@ -6,10 +6,11 @@
  * render — in Maeve's architectural expression:
  *
  *   compound  initiatives as buildings, loose projects as their own
- *             structures, loose tasks standing on the grounds,
- *             undeveloped ideas resting on the drawing table, the
- *             bonfire at the centre burning in the seven council
- *             colours;
+ *             structures, the loose tasks gathered into one building
+ *             of the smallest class, undeveloped ideas resting on
+ *             the drawing table in the plan, released projects
+ *             standing outside the south gate, the bonfire at the
+ *             centre burning in the seven council colours;
  *   building  floors = the initiative's projects;
  *   task level the project's tasks as circles in the same dome
  *             (the floor-plan frame is retired, founder
@@ -136,9 +137,10 @@ export interface CompoundModel {
   buildings: PalaceBuilding[]
   /** Projects with no initiative — their own structures. */
   looseProjects: Project[]
-  /** Released loose projects — they stand at the south gate. */
+  /** Released loose projects — they stand outside the south gate. */
   releasedProjects: Project[]
-  /** Tasks belonging nowhere yet — they stand on the open ground. */
+  /** Tasks belonging nowhere yet — they gather into ONE building
+   *  of the smallest class, standing with the rest. */
   looseTasks: Task[]
   /** Undeveloped ideas resting on the drawing table. */
   ideas: Idea[]
@@ -245,7 +247,10 @@ export function buildBuilding(data: PalaceData, initiative: Initiative): Buildin
 /* ------------------------------------------------------------------ */
 
 export interface TaskLevelModel {
-  project: Project
+  /** The grouping the dome is showing: a project, or the loose
+   *  tasks gathered as one grouping. Only the identity and the
+   *  title ride here — the dome reads nothing else off it. */
+  project: { id: string; title: string }
   /** The project's rooms: its top-level tasks, in the title
    *  order the retired floor plan laid them out in. A subtask
    *  stands inside its room's chamber, not as its own circle. */
@@ -277,6 +282,41 @@ export function buildTaskLevel(data: PalaceData, project: Project): TaskLevelMod
   }
   return {
     project,
+    tasks,
+    links: [...pairs].sort().map((key) => {
+      const [aId, bId] = key.split('|') as [string, string]
+      return { aId, bId }
+    }),
+  }
+}
+
+/** The loose tasks as one task-level grouping — the dome the
+ *  compound's smallest building opens into (founder, 2026-11-26:
+ *  "Make the loose tasks, the smallest building and put it with
+ *  the rest of the buildings"). The task set is the compound
+ *  model's own loose set (no project, no parent — a loose task's
+ *  subtasks stand inside its chamber, not as circles), in title
+ *  order; recorded dependency pairs between two loose tasks ride
+ *  along exactly as a project's pairs do. The grouping is a
+ *  subject-shaped stand-in, not a Vision Execution record: it
+ *  carries no entity the chat can name, so the level rides the
+ *  compound's own carriage until a task is entered. */
+export function buildLooseTaskLevel(data: PalaceData): TaskLevelModel {
+  const tasks = data.tasks
+    .filter((t) => !t.project_id && !t.parent_task_id)
+    .slice()
+    .sort((a, b) => a.title.localeCompare(b.title))
+  const roomIds = new Set(tasks.map((t) => t.id))
+  const pairs = new Set<string>()
+  for (const t of tasks) {
+    for (const dep of t.dependency_ids ?? []) {
+      if (dep !== t.id && roomIds.has(dep)) {
+        pairs.add([t.id, dep].sort().join('|'))
+      }
+    }
+  }
+  return {
+    project: { id: 'loose-tasks', title: 'Loose tasks' },
     tasks,
     links: [...pairs].sort().map((key) => {
       const [aId, bId] = key.split('|') as [string, string]

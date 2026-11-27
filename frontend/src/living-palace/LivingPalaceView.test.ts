@@ -84,6 +84,7 @@ vi.mock('../chat/CouncilChat', async () => {
 })
 
 import LivingPalaceView from './LivingPalaceView'
+import { FOOTPRINT_SQUASH, PALACE_GEOMETRY, masterAspect } from './palaceSceneLogic'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -170,6 +171,12 @@ let attributedPayload: unknown = EMPTY_READ
  *  glass read. Empty by default; the task-glass test replaces it. */
 let interactionsPayload: unknown = { subjects: [] }
 
+/** Entity-list overrides — null serves the fixture body of work;
+ *  the compound-completion tests replace the projects or tasks
+ *  list (a released project; a world with no loose tasks). */
+let projectsPayload: Record<string, unknown>[] | null = null
+let tasksPayload: Record<string, unknown>[] | null = null
+
 /** Every non-GET the view makes, recorded by the fetch stub: the
  *  Palace pass surface must make NONE, ever — staging included. */
 const writes: { url: string; method: string }[] = []
@@ -182,8 +189,6 @@ function installFetchStub() {
       { id: 'id1', title: 'Take on an apprentice', summary: 'A penciled possibility.', description: '', status: 'New', tags: [], created_by: '', created_at: '2026-05-01T00:00:00', updated_at: '2026-05-01T00:00:00' },
     ],
     '/vision-execution/initiatives': [INITIATIVE],
-    '/vision-execution/projects': [P1, P2, LP],
-    '/vision-execution/tasks': TASKS,
     '/vision-execution/persons': [
       { id: 'per1', name: 'Jo Keeper', role: '', notes: '', created_at: '2026-05-01T00:00:00', updated_at: '2026-05-01T00:00:00' },
     ],
@@ -208,6 +213,14 @@ function installFetchStub() {
       }
       if (url.includes('/subject-interactions')) {
         return jsonResponse(interactionsPayload)
+      }
+      // Read at fetch time, not stub-install time: a test sets
+      // its override after beforeEach has installed the stub.
+      if (url.endsWith('/vision-execution/projects')) {
+        return jsonResponse(projectsPayload ?? [P1, P2, LP])
+      }
+      if (url.endsWith('/vision-execution/tasks')) {
+        return jsonResponse(tasksPayload ?? TASKS)
       }
       for (const [path, body] of Object.entries(routes)) {
         if (url.endsWith(path)) return jsonResponse(body)
@@ -272,6 +285,8 @@ beforeEach(() => {
   attributedGets = 0
   attributedPayload = EMPTY_READ
   interactionsPayload = { subjects: [] }
+  projectsPayload = null
+  tasksPayload = null
   installFetchStub()
 })
 
@@ -287,8 +302,16 @@ describe('Living Palace view', () => {
     expect(container.querySelector('[data-testid="palace-building-i1"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="palace-fire"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="palace-loose-project-lp"]')).not.toBeNull()
-    expect(container.querySelector('[data-testid="palace-loose-task-lt"]')).not.toBeNull()
+    // The loose task no longer stands as a stone below the plan:
+    // it is gathered into the compound's smallest building, and
+    // the drawing table stands in the plan with the idea on it.
+    // This fixture holds no released project — none stands
+    // outside the gate.
+    expect(container.querySelector('[data-testid="palace-loose-tasks-building"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="palace-loose-task-lt"]')).toBeNull()
+    expect(container.querySelector('[data-testid="palace-drawing-table"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="palace-idea-id1"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid^="palace-released-project-"]')).toBeNull()
     // Standing in the compound, the chat carries the sheet and no subject.
     expect(lastChat().conversationId).toBe('living-palace:compound')
     expect(lastChat().context).toEqual({ sheet_type: 'living_palace' })
@@ -448,6 +471,146 @@ describe('Living Palace view', () => {
       sheet_type: 'living_palace',
       entity_type: 'idea',
       entity_id: 'id1',
+    })
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* the compound completed — everything stands in the plan              */
+/* (founder, 2026-11-26 22:22–22:26 PT)                                */
+/* ------------------------------------------------------------------ */
+
+function pointInPolygon(x: number, y: number, poly: [number, number][]): boolean {
+  let inside = false
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i]
+    const [xj, yj] = poly[j]
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+
+describe('Living Palace — the compound completed', () => {
+  it('the strip is gone from the source: no stones, no drawn bench, no strip', () => {
+    const canvas = readFileSync('src/living-palace/palaceCanvas.tsx', 'utf8')
+    expect(canvas).not.toContain('palace-loose-task-${')
+    expect(canvas).not.toContain('function DrawingTable')
+    expect(canvas).not.toContain('the grounds strip')
+  })
+
+  it('the compound renders no SVG at all — the plan composition is positioned DOM end to end', async () => {
+    await render()
+    expect(container.querySelector('.living-palace-scene svg')).toBeNull()
+  })
+
+  it('the loose-tasks building stands inside a court, seated by the placement law', async () => {
+    await render()
+    const el = container.querySelector<HTMLElement>('[data-testid="palace-loose-tasks-building"]')
+    expect(el).not.toBeNull()
+    // A placed building carries a top (the fallback row carries a
+    // bottom instead) — read the box back into plan units and
+    // check the foundation's centre against the courts' own
+    // polygons: the law seats it in a court, or nowhere.
+    expect(el!.style.top).not.toBe('')
+    const w = (parseFloat(el!.style.width) / 100) * PALACE_GEOMETRY.width
+    const h = w * masterAspect('small', 1)
+    const bx = (parseFloat(el!.style.left) / 100) * PALACE_GEOMETRY.width + w / 2
+    const by = (parseFloat(el!.style.top) / 100) * PALACE_GEOMETRY.height + h
+    const fcy = by - 0.5 * PALACE_GEOMETRY.plinths.small * w * FOOTPRINT_SQUASH
+    const inCourt = Object.values(PALACE_GEOMETRY.polygons).some((poly) =>
+      pointInPolygon(bx, fcy, poly),
+    )
+    expect(inCourt).toBe(true)
+  })
+
+  it('no loose tasks, no loose-tasks building', async () => {
+    tasksPayload = TASKS.filter((t) => t.id !== 'lt')
+    await render()
+    expect(container.querySelector('[data-testid="palace-loose-tasks-building"]')).toBeNull()
+  })
+
+  it('the loose-tasks building opens the dome at task level over the loose tasks', async () => {
+    await render()
+    await click('palace-loose-tasks-building')
+    // The dome recomposes at task level: the loose task as a
+    // circle under the grouping's own name. The grouping names no
+    // record, so the chat keeps the compound's carriage until a
+    // task is entered.
+    expect(container.querySelector('[data-testid="palace-task-lt"]')).not.toBeNull()
+    expect(container.textContent).toContain('Loose tasks')
+    expect(lastChat().conversationId).toBe('living-palace:compound')
+    expect(lastChat().context).toEqual({ sheet_type: 'living_palace' })
+    // A circle opens its chamber — the rose chamber, where a
+    // loose task's room has always stood.
+    await click('palace-task-lt')
+    expect(lastChat().conversationId).toBe('living-palace:task:lt')
+    expect(container.querySelector('[data-testid="palace-room-vessel"]')).not.toBeNull()
+    expect(container.querySelector('img[src*="palace-room-rose"]')).not.toBeNull()
+    // Back unwinds level by level: room → the loose level → the
+    // compound.
+    await clickCrumb('Loose tasks')
+    expect(container.querySelector('[data-testid="palace-task-lt"]')).not.toBeNull()
+    await clickCrumb('Compound')
+    expect(container.querySelector('[data-testid="palace-loose-tasks-building"]')).not.toBeNull()
+  })
+
+  it('the drawing table stands at the founder’s circled seat, the idea resting on it', async () => {
+    await render()
+    const table = container.querySelector<HTMLElement>('[data-testid="palace-drawing-table"]')
+    expect(table).not.toBeNull()
+    // The founder's own table art — not the drawn bench.
+    expect(table!.querySelector('img')?.getAttribute('src')).toContain('palace-drawing-table')
+    // The seat, from the brief's measured numbers: the object
+    // (250 wide on its measured bounds) centred on x 620 with
+    // its base at y 615 in the 1284×723 frame; the canvas box is
+    // derived from the object, so the box's percentages are:
+    const side = 250 / (0.9589 - 0.0339)
+    expect(parseFloat(table!.style.left)).toBeCloseTo(((620 - 0.4964 * side) / 1284) * 100, 1)
+    expect(parseFloat(table!.style.top)).toBeCloseTo(((615 - 0.8446 * side) / 723) * 100, 1)
+    expect(parseFloat(table!.style.width)).toBeCloseTo((side / 1284) * 100, 1)
+    // The idea's paper rests ON the table: its centre over the
+    // table object's span, its top between the object's top edge
+    // and its base.
+    const chip = container.querySelector<HTMLElement>('[data-testid="palace-idea-id1"]')
+    expect(chip).not.toBeNull()
+    const chipCx =
+      ((parseFloat(chip!.style.left) + parseFloat(chip!.style.width) / 2) / 100) *
+      PALACE_GEOMETRY.width
+    expect(chipCx).toBeGreaterThan(620 - 125)
+    expect(chipCx).toBeLessThan(620 + 125)
+    const chipTop = (parseFloat(chip!.style.top) / 100) * PALACE_GEOMETRY.height
+    expect(chipTop).toBeGreaterThan(448)
+    expect(chipTop).toBeLessThan(615)
+  })
+
+  it('a released project stands outside the gate, its base at the art’s bottom edge', async () => {
+    projectsPayload = [
+      P1,
+      P2,
+      LP,
+      { ...P2, id: 'rp', initiative_id: null, title: 'Old sideline', status: 'Dropped' },
+    ]
+    await render()
+    const el = container.querySelector<HTMLElement>('[data-testid="palace-released-project-rp"]')
+    expect(el).not.toBeNull()
+    // The base is the plan's bottom edge — beyond every court's
+    // southern bound (the courts end near y 555 of 723): outside
+    // the wall, on the foreground margin, not in a court.
+    expect(el!.style.bottom).toBe('0%')
+    const courtSouth = Math.max(
+      ...Object.values(PALACE_GEOMETRY.polygons).flatMap((poly) => poly.map((pt) => pt[1])),
+    )
+    expect(courtSouth).toBeLessThan(PALACE_GEOMETRY.height)
+    // No taller than the row's cap: 120 plan units.
+    const w = (parseFloat(el!.style.width) / 100) * PALACE_GEOMETRY.width
+    expect(w * masterAspect('small', 1)).toBeLessThanOrEqual(120 + 1e-6)
+    // And it opens exactly as a project building does — the dome
+    // at task level, the project staged in the chat.
+    await click('palace-released-project-rp')
+    expect(lastChat().context).toEqual({
+      sheet_type: 'living_palace',
+      entity_type: 'project',
+      entity_id: 'rp',
     })
   })
 })

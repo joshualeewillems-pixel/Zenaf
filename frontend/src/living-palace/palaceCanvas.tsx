@@ -35,7 +35,7 @@ import type {
   RoomModel,
   TaskLevelModel,
 } from './palaceLogic'
-import { councilFlameColors, isDoneStatus } from './palaceLogic'
+import { councilFlameColors } from './palaceLogic'
 import {
   PALACE_GEOMETRY,
   classForNestedCount,
@@ -93,29 +93,6 @@ export const PAL = {
   ground: '#e6dcc0',
   groundDark: '#d8caa4',
   sky: '#f3ecda',
-}
-
-const WALL_LINE = '#8a7a5c'
-
-function wrapTitle(title: string, per: number, maxLines: number): string[] {
-  const words = title.split(/\s+/).filter(Boolean)
-  const lines: string[] = []
-  let cur = ''
-  for (const w of words) {
-    const next = cur ? `${cur} ${w}` : w
-    if (next.length > per && cur) {
-      lines.push(cur)
-      cur = w
-      if (lines.length === maxLines) break
-    } else {
-      cur = next
-    }
-  }
-  if (cur && lines.length < maxLines) lines.push(cur)
-  if (lines.length === maxLines && words.join(' ').length > lines.join(' ').length) {
-    lines[maxLines - 1] = `${lines[maxLines - 1].replace(/…?$/, '')}…`
-  }
-  return lines
 }
 
 /* ------------------------------------------------------------------ */
@@ -272,36 +249,6 @@ export function CairnGlyph({ x, base }: { x: number; base: number }) {
   )
 }
 
-export function DrawingTable({ x, y, w }: { x: number; y: number; w: number }) {
-  return (
-    <g pointerEvents="none">
-      <rect x={x - w / 2} y={y} width={w} height={9} rx={2} fill={PAL.wood} stroke={PAL.woodDark} />
-      <g stroke={PAL.woodDark} strokeWidth={4}>
-        <line x1={x - w / 2 + 12} y1={y + 9} x2={x - w / 2 + 6} y2={y + 30} />
-        <line x1={x + w / 2 - 12} y1={y + 9} x2={x + w / 2 - 6} y2={y + 30} />
-      </g>
-      <rect
-        x={x - w / 2 + 14}
-        y={y - 13}
-        width={w - 90}
-        height={13}
-        fill={PAL.paper}
-        stroke={PAL.stoneDark}
-        transform={`rotate(-2 ${x} ${y})`}
-      />
-      <rect
-        x={x + w / 2 - 66}
-        y={y - 11}
-        width={44}
-        height={11}
-        fill="#efe6cf"
-        stroke={PAL.stoneDark}
-        transform={`rotate(3 ${x} ${y})`}
-      />
-    </g>
-  )
-}
-
 /* ------------------------------------------------------------------ */
 /* compound                                                            */
 /* ------------------------------------------------------------------ */
@@ -319,20 +266,57 @@ export function DrawingTable({ x, y, w }: { x: number; y: number; w: number }) {
 /* front wall. Buildings are plain positioned <img> elements (the    */
 /* Scroll's structural model) — no per-element SVG transforms.       */
 /*                                                                     */
-/* What stands in the plan: the compound's structures — initiatives  */
-/* as buildings, loose projects and (un-nested) standing projects   */
-/* as their own structures. What cannot stand in the plan keeps its  */
-/* existing presentation below it: loose tasks as standing stones,   */
-/* undeveloped ideas on the drawing table, released projects at the  */
-/* south gate. Nothing the compound offered is dropped.              */
+/* What stands in the plan: everything the compound holds (the      */
+/* scene completed, founder 2026-11-26 22:22–22:26 PT). Initiatives  */
+/* as buildings, loose projects and (un-nested) standing projects    */
+/* as their own structures — and the loose tasks gathered into ONE   */
+/* building of the smallest class, standing with the rest under the  */
+/* same placement law ("Make the loose tasks, the smallest building */
+/* and put it with the rest of the buildings"). The drawing table    */
+/* stands in the plan at the place he circled on his screenshot —    */
+/* his own table art, not the drawn bench — with the undeveloped     */
+/* ideas resting on it as papers. Released projects stand outside    */
+/* the southern gate, in a row on the plan's foreground margin.      */
+/* The drawn strip that once hung below the plan is retired;         */
+/* nothing the compound offered is dropped.                          */
 /*                                                                     */
 /* A tap does what it always did here: an initiative enters its      */
-/* building layer; a project enters the dome at task level. The      */
-/* scene writes nothing — the chat is the work.                      */
+/* building layer; a project enters the dome at task level; the      */
+/* loose-tasks building enters the dome at task level over the       */
+/* loose tasks. The scene writes nothing — the chat is the work.     */
 /* ------------------------------------------------------------------ */
 
 const PLAN_W = PALACE_GEOMETRY.width
 const PLAN_H = PALACE_GEOMETRY.height
+
+const planPctX = (units: number) => `${(units / PLAN_W) * 100}%`
+const planPctY = (units: number) => `${(units / PLAN_H) * 100}%`
+
+/** The drawing table's seat in the plan — the founder's red circle,
+ *  measured off his annotated screenshot (2026-11-26 22:26 PT):
+ *  centre (620, 573) on the southern ground inside the front wall,
+ *  the table's base at y 615, its object 250 wide. Placed by the
+ *  art's object bounds — the alpha bbox measured off the shipped
+ *  palace-drawing-table.webp (the same discipline as the chamber
+ *  seats): the canvas box is derived so the OBJECT lands on the
+ *  seat, never the canvas. */
+const PLAN_TABLE_BOUNDS = { left: 0.0339, right: 0.9589, top: 0.2268, base: 0.8446 }
+const PLAN_TABLE_SEAT = { cx: 620, base: 615, objW: 250 }
+const PLAN_TABLE_SIDE =
+  PLAN_TABLE_SEAT.objW / (PLAN_TABLE_BOUNDS.right - PLAN_TABLE_BOUNDS.left)
+const PLAN_TABLE_LEFT =
+  PLAN_TABLE_SEAT.cx - ((PLAN_TABLE_BOUNDS.left + PLAN_TABLE_BOUNDS.right) / 2) * PLAN_TABLE_SIDE
+const PLAN_TABLE_TOP = PLAN_TABLE_SEAT.base - PLAN_TABLE_BOUNDS.base * PLAN_TABLE_SIDE
+/** The table object's own top edge in plan units — the papers rest
+ *  just below it, on the board. */
+const PLAN_TABLE_OBJECT_TOP = PLAN_TABLE_TOP + PLAN_TABLE_BOUNDS.top * PLAN_TABLE_SIDE
+const IDEA_CHIP = { w: 84, h: 30, gapX: 8, rowStep: 16, perRow: 2, top: PLAN_TABLE_OBJECT_TOP + 16 }
+
+/** Released projects outside the gate: a row centred on the
+ *  southern approach (x 642), bases at the art's bottom edge, no
+ *  building taller than 120 plan units — outside, and smaller
+ *  than the court buildings. */
+const RELEASED_ROW = { cx: 642, maxH: 120, gap: 16 }
 
 /** The bonfire's place on the plan — the plaza where the three
  *  courts meet (plan coordinates, the brief's numbers). */
@@ -372,7 +356,7 @@ export function CompoundScene({
   onAttend,
   onOpenBuilding,
   onOpenProject,
-  onOpenTask,
+  onOpenLooseTasks,
   onSelectIdea,
   selectedIdeaId,
   interactions,
@@ -383,7 +367,9 @@ export function CompoundScene({
   onAttend: (on: boolean) => void
   onOpenBuilding: (initiativeId: string) => void
   onOpenProject: (projectId: string) => void
-  onOpenTask: (taskId: string) => void
+  /** The loose-tasks building's door: the dome at task level over
+   *  the loose tasks. */
+  onOpenLooseTasks: () => void
   onSelectIdea: (ideaId: string) => void
   selectedIdeaId: string | null
   /** Per-subject seat-interaction counts (the ivy read); absent or
@@ -443,6 +429,45 @@ export function CompoundScene({
         onOpenProject(p.id),
       )
     }
+    /* The loose tasks gather into ONE building of the smallest
+     * class (founder, 2026-11-26): it joins the buildings list
+     * with nested count 0 — smallest by the standing thresholds,
+     * not by a new rule — and the packer deals it as it deals any
+     * building. Its ivy is the aggregate of its tasks' recorded
+     * interactions: the stage reads the total count, the hue the
+     * dominant seat across them, natural green when none. */
+    if (model.looseTasks.length > 0) {
+      let total = 0
+      const perSeat: Record<string, number> = {}
+      for (const t of model.looseTasks) {
+        const row = index.get(interactionKey('task', t.id))
+        if (!row) continue
+        total += row.total
+        for (const [seat, count] of Object.entries(row.per_seat)) {
+          perSeat[seat] = (perSeat[seat] ?? 0) + count
+        }
+      }
+      const stage = ivyStageFor(total)
+      const klass = classForNestedCount(0)
+      const key = 'loose-tasks'
+      buildings.set(key, {
+        key,
+        klass,
+        stage,
+        colour: ivyColorFor({ entity_type: 'task', entity_id: key, total, per_seat: perSeat }),
+        testid: 'palace-loose-tasks-building',
+        title: 'Loose tasks',
+        open: () => onOpenLooseTasks(),
+      })
+      inputs.push({
+        key,
+        entityType: 'loose-tasks',
+        entityId: key,
+        title: 'Loose tasks',
+        nestedCount: 0,
+        aspect: masterAspect(klass, stage),
+      })
+    }
     let placements: PlacedStructure[] | null = null
     try {
       placements = planCompoundScene(inputs)
@@ -452,21 +477,42 @@ export function CompoundScene({
       // still open — access is never the price of placement.
       placements = null
     }
-    return { buildings, placements }
-  }, [model, interactions, projectRoomCounts, onOpenBuilding, onOpenProject])
+    /* Released projects stand outside the gate — NOT in the plan,
+     * so the placement law never sees them: a row on the plan's
+     * foreground margin, centred on the southern approach, each
+     * building at the row's capped height (the row scales down
+     * whole if it would outgrow the plan's width). */
+    const releasedRaw = model.releasedProjects.map((p) => {
+      const interaction = index.get(interactionKey('project', p.id))
+      const stage = ivyStageFor(interaction?.total ?? 0)
+      const klass = classForNestedCount(projectRoomCounts?.[p.id] ?? 0)
+      return {
+        id: p.id,
+        title: p.title,
+        klass,
+        stage,
+        colour: ivyColorFor(interaction),
+        w: RELEASED_ROW.maxH / masterAspect(klass, stage),
+      }
+    })
+    const releasedTotalW =
+      releasedRaw.reduce((sum, r) => sum + r.w, 0) +
+      RELEASED_ROW.gap * Math.max(0, releasedRaw.length - 1)
+    const releasedScale = releasedTotalW > PLAN_W - 80 ? (PLAN_W - 80) / releasedTotalW : 1
+    let releasedCursor = RELEASED_ROW.cx - (releasedTotalW * releasedScale) / 2
+    const released = releasedRaw.map((r) => {
+      const w = r.w * releasedScale
+      const left = releasedCursor
+      releasedCursor += w + RELEASED_ROW.gap * releasedScale
+      return { ...r, w, left }
+    })
+    return { buildings, placements, released }
+  }, [model, interactions, projectRoomCounts, onOpenBuilding, onOpenProject, onOpenLooseTasks])
 
-  const { buildings, placements } = scene
-
-  /* The grounds strip: what cannot stand in the plan, in its
-   * existing presentation. */
-  const tasksRows = Math.ceil(model.looseTasks.length / 3)
-  const stripMainH = Math.max(tasksRows ? tasksRows * 96 + 36 : 0, 300)
-  const stripReleasedH = model.releasedProjects.length ? 116 : 0
-  const stripH = stripMainH + stripReleasedH
-  const tableY = stripMainH - 70
+  const { buildings, placements, released } = scene
 
   return (
-    <div onMouseLeave={() => onAttend(false)}>
+    <div onMouseLeave={() => onAttend(false)} style={{ containerType: 'inline-size' }}>
       {/* ——— the plan ——— */}
       <div
         className="relative w-full select-none"
@@ -537,109 +583,93 @@ export function CompoundScene({
             width: `${((PLAZA_FIRE.h * 989) / 1530 / PLAN_W) * 100}%`,
           }}
         />
-        {/* the front wall, over everything */}
+        {/* the drawing table — the founder's own table art,
+            standing in the plan at the place he circled, before
+            the front wall so its feet tuck behind the wall's base
+            as the buildings' foundations do */}
+        <div
+          data-testid="palace-drawing-table"
+          className="pointer-events-none absolute block"
+          style={{
+            left: planPctX(PLAN_TABLE_LEFT),
+            top: planPctY(PLAN_TABLE_TOP),
+            width: planPctX(PLAN_TABLE_SIDE),
+            aspectRatio: '1 / 1',
+          }}
+        >
+          <img src={drawingTableImage} alt="" draggable={false} className="block h-full w-full" />
+        </div>
+        {/* the front wall, over the buildings and the table */}
         <img
           src={frontWallImage}
           alt=""
           draggable={false}
           className="pointer-events-none absolute inset-0 h-full w-full"
         />
+        {/* the undeveloped ideas — papers resting on the table's
+            board, over the wall layer so every paper stays
+            readable and tappable; a tap puts the idea on the
+            table, exactly as it always did */}
+        {model.ideas.map((idea, i) => {
+          const row = Math.floor(i / IDEA_CHIP.perRow)
+          const inRow = Math.min(IDEA_CHIP.perRow, model.ideas.length - row * IDEA_CHIP.perRow)
+          const col = i % IDEA_CHIP.perRow
+          const rowW = inRow * IDEA_CHIP.w + (inRow - 1) * IDEA_CHIP.gapX
+          const x =
+            PLAN_TABLE_SEAT.cx - rowW / 2 + col * (IDEA_CHIP.w + IDEA_CHIP.gapX) + (row % 2 ? 5 : -3)
+          const y = IDEA_CHIP.top + row * IDEA_CHIP.rowStep
+          const selected = selectedIdeaId === idea.id
+          return (
+            <button
+              key={idea.id}
+              type="button"
+              data-testid={`palace-idea-${idea.id}`}
+              title={idea.title}
+              aria-label={idea.title}
+              onClick={() => onSelectIdea(idea.id)}
+              className="absolute block cursor-pointer overflow-hidden"
+              style={{
+                left: planPctX(x),
+                top: planPctY(y),
+                width: planPctX(IDEA_CHIP.w),
+                height: planPctY(IDEA_CHIP.h),
+                background: selected ? '#f2dfae' : PAL.paper,
+                border: `${selected ? 2 : 1}px solid ${selected ? PAL.maeve : PAL.stoneDark}`,
+                borderRadius: 3,
+                transform: `rotate(${i % 2 ? 2.5 : -2.5}deg)`,
+                color: PAL.ink,
+                fontSize: '0.85cqw',
+                lineHeight: 1.1,
+                padding: '0 2px',
+              }}
+            >
+              {idea.title.length > 11 ? `${idea.title.slice(0, 10)}…` : idea.title}
+            </button>
+          )
+        })}
+        {/* released projects — outside the gate: a row of
+            buildings on the foreground margin, over the wall,
+            bases at the art's bottom edge */}
+        {released.map((r) => (
+          <button
+            key={r.id}
+            type="button"
+            data-testid={`palace-released-project-${r.id}`}
+            title={r.title}
+            aria-label={r.title}
+            onClick={() => onOpenProject(r.id)}
+            onMouseEnter={() => onAttend(true)}
+            className="absolute block cursor-pointer border-0 bg-transparent p-0"
+            style={{
+              left: planPctX(r.left),
+              bottom: '0%',
+              width: planPctX(r.w),
+            }}
+          >
+            <SceneBuildingImage klass={r.klass} stage={r.stage} colour={r.colour} />
+          </button>
+        ))}
       </div>
-
-      {/* ——— the grounds strip ——— */}
-      <svg
-        viewBox={`0 0 900 ${stripH}`}
-        className="block h-auto w-full"
-        role="img"
-        aria-label="The Palace grounds — loose work and the drawing table"
-      >
-        <rect x={0} y={0} width={900} height={stripH} fill={PAL.ground} />
-
-        {/* loose tasks — standing stones on the open ground */}
-        {model.looseTasks.map((t, i) => {
-          const x = 66 + (i % 3) * 110
-          const y = 44 + Math.floor(i / 3) * 96
-          return (
-            <g
-              key={t.id}
-              data-testid={`palace-loose-task-${t.id}`}
-              onClick={() => onOpenTask(t.id)}
-              style={{ cursor: 'pointer' }}
-            >
-              <title>{t.title}</title>
-              <path
-                d={`M ${x - 17} ${y + 34} C ${x - 19} ${y + 6}, ${x - 8} ${y - 12}, ${x} ${y - 14} C ${x + 9} ${y - 12}, ${x + 18} ${y + 8}, ${x + 16} ${y + 34} Z`}
-                fill={isDoneStatus(t.status) ? '#c9b995' : PAL.stone}
-                stroke={PAL.stoneDark}
-              />
-              {wrapTitle(t.title, 13, 2).map((line, li) => (
-                <text key={li} x={x} y={y + 50 + li * 12} textAnchor="middle" fontSize={10} fill={PAL.ink}>
-                  {line}
-                </text>
-              ))}
-            </g>
-          )
-        })}
-
-        {/* the drawing table — undeveloped ideas rest on it */}
-        <g data-testid="palace-drawing-table">
-          <DrawingTable x={560} y={tableY} w={300} />
-          {model.ideas.map((idea, i) => {
-            const x = 446 + (i % 4) * 76
-            const y = tableY - 40 + Math.floor(i / 4) * 4
-            const selected = selectedIdeaId === idea.id
-            return (
-              <g
-                key={idea.id}
-                data-testid={`palace-idea-${idea.id}`}
-                onClick={() => onSelectIdea(idea.id)}
-                style={{ cursor: 'pointer' }}
-              >
-                <title>{idea.title}</title>
-                <rect
-                  x={x - 34}
-                  y={y - 12}
-                  width={68}
-                  height={24}
-                  rx={3}
-                  fill={selected ? '#f2dfae' : PAL.paper}
-                  stroke={selected ? PAL.maeve : PAL.stoneDark}
-                  strokeWidth={selected ? 2 : 1}
-                  transform={`rotate(${i % 2 ? 2.5 : -2.5} ${x} ${y})`}
-                />
-                <text x={x} y={y + 3.5} textAnchor="middle" fontSize={8.6} fill={PAL.ink}>
-                  {idea.title.length > 11 ? `${idea.title.slice(0, 10)}…` : idea.title}
-                </text>
-              </g>
-            )
-          })}
-          <text x={560} y={tableY + 46} textAnchor="middle" fontSize={11} fill={PAL.inkSoft}>
-            the drawing table
-          </text>
-        </g>
-
-        {/* released work at the south gate */}
-        {model.releasedProjects.map((p, i) => {
-          const x = 120 + i * 170
-          const y = stripMainH + 24
-          return (
-            <g
-              key={p.id}
-              data-testid={`palace-released-project-${p.id}`}
-              onClick={() => onOpenProject(p.id)}
-              style={{ cursor: 'pointer' }}
-              opacity={0.75}
-            >
-              <title>{p.title}</title>
-              <rect x={x} y={y + 12} width={80} height={40} fill="#ded2b8" stroke={WALL_LINE} strokeWidth={2} />
-              <path d={`M ${x - 5} ${y + 12} L ${x + 40} ${y - 6} L ${x + 85} ${y + 12} Z`} fill="#a08b62" stroke={PAL.roofDark} />
-              <text x={x + 40} y={y + 68} textAnchor="middle" fontSize={10} fill={PAL.inkSoft}>
-                {p.title.length > 15 ? `${p.title.slice(0, 14)}…` : p.title} · released
-              </text>
-            </g>
-          )
-        })}
-      </svg>
     </div>
   )
 }

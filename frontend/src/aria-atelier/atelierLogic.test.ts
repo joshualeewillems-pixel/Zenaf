@@ -19,6 +19,7 @@ import {
   GARDEN_GAP,
   GARDEN_SEATS,
   SCENE1_BASIN,
+  SCENE1_LOTUS_OVERLAY,
   SCENE1_WELL_SCALE_Y,
   SCENE2_DISC,
   SCENE2_LOTUS_OVERLAY,
@@ -374,16 +375,22 @@ describe('parents + loose — the ring grouping', () => {
 
 describe('the painted scenes — measured geometry', () => {
   it('pins Screen 1’s basin ellipse and the well’s perspective squash', () => {
-    expect(SCENE1_BASIN).toEqual({ cx: 0.589, cy: 0.506, rx: 0.142, ry: 0.036 })
+    // The full basin inside the outer rim (founder, 2026-11-27:
+    // no inner wall; the water runs to the well's edges).
+    expect(SCENE1_BASIN).toEqual({ cx: 567 / 1086, cy: 717 / 1448, rx: 247 / 1086, ry: 87 / 1448 })
     // The squash is the ellipse's own aspect on the painting's
-    // pixels: (ry × 1448) / (rx × 1086).
-    expect(SCENE1_WELL_SCALE_Y).toBeCloseTo(0.338, 3)
-    expect(SCENE1_WELL_SCALE_Y).toBeCloseTo((0.036 * 1448) / (0.142 * 1086), 2)
+    // pixels: (ry × 1448) / (rx × 1086) = 87 / 247.
+    expect(SCENE1_WELL_SCALE_Y).toBeCloseTo(0.352, 3)
+    expect(SCENE1_WELL_SCALE_Y).toBeCloseTo(87 / 247, 2)
     // The reference-scene ellipse is the same ellipse in px.
-    expect(SCENE_BASIN_REF.cx).toBeCloseTo(0.589 * SCENE_REF_W)
-    expect(SCENE_BASIN_REF.cy).toBeCloseTo(0.506 * SCENE_REF_H)
-    expect(SCENE_BASIN_REF.rx).toBeCloseTo(0.142 * SCENE_REF_W)
-    expect(SCENE_BASIN_REF.ry).toBeCloseTo(0.036 * SCENE_REF_H)
+    expect(SCENE_BASIN_REF.cx).toBeCloseTo((567 / 1086) * SCENE_REF_W)
+    expect(SCENE_BASIN_REF.cy).toBeCloseTo((717 / 1448) * SCENE_REF_H)
+    expect(SCENE_BASIN_REF.rx).toBeCloseTo((247 / 1086) * SCENE_REF_W)
+    expect(SCENE_BASIN_REF.ry).toBeCloseTo((87 / 1448) * SCENE_REF_H)
+    // The painting's lotus rides above the expanded water.
+    expect(SCENE1_LOTUS_OVERLAY.left).toBeCloseTo(318 / 1086)
+    expect(SCENE1_LOTUS_OVERLAY.top).toBeCloseTo(693 / 1448)
+    expect(SCENE1_LOTUS_OVERLAY.width).toBeCloseTo(160 / 1086)
   })
 
   it('pins Screen 2’s disc and the lotus overlay placement', () => {
@@ -398,14 +405,14 @@ describe('the painted scenes — measured geometry', () => {
     expect(GARDEN_SEATS.slice(0, 10)).toEqual([
       { x: 0.24, y: 0.7, scale: 1.15 },
       { x: 0.78, y: 0.72, scale: 1.15 },
-      { x: 0.12, y: 0.55, scale: 1.0 },
+      { x: 0.17, y: 0.55, scale: 1.0 },
       { x: 0.88, y: 0.57, scale: 1.0 },
       { x: 0.3, y: 0.86, scale: 1.25 },
       { x: 0.66, y: 0.87, scale: 1.25 },
       { x: 0.33, y: 0.4, scale: 0.8 },
       { x: 0.74, y: 0.41, scale: 0.8 },
-      { x: 0.16, y: 0.38, scale: 0.75 },
-      { x: 0.86, y: 0.36, scale: 0.75 },
+      { x: 0.2, y: 0.4, scale: 0.75 },
+      { x: 0.9, y: 0.44, scale: 0.75 },
     ])
     // Every seat anchor stands on the sand: its normalised
     // distance from the basin centre is well outside the ellipse.

@@ -191,10 +191,17 @@ describe('AriaAtelierView', () => {
     // its perspective.
     const well = container.querySelector('button[aria-label="The well"]') as HTMLElement | null
     expect(well).not.toBeNull()
-    expect(well?.style.left).toBe('58.9%')
-    expect(well?.style.top).toBe('50.6%')
-    expect(well?.style.width).toBe('28.4%')
-    expect(well?.style.transform).toContain('scaleY(0.338)')
+    expect(well?.style.left).toBe('52.21%')
+    expect(well?.style.top).toBe('49.52%')
+    expect(well?.style.width).toBe('45.49%')
+    expect(well?.style.transform).toContain('scaleY(0.352)')
+    // The painting's lotus stands above the expanded water at
+    // its measured placement (the inner ring is not carried).
+    const lotus1 = scene?.querySelector('img[src*="garden-scene1-lotus"]') as HTMLImageElement | null
+    expect(lotus1).not.toBeNull()
+    expect(parseFloat(lotus1?.style.left ?? '')).toBeCloseTo((318 / 1086) * 100, 1)
+    expect(parseFloat(lotus1?.style.top ?? '')).toBeCloseTo((693 / 1448) * 100, 1)
+    expect(parseFloat(lotus1?.style.width ?? '')).toBeCloseTo((160 / 1086) * 100, 1)
     // Parents + loose only: the initiative stands in the ring as
     // one cairn carrying both stones; its project does NOT.
     expect(container.querySelector('[data-initiative="i1"]')).not.toBeNull()

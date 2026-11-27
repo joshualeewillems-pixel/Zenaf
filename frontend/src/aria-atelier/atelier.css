@@ -57,9 +57,9 @@
   background-repeat: no-repeat;
 }
 
-/* The painting's own lotus, above the cast's live water. (The
-   painting's inner ring is deliberately not carried — founder,
-   2026-11-27: the well-within-a-well obstructed the formations.) */
+/* The paintings' own lotuses, above the live water on both
+   screens. (Neither painting's inner ring is carried — founder,
+   2026-11-27: the well-within-a-well obstructed the water.) */
 .atelier-scene-overlay {
   position: absolute;
   display: block;

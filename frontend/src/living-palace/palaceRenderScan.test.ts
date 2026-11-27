@@ -328,13 +328,16 @@ describe('the task level — dependencies drawn only where the packing could not
   })
 
   it('a pair the packing cannot join draws exactly one line', () => {
-    // Ten tasks; the pair joins the two unit-estimate tasks,
-    // which seat last into separate pockets — exactly one line,
-    // and no other pair exists to draw one.
+    // Ten tasks of near-equal estimate crowd the pockets; the
+    // pair joins the two unit-estimate tasks, which seat last
+    // into separate pockets — exactly one line, and no other
+    // pair exists to draw one. (Fixture re-based 2026-11-26:
+    // the flame's breathing room reshaped the pockets and the
+    // old descending-weights pair now seats adjacent.)
     const data = taskLevelData([
-      { id: 'a', hours: 30 }, { id: 'b', hours: 22 }, { id: 'c', hours: 18 },
-      { id: 'd', hours: 15 }, { id: 'e', hours: 12 }, { id: 'f', hours: 10 },
-      { id: 'g', hours: 8 }, { id: 'h', hours: 6 }, { id: 'x', hours: 1 },
+      { id: 'a', hours: 26 }, { id: 'b', hours: 24 }, { id: 'c', hours: 22 },
+      { id: 'd', hours: 20 }, { id: 'e', hours: 18 }, { id: 'f', hours: 16 },
+      { id: 'g', hours: 14 }, { id: 'h', hours: 12 }, { id: 'x', hours: 1 },
       { id: 'y', hours: 1, deps: ['x'] },
     ])
     const html = renderTasks(data)

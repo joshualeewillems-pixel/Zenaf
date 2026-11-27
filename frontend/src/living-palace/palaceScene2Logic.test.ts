@@ -29,6 +29,7 @@ import {
   FILL_BOTTOM,
   FILL_LADDER,
   FILL_TOP,
+  FLAME_ZONE,
   HEARTH,
   HEARTH_R,
   MIN_FLOOR_RADIUS,
@@ -72,11 +73,15 @@ const LADDER_SHAPES: [string, Scene2FloorInput[]][] = [
     'many floors',
     Array.from({ length: 16 }, (_, i) => floor(`f${i}`, (i * 7) % 13)),
   ],
-  ['one floor', [floor('only', 12)]],
-  ['one floor, no rooms', [floor('only', 0)]],
 ]
 
 const FALLBACK_SHAPES: [string, Scene2FloorInput[]][] = [
+  // A single floor is one composition-filling circle; at ladder
+  // fills it cannot both fill the dome and clear the flame's
+  // breathing room (founder, 2026-11-26 22:28 PT), so it takes
+  // the documented fallback — one common scale down.
+  ['one floor', [floor('only', 12)]],
+  ['one floor, no rooms', [floor('only', 0)]],
   ['equal floors', [floor('a', 4), floor('b', 4), floor('c', 4), floor('d', 4)]],
   ['no rooms anywhere', [floor('a', 0), floor('b', 0), floor('c', 0)]],
   ['a dominant floor', [floor('a', 3), floor('b', 9)]],
@@ -100,6 +105,12 @@ function expectContainedAndSeparated(placed: (Scene2Circle & { key: string })[])
     expect(dh, `${p.key} crowds the hearth`).toBeGreaterThanOrEqual(
       p.r + HEARTH_R + CIRCLE_GAP - EPS,
     )
+    // the flame's breathing room (founder, 2026-11-26 22:28 PT):
+    // no room spawns where the fire would cover it — the seat
+    // clears the flame's ellipse, inflated by its own radius
+    const fdx = (p.x - FLAME_ZONE.cx) / (FLAME_ZONE.rx + p.r)
+    const fdy = (p.y - FLAME_ZONE.cy) / (FLAME_ZONE.ry + p.r)
+    expect(fdx * fdx + fdy * fdy, `${p.key} spawns under the flame`).toBeGreaterThanOrEqual(1 - EPS)
   }
   for (let i = 0; i < placed.length; i++) {
     for (let j = i + 1; j < placed.length; j++) {
@@ -169,19 +180,21 @@ describe('Palace Scene 2 — the relaxed Apollonian spacing, nested in the dome'
     }
   })
 
-  it('the live building IS study v21 — the approved composition, seat for seat', () => {
+  it('the live building — study v21’s composition, with the flame’s breathing room', () => {
     const layout = planBuildingScene(LIVE_SHAPE)
     expect(layout.fillUsed).toBe(0.48)
-    // The study's seats (build_study_v21_apollonian.py printed
-    // them rounded; the port reproduces them exactly — these
-    // are its values): Tier 6 anchors the centre; the rest
-    // nestle around it.
+    // Study v21's seats, exactly as the port reproduced them —
+    // except the two rooms the enlarged fire would have covered:
+    // Tier 2 (was 824.07, 1023.27) and Tier 1 (was 527.98,
+    // 872.07) re-seat clear of the flame under the founder's
+    // breathing-room rule (2026-11-26 22:28 PT). Radii and fill
+    // are v21's, untouched; the anchor still stands exact.
     const seats: Record<string, [number, number, number]> = {
       tier6: [627.0, 600.0, 175.9453],
       tier4: [333.48, 706.8325, 124.4121],
       tier0: [920.1443, 651.6892, 109.7212],
-      tier2: [824.0734, 1023.2711, 109.7212],
-      tier1: [527.9758, 872.0668, 101.5821],
+      tier2: [840.9863, 869.1739, 109.7212],
+      tier1: [414.8788, 930.4739, 101.5821],
       tier3: [861.3049, 445.4665, 92.7313],
       tier5: [411.9892, 419.5845, 92.7313],
       seven: [584.0131, 322.6347, 92.7313],
@@ -223,7 +236,10 @@ describe('Palace Scene 2 — the relaxed Apollonian spacing, nested in the dome'
     const tops = Math.min(...layout.floors.map((p) => p.y - p.r))
     const bottoms = Math.max(...layout.floors.map((p) => p.y + p.r))
     expect(tops).toBeLessThan(250)
-    expect(bottoms).toBeGreaterThan(1050)
+    // the span still reaches low — but no lower than the flame's
+    // breathing room allows (the lowest room, Tier 1, now bottoms
+    // at ≈1032, standing clear of the fire)
+    expect(bottoms).toBeGreaterThan(1000)
     for (const p of layout.floors.slice(0, 3)) {
       expect(p.y, p.key).toBeLessThan(940)
     }
@@ -292,7 +308,14 @@ describe('Palace Scene 2 — the relaxed Apollonian spacing, nested in the dome'
   it('one floor is one large circle, sized by the fill it settled at', () => {
     const layout = planBuildingScene([floor('only', 12)])
     expect(layout.floors).toHaveLength(1)
-    expect(layout.floors[0].r).toBeCloseTo(Math.sqrt((layout.fillUsed * containerArea()) / Math.PI), 6)
+    // the share formula at the settled fill, times the fallback's
+    // one common scale (a power of 0.9, ≤ 1) — a single
+    // composition-filling circle settles by the fallback since
+    // the flame's breathing room ruling (2026-11-26)
+    const full = Math.sqrt((layout.fillUsed * containerArea()) / Math.PI)
+    const scale = layout.floors[0].r / full
+    expect(scale).toBeLessThanOrEqual(1 + EPS)
+    expect(Math.log(scale) / Math.log(0.9)).toBeCloseTo(Math.round(Math.log(scale) / Math.log(0.9)), 6)
   })
 
   it('a zero-room floor still gets the minimum tappable circle', () => {
@@ -406,12 +429,16 @@ describe('Palace Scene 2 — the task level: dependencies as adjacency, lines as
   })
 
   it('a pair the packing cannot seat adjacent is reported as a link, not a neighbour', () => {
-    // Ten tasks; the pair joins the two unit-weight tasks, which
-    // seat last into whatever pockets remain — the packing
-    // cannot bring them together, so the pair takes the line.
+    // Ten tasks of near-equal weight crowd the pockets; the pair
+    // joins the two unit-weight tasks, which seat last into
+    // pockets that are not neighbours and leave no clear tangent
+    // seat to each other — the packing cannot bring them
+    // together, so the pair takes the line. (The earlier
+    // descending-weights fixture joined once the flame's
+    // breathing room reshaped the pockets, 2026-11-26.)
     const shape = [
-      taskIn('a', 30), taskIn('b', 22), taskIn('c', 18), taskIn('d', 15),
-      taskIn('e', 12), taskIn('f', 10), taskIn('g', 8), taskIn('h', 6),
+      taskIn('a', 26), taskIn('b', 24), taskIn('c', 22), taskIn('d', 20),
+      taskIn('e', 18), taskIn('f', 16), taskIn('g', 14), taskIn('h', 12),
       taskIn('x', 1), taskIn('y', 1),
     ]
     const layout = planTaskScene(shape, [pair('x', 'y')])

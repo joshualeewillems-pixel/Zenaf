@@ -68,10 +68,21 @@ import {
   type AttributedRead,
   type PalaceData,
 } from './palaceLogic'
-import { fetchAttributedRead, fetchPalaceEntities, fetchSubjectInteractions } from './palaceApi'
+import {
+  fetchAttributedRead,
+  fetchPalaceEntities,
+  fetchPalaceLayout,
+  fetchSubjectInteractions,
+  savePalaceLayout,
+} from './palaceApi'
 import type { SubjectInteraction } from './palaceSceneLogic'
-import { plateForFloor, type RoomPlate } from './palaceScene2Logic'
-import { BuildingScene, CompoundScene, RoomScene, TaskScene } from './palaceCanvas'
+import { plateForFloor, taskSizeWeight, type RoomPlate } from './palaceScene2Logic'
+import {
+  planOverheadLayout,
+  type OverheadArtifactKind,
+  type OverheadLayout,
+} from './palaceOverheadLogic'
+import { BuildingScene, CompoundScene, OverheadScene, RoomScene } from './palaceCanvas'
 import './palace.css'
 
 type PalaceLayer =
@@ -308,10 +319,92 @@ export default function LivingPalaceView({
     },
     [data],
   )
-  const taskPlate: RoomPlate = useMemo(
-    () => (current.layer === 'tasks' ? plateForProject(subjectProject) : 'rose'),
-    [current, plateForProject, subjectProject],
+  /* ---------------- the overhead layout (the third layer) ---------------- */
+
+  /** The layout record's key for this layer: the project's id —
+   *  the loose grouping's synthetic project carries the reserved
+   *  'loose-tasks' id, so one rule serves both. */
+  const overheadKey =
+    (current.layer === 'tasks' || current.layer === 'loose-tasks') && taskLevel
+      ? taskLevel.project.id
+      : null
+  /** A fingerprint of the collection the layout answers for:
+   *  the layout recomputes when the collection itself changes
+   *  (a task added in conversation, an estimate recorded) — the
+   *  hybrid transition then moves the rooms, and the scene's
+   *  rooms travel to their new seats. */
+  const overheadFingerprint = taskLevel
+    ? taskLevel.tasks.map((t) => `${t.id}:${t.estimated_hours ?? ''}`).join('|') +
+      '#' +
+      taskLevel.links.map((l) => `${l.aId}>${l.bId}`).join('|')
+    : null
+  const [overhead, setOverhead] = useState<{ key: string; layout: OverheadLayout } | null>(null)
+  useEffect(() => {
+    if (!taskLevel || !overheadKey) return
+    let cancelled = false
+    const level = taskLevel
+    const key = overheadKey
+    void (async () => {
+      const stored = await fetchPalaceLayout(key)
+      if (cancelled) return
+      const partners = new Map<string, Set<string>>()
+      const link = (a: string, b: string) => {
+        const set = partners.get(a) ?? new Set<string>()
+        set.add(b)
+        partners.set(a, set)
+      }
+      for (const l of level.links) {
+        link(l.aId, l.bId)
+        link(l.bId, l.aId)
+      }
+      const result = planOverheadLayout(
+        level.tasks.map((t) => ({ id: t.id, weight: taskSizeWeight(t.estimated_hours) })),
+        partners,
+        stored,
+        { fixtures: true },
+      )
+      // Written only when a layout is computed or changes — the
+      // standing record is never rewritten.
+      if (result.changed) void savePalaceLayout(key, result.record)
+      if (!cancelled) setOverhead({ key: `${key}::${overheadFingerprint}`, layout: result })
+    })()
+    return () => {
+      cancelled = true
+    }
+    // overheadFingerprint is the render key, not a trigger: the
+    // effect re-runs when the level model itself is rebuilt
+    // (entity data reloaded), which is when a recompute is due.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskLevel, overheadKey])
+  /** The layout to render: the freshest computed for THIS layer.
+   *  While a recompute is in flight (the collection changed in
+   *  conversation), the standing layout stays on screen — when
+   *  the new one lands, the same room buttons re-render at their
+   *  new seats and the rooms TRAVEL there (the scene's position
+   *  transition), rather than the plan flashing away and the
+   *  rooms teleporting. */
+  const overheadForLayer =
+    overhead !== null && overheadKey !== null && overhead.key.startsWith(`${overheadKey}::`)
+      ? overhead.layout
+      : null
+  /** The layer key at which the drawing-table room was opened —
+   *  the project stands on the drawing table (the compound's
+   *  table announcement, carried to the plan) until it is set
+   *  down or navigation discards it. */
+  const [tableLayerKey, setTableLayerKey] = useState<string | null>(null)
+  const onOverheadArtifact = useCallback(
+    (kind: OverheadArtifactKind) => {
+      stage(kind)
+      if (kind === 'table') setTableLayerKey(overheadKey)
+    },
+    [stage, overheadKey],
   )
+  /** Navigation sets the project down from the table, silently —
+   *  the same discard as any staged object. */
+  useEffect(() => {
+    setTableLayerKey(null)
+  }, [current])
+
   const room = useMemo(() => {
     if (!data || current.layer !== 'room') return null
     const task = data.tasks.find((t) => t.id === current.taskId)
@@ -483,6 +576,18 @@ export default function LivingPalaceView({
             </button>
           </p>
         )}
+        {tableLayerKey !== null &&
+          tableLayerKey === overheadKey &&
+          (current.layer === 'tasks' || current.layer === 'loose-tasks') &&
+          taskLevel && (
+            <p className="mt-1 text-xs text-[#6b5b45]">
+              On the drawing table: <span className="font-semibold text-[#4a3f30]">{taskLevel.project.title}</span> — Maeve has
+              it in view.{' '}
+              <button type="button" className="underline decoration-dotted" onClick={() => setTableLayerKey(null)}>
+                Set it down
+              </button>
+            </p>
+          )}
       </div>
 
       <div className="living-palace-scene relative min-h-0 flex-1 overflow-y-auto px-3 py-3">
@@ -519,12 +624,17 @@ export default function LivingPalaceView({
           />
         )}
         {data && taskLevel && (current.layer === 'tasks' || current.layer === 'loose-tasks') && (
-          <TaskScene
-            model={taskLevel}
-            plate={taskPlate}
-            onOpenTask={openTask}
-            interactions={interactions}
-          />
+          overheadForLayer ? (
+            <OverheadScene
+              model={taskLevel}
+              layout={overheadForLayer}
+              vesselGold={subjectRead?.kintsugi?.restoration_of_understanding ?? false}
+              onOpenTask={openTask}
+              onOpenArtifact={onOverheadArtifact}
+            />
+          ) : (
+            <p className="mt-10 text-center text-sm text-[#6b5b45]">Composing the plan…</p>
+          )
         )}
         {data && room && current.layer === 'room' && (
           <RoomScene

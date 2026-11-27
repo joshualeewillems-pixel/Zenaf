@@ -178,8 +178,17 @@ let projectsPayload: Record<string, unknown>[] | null = null
 let tasksPayload: Record<string, unknown>[] | null = null
 
 /** Every non-GET the view makes, recorded by the fetch stub: the
- *  Palace pass surface must make NONE, ever — staging included. */
+ *  Palace pass surface must make NONE, ever — staging included.
+ *  One exception, tracked separately below: the overhead plan's
+ *  layout record (derived geometry, written only when a layout
+ *  is computed or changes — never a visitor-work write, and
+ *  never on a tap). */
 const writes: { url: string; method: string }[] = []
+/** Overhead layout record PUTs, by project key, and the records
+ *  the stub then serves back — the standing-record path is
+ *  exercised against what the client itself wrote. */
+const layoutWrites: { key: string }[] = []
+const layoutRecords = new Map<string, unknown>()
 /** Attributed-read GETs, counted: a landed chat turn re-reads. */
 let attributedGets = 0
 
@@ -203,6 +212,15 @@ function installFetchStub() {
     vi.fn(async (input: unknown, init?: { method?: string; body?: string }) => {
       const url = String(input)
       const method = init?.method ?? 'GET'
+      if (url.includes('/palace-layout/')) {
+        const key = decodeURIComponent(url.split('/palace-layout/')[1])
+        if (method === 'PUT') {
+          layoutWrites.push({ key })
+          layoutRecords.set(key, (JSON.parse(init?.body ?? '{}') as { record?: unknown }).record)
+          return jsonResponse({})
+        }
+        return jsonResponse({ project_id: key, layout: layoutRecords.get(key) ?? null })
+      }
       if (method !== 'GET') {
         writes.push({ url, method })
         return jsonResponse({})
@@ -282,6 +300,8 @@ async function clickCrumb(label: string) {
 beforeEach(() => {
   chatProps.length = 0
   writes.length = 0
+  layoutWrites.length = 0
+  layoutRecords.clear()
   attributedGets = 0
   attributedPayload = EMPTY_READ
   interactionsPayload = { subjects: [] }
@@ -871,6 +891,53 @@ describe('Living Palace — chat-is-the-work', () => {
     expect(container.querySelector('[data-testid="palace-guest-strip"]')).toBeNull()
     expect(lastChat().context).toMatchObject({ palace_focus: 'guest:ambassador' })
     expect(container.querySelector('[data-testid="staged-chip"]')!.textContent).toContain("Lucian's cup")
+    expect(writes).toEqual([])
+  })
+
+  it('the overhead plan persists its layout once, then stands on the stored record', async () => {
+    await render()
+    await click('palace-building-i1')
+    await click('palace-floor-p1')
+    // The plan stands: the project's task rooms are on the floor.
+    expect(container.querySelector('[data-testid="palace-task-tc"]')).not.toBeNull()
+    // Entering computed the layout and wrote its record — once.
+    expect(layoutWrites.filter((w) => w.key === 'p1')).toHaveLength(1)
+    expect(writes).toEqual([])
+    // Back to the compound and in again: the stored record
+    // stands (the same collection, integrity clean) — the plan
+    // is NOT recomputed and NOT rewritten.
+    await clickCrumb('Compound')
+    await click('palace-building-i1')
+    await click('palace-floor-p1')
+    expect(container.querySelector('[data-testid="palace-task-tc"]')).not.toBeNull()
+    expect(layoutWrites.filter((w) => w.key === 'p1')).toHaveLength(1)
+    expect(writes).toEqual([])
+  })
+
+  it('the plan’s artifact rooms stage in the chat; the table puts the project on the drawing table', async () => {
+    await render()
+    await click('palace-building-i1')
+    await click('palace-floor-p1')
+    // The four standing artifact rooms stand in the plan.
+    for (const kind of ['vessel', 'scales', 'table', 'chest']) {
+      expect(container.querySelector(`[data-testid="palace-artifact-${kind}"]`)).not.toBeNull()
+    }
+    // A tap stages the instrument in Maeve's chat — tentatively,
+    // writing nothing.
+    await click('palace-artifact-scales')
+    expect(lastChat().context).toMatchObject({
+      entity_type: 'project',
+      entity_id: 'p1',
+      palace_focus: 'scales',
+    })
+    expect(writes).toEqual([])
+    // The drawing-table room additionally puts the project on
+    // the drawing table — the compound's announcement, carried
+    // to the plan.
+    await click('palace-artifact-table')
+    expect(lastChat().context).toMatchObject({ palace_focus: 'table' })
+    expect(container.textContent).toContain('On the drawing table:')
+    expect(container.textContent).toContain('Winter client season')
     expect(writes).toEqual([])
   })
 

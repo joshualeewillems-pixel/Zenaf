@@ -20,8 +20,9 @@
  * artifacts standing at the seats he marked in the studies —
  * see the RoomScene section. The floor-plan layer is RETIRED
  * (founder, 2026-11-26 20:07 PT): the dome serves both levels —
- * projects as circles, then the project's tasks as circles in
- * the same dome — see the TaskScene section.
+ * projects as circles in the dome, then the project's tasks
+ * from above, in the overhead plan (the Palace's third layer,
+ * 2026-11-27) — see the OverheadScene section.
  *
  * Surface rule: the scenes carry no legends, no vocabulary panels,
  * no explanations of themselves. What a tap reveals lives in the
@@ -54,10 +55,14 @@ import {
   CONTAINER_CLIP_PATH,
   SCENE2_FRAME,
   planBuildingScene,
-  planTaskScene,
-  taskSizeWeight,
   type RoomPlate,
 } from './palaceScene2Logic'
+import {
+  OVERHEAD_SPACING,
+  type OverheadArtifactKind,
+  type OverheadFixture,
+  type OverheadLayout,
+} from './palaceOverheadLogic'
 import { useTintedMaster } from './palaceTint'
 import { PLATE_URLS, glassColorFor, useGlassPlate } from './palaceGlass'
 import planImage from './assets/palace-plan.jpg'
@@ -73,6 +78,11 @@ import drawingTableImage from './assets/palace-drawing-table.webp'
 import { BONSAI_ASPECT, BONSAI_BASE_LIFT, useBenchBonsaiImage } from './palacePlant'
 import architectureImage from './assets/palace-architecture.webp'
 import plateImage from '../assets/living-sky/plate.webp'
+import domedLargeImage from './assets/founder-domed-large.png'
+import domedMediumImage from './assets/founder-domed-medium.png'
+import domedSmallImage from './assets/founder-domed-small.png'
+import shellImage from './assets/dome-shell-extracted-v2.png'
+import pavingImage from './assets/palace-floor-paving.png'
 import { SEAT_COLORS, type SeatId } from '../council/colors'
 
 /* The prototype's material palette. */
@@ -943,61 +953,327 @@ export function BuildingScene({
 }
 
 /* ------------------------------------------------------------------ */
-/* task level — the dome's second level (founder, 2026-11-26          */
-/* 20:07 PT: the floor-plan frame retired, "Build it")                 */
+/* task level — the OVERHEAD PLAN, the Palace's third layer           */
+/* (founder, 2026-11-27 11:59 PT: "Implement"; same-hour directives:  */
+/* room doorways show the ground underneath, never white; the rooms   */
+/* themselves are domed; the scene background is just the Zenaf       */
+/* sky — no ground)                                                    */
 /*                                                                     */
-/* The same dome, recomposed: the project's TASKS as circles in      */
-/* the same architecture, under the same relaxed Apollonian          */
-/* spacing (palaceScene2Logic.planTaskScene), the same one hearth    */
-/* — the project frame's one fire. Circle sizes come from            */
-/* recorded data: a task's estimate when it has one, else one        */
-/* equal unit. Every circle shows the project's chamber plate —      */
-/* the room its task opens into (plateForFloor's assignment,         */
-/* shared with the chamber itself) — its stained glass in the        */
-/* colour of the seat that has been talking about that TASK          */
-/* (palaceGlass, the same subject-interactions read).                */
+/* The dome seen from above: the project's tasks as domed rooms on    */
+/* a paved circular floor, composed by the hybrid packing law         */
+/* (palaceOverheadLogic — the ported study algorithm; the layout      */
+/* arrives as a prop, computed and persisted by the view). The        */
+/* composite order is a gate (the dome-shell proof, v3):              */
+/*   sky band → shell BACK → floor paving disc → dependency lines     */
+/*   → rooms back-to-front (the hearth among them) → shell FRONT.     */
 /*                                                                     */
-/* The recorded dependencies between the project's tasks shape       */
-/* the seating (the founder, same direction: "instead of a door,      */
-/* we can set it up to where the room itself moves next to            */
-/* another room where it's connected or at least draws a line        */
-/* to it"): partners sit as neighbours where the packing can         */
-/* achieve it; for every pair it could not, ONE plain stone-toned    */
-/* line runs beneath the circles, rim to rim — no labels, no         */
-/* arrows. A tap on a task circle stages the task in the chat        */
-/* and opens its chamber, exactly as a room tap did on the retired    */
-/* floor. No text rides the circles. The scene writes nothing.       */
+/* The shell is the palace's own domed wall with its stained glass    */
+/* baked in (dome-shell-extracted-v2.png), registered to the view's   */
+/* floor ellipse by the measured anisotropic affine of                */
+/* build_dome_shell_proof_v2.py: its floor ellipse (780.0, 628.4,     */
+/* 444.5, 271.9) in the shell's 1536×1024 frame maps onto this        */
+/* view's floor ellipse; the split at the floor's centre line and     */
+/* the occluding ellipse follow the v2 builder (0.90 of the squared   */
+/* metric behind, 0.99 in front). The shell takes NO seat tint —      */
+/* its glass is baked art (founder-directed deviation from the        */
+/* port proposal's rendering paragraph; the chambers' tint path       */
+/* is untouched).                                                     */
+/*                                                                     */
+/* The rooms are the founder's domed buildings (three size classes    */
+/* by ground radius, the study's mapping: r ≥ 24 large, r ≥ 12        */
+/* medium, else small), each scaled so its measured FOOTPRINT —       */
+/* the silhouette's floor ellipse fitted off the shipped asset's      */
+/* alpha, never the bounding box — matches the room's ground          */
+/* circle, anchored at that footprint's centre. The sprites render    */
+/* above the floor layer, so their transparent doorways show the      */
+/* paving beneath; nothing in the scene is white — the backdrop is    */
+/* the sky band only (the top ~26% of the living-sky plate: no        */
+/* mountains, no strata, no lake) and the floor is the study's        */
+/* pale paving.                                                       */
+/*                                                                     */
+/* Four standing artifact rooms stand with the task rooms (founder    */
+/* addendum, 2026-11-27 12:22 PT): the vessel (north), the scales     */
+/* (east), the drawing table (south) and the chest (west) —           */
+/* fixtures at the compass points, seated by the packing law as       */
+/* obstacles, each rendered as a domed room with its artifact         */
+/* standing at its centre, identifiable by the object alone — no      */
+/* text rides a room. A tap on a task room opens its chamber, as a    */
+/* room tap always did; a tap on an artifact room stages that         */
+/* instrument in Maeve's chat (tentative — it writes nothing); the    */
+/* drawing-table room also puts the project on the drawing table,     */
+/* as the compound's table does for its ideas. A room that could      */
+/* not seat is NOT rendered here — its name is carried by the         */
+/* header line above and by Maeve in the chat. When a new layout      */
+/* differs from the standing one, rooms travel (the position          */
+/* transition on the room buttons) rather than teleport.              */
 /* ------------------------------------------------------------------ */
 
-export function TaskScene({
+export const OVERHEAD_FRAME_W = 1560
+export const OVERHEAD_FRAME_H = 1890
+const OH_CX = 780
+const OH_CY = 1130
+/** Plan units → frame px: the study's projection, S = 6.4,
+ *  K = 0.72 — the plan floor (r 100 units) is the 640 × 460.8
+ *  ellipse at the frame's centre. */
+const OH_S = 6.4
+const OH_K = 0.72
+const OH_FLOOR_RX = OH_S * 100
+const OH_FLOOR_RY = OH_S * OH_K * 100
+const ohPctX = (units: number) => `${(units / OVERHEAD_FRAME_W) * 100}%`
+const ohPctY = (units: number) => `${(units / OVERHEAD_FRAME_H) * 100}%`
+const ohProject = (x: number, y: number): [number, number] => [
+  OH_CX + OH_S * x,
+  OH_CY + OH_S * OH_K * y,
+]
+
+/* The shell registration (build_dome_shell_proof_v2.py): the
+ * shell art's own floor ellipse, in its 1536×1024 frame, mapped
+ * onto the view's floor ellipse — an anisotropic scale, so the
+ * image renders with preserveAspectRatio="none". */
+const SHELL_FIT = { cx: 780, cy: 628.4, rx: 444.5, ry: 271.9 }
+const SHELL_SCALE_X = OH_FLOOR_RX / SHELL_FIT.rx
+const SHELL_SCALE_Y = OH_FLOOR_RY / SHELL_FIT.ry
+const SHELL_W = 1536 * SHELL_SCALE_X
+const SHELL_H = 1024 * SHELL_SCALE_Y
+const SHELL_X = OH_CX - SHELL_FIT.cx * SHELL_SCALE_X
+const SHELL_Y = OH_CY - SHELL_FIT.cy * SHELL_SCALE_Y
+
+/* The domed sprites' measured floor fits: the silhouette's floor
+ * ellipse fitted off each shipped asset's alpha (bottom arc +
+ * width — the chamber seats' discipline, never the bounding
+ * box), as fractions of the canvas: the floor ellipse's centre
+ * and radius. Verified against the study's applied composite
+ * before this port. */
+const DOMED_FITS = {
+  L: { image: domedLargeImage, aspect: 947 / 1075, floorCx: 0.4995, floorCy: 0.5808, floorRx: 0.4995 },
+  M: { image: domedMediumImage, aspect: 513 / 456, floorCx: 0.4989, floorCy: 0.5517, floorRx: 0.5 },
+  S: { image: domedSmallImage, aspect: 318 / 240, floorCx: 0.4979, floorCy: 0.5283, floorRx: 0.5 },
+} as const
+type DomedClass = keyof typeof DOMED_FITS
+/** The study's size-class mapping, in plan units. */
+const domedClassFor = (r: number): DomedClass => (r >= 24 ? 'L' : r >= 12 ? 'M' : 'S')
+
+/** The hearth flame's height in frame px — sized to the hearth
+ *  disc (r 12 units, 76.8 frame px across), standing in the pit.
+ *  The flame is the live dome's founder flame. */
+const OH_FLAME_H = 150
+
+function OverheadShellHalf({ half }: { half: 'back' | 'front' }) {
+  const maskId = `palace-shell-mask-${half}`
+  const metric = half === 'back' ? 0.9 : 0.99
+  const erx = OH_FLOOR_RX * Math.sqrt(metric)
+  const ery = OH_FLOOR_RY * Math.sqrt(metric)
+  return (
+    <svg
+      data-testid={`palace-shell-${half}`}
+      className="pointer-events-none absolute inset-0 block h-full w-full"
+      viewBox={`0 0 ${OVERHEAD_FRAME_W} ${OVERHEAD_FRAME_H}`}
+      preserveAspectRatio="none"
+      aria-hidden
+    >
+      <defs>
+        <mask
+          id={maskId}
+          maskUnits="userSpaceOnUse"
+          maskContentUnits="userSpaceOnUse"
+          x={-600}
+          y={-600}
+          width={OVERHEAD_FRAME_W + 1200}
+          height={OVERHEAD_FRAME_H + 1200}
+        >
+          {half === 'back' ? (
+            <rect
+              x={-600}
+              y={-600}
+              width={OVERHEAD_FRAME_W + 1200}
+              height={OH_CY + 600}
+              fill="#fff"
+            />
+          ) : (
+            <rect
+              x={-600}
+              y={OH_CY}
+              width={OVERHEAD_FRAME_W + 1200}
+              height={OVERHEAD_FRAME_H - OH_CY + 600}
+              fill="#fff"
+            />
+          )}
+          <ellipse cx={OH_CX} cy={OH_CY} rx={erx} ry={ery} fill="#000" />
+        </mask>
+      </defs>
+      <image
+        href={shellImage}
+        x={SHELL_X}
+        y={SHELL_Y}
+        width={SHELL_W}
+        height={SHELL_H}
+        preserveAspectRatio="none"
+        mask={`url(#${maskId})`}
+      />
+    </svg>
+  )
+}
+
+export function OverheadScene({
   model,
-  plate,
+  layout,
+  vesselGold,
   onOpenTask,
-  interactions,
+  onOpenArtifact,
 }: {
   model: TaskLevelModel
-  /** The project's chamber plate — the plate the project's
-   *  rooms open into (plateForFloor); every task circle shows
-   *  it, as every floor circle showed its own plate. */
-  plate: RoomPlate
+  /** The computed overhead layout (palaceOverheadLogic), with
+   *  its fixtures — the view computes it and persists its
+   *  record; the scene only renders. */
+  layout: OverheadLayout
+  /** The vessel room's vessel stands gold iff the project's
+   *  attributed read shows an accepted supersession (the
+   *  chamber's own rule, carried to the plan). */
+  vesselGold?: boolean
   onOpenTask: (taskId: string) => void
-  /** Per-subject seat-interaction counts (the glass read);
-   *  absent or null while loading or after a failed read —
-   *  every task then keeps its natural glass. */
-  interactions?: SubjectInteraction[] | null
+  onOpenArtifact: (kind: OverheadArtifactKind) => void
 }) {
-  const layout = useMemo(
-    () =>
-      planTaskScene(
-        model.tasks.map((t) => ({ key: t.id, weight: taskSizeWeight(t.estimated_hours) })),
-        model.links.map((l) => ({ aKey: l.aId, bKey: l.bId })),
-      ),
-    [model],
-  )
-  const interactionIndex = useMemo(() => indexInteractions(interactions), [interactions])
-  const taskByKey = new Map(model.tasks.map((t) => [t.id, t]))
-  const placedByKey = new Map(layout.tasks.map((p) => [p.key, p]))
-  const { hearth } = layout
+  const taskById = new Map(model.tasks.map((t) => [t.id, t]))
+  const placedById = new Map(layout.placed.map((p) => [p.id, p]))
+  // Dependency lines: one for every recorded pair the packing
+  // did not seat as neighbours (rim gap beyond the preferred
+  // passage), beneath the rooms, rim to rim — the dome's rule,
+  // carried to the plan.
+  const drawnLinks = model.links.flatMap((l) => {
+    const a = placedById.get(l.aId)
+    const b = placedById.get(l.bId)
+    if (!a || !b) return []
+    const gap = Math.hypot(b.x - a.x, b.y - a.y) - a.r - b.r
+    if (gap <= OVERHEAD_SPACING + 1.5) return []
+    return [{ key: `${l.aId}|${l.bId}`, a, b }]
+  })
+
+  type Drawable =
+    | { kind: 'task'; id: string; x: number; y: number; r: number }
+    | { kind: 'fixture'; fixture: OverheadFixture }
+    | { kind: 'hearth' }
+  const groundY = (d: Drawable): number =>
+    d.kind === 'task' ? d.y : d.kind === 'fixture' ? d.fixture.y : 0
+  const hearthDrawable: Drawable = { kind: 'hearth' }
+  const drawables: Drawable[] = [
+    ...layout.placed.map(
+      (p): Drawable => ({ kind: 'task', id: p.id, x: p.x, y: p.y, r: p.r }),
+    ),
+    ...layout.fixtures.map((f): Drawable => ({ kind: 'fixture', fixture: f })),
+    hearthDrawable,
+  ].sort((a, b) => groundY(a) - groundY(b))
+
+  /** A room's sprite box: the canvas placed so the sprite's
+   *  measured floor ellipse lands exactly on the room's ground
+   *  circle (its projected ellipse). */
+  const roomBox = (x: number, y: number, r: number) => {
+    const fit = DOMED_FITS[domedClassFor(r)]
+    const dispW = (2 * OH_S * r) / (2 * fit.floorRx)
+    const dispH = dispW * fit.aspect
+    const [px, py] = ohProject(x, y)
+    return {
+      fit,
+      dispW,
+      dispH,
+      px,
+      py,
+      left: px - fit.floorCx * dispW,
+      top: py - fit.floorCy * dispH,
+    }
+  }
+
+  const artifactArt = (kind: OverheadArtifactKind) => {
+    switch (kind) {
+      case 'vessel':
+        return {
+          src: vesselGold ? vesselGoldImage : vesselPlainImage,
+          extent: VESSEL_OBJECT,
+          testid: vesselGold ? 'palace-vessel-gold' : 'palace-vessel-plain',
+          label: 'The vessel',
+        }
+      case 'scales':
+        return { src: scalesImage, extent: SCALES_OBJECT, testid: 'palace-scales', label: 'The scales' }
+      case 'chest':
+        return { src: chestImage, extent: CHEST_OBJECT, testid: 'palace-chest', label: 'The chest' }
+      case 'table':
+        return {
+          src: drawingTableImage,
+          extent: TABLE_OBJECT,
+          testid: 'palace-drawing-table',
+          label: 'The drawing table',
+        }
+    }
+  }
+
+  const renderRoom = (
+    key: string,
+    x: number,
+    y: number,
+    r: number,
+    testid: string,
+    label: string,
+    onTap: () => void,
+    fixtureKind?: OverheadArtifactKind,
+  ) => {
+    const box = roomBox(x, y, r)
+    const art = fixtureKind ? artifactArt(fixtureKind) : null
+    // The artifact object stands at the room's centre: its base
+    // on the floor a step toward the visitor from the centre,
+    // placed by its measured object bounds, as the chamber
+    // seats place their furniture.
+    let objectImg: React.ReactNode = null
+    if (art) {
+      const extent = art.extent
+      const leftEdge = 2 * extent.cx - extent.right
+      const objectW = OH_S * r * 1.15
+      const canvasSide = objectW / (extent.right - leftEdge)
+      const imgLeft = box.px - extent.cx * canvasSide
+      const baseY = box.py + 0.3 * OH_S * OH_K * r
+      const imgTop = baseY - extent.base * canvasSide
+      objectImg = (
+        <img
+          data-testid={art.testid}
+          src={art.src}
+          alt=""
+          draggable={false}
+          className="pointer-events-none absolute block"
+          style={{
+            left: `${((imgLeft - box.left) / box.dispW) * 100}%`,
+            top: `${((imgTop - box.top) / box.dispH) * 100}%`,
+            width: `${(canvasSide / box.dispW) * 100}%`,
+            aspectRatio: '1 / 1',
+          }}
+        />
+      )
+    }
+    return (
+      <button
+        key={key}
+        type="button"
+        data-testid={testid}
+        title={label}
+        aria-label={label}
+        onClick={onTap}
+        className="absolute block cursor-pointer border-0 bg-transparent p-0"
+        style={{
+          left: ohPctX(box.left),
+          top: ohPctY(box.top),
+          width: ohPctX(box.dispW),
+          height: ohPctY(box.dispH),
+          transition: 'left 700ms ease, top 700ms ease, width 700ms ease, height 700ms ease',
+        }}
+      >
+        <img
+          src={box.fit.image}
+          alt=""
+          draggable={false}
+          className="pointer-events-none block h-full w-full"
+        />
+        {objectImg}
+      </button>
+    )
+  }
+
   return (
     <div style={{ containerType: 'inline-size' }}>
       <div className="pb-1 pt-2 text-center">
@@ -1005,126 +1281,158 @@ export function TaskScene({
           {model.project.title}
         </div>
         <div style={{ fontSize: '1.55cqw', color: PAL.inkSoft }}>
-          each circle is one of its tasks — tap a task to enter its room
+          seen from above — each domed room is one of its tasks; tap a room to enter it
         </div>
+        {layout.unplaced.length > 0 && (
+          <div
+            data-testid="palace-unplaced-line"
+            style={{ fontSize: '1.55cqw', color: PAL.inkSoft }}
+          >
+            Not seated in this plan:{' '}
+            {layout.unplaced.map((u) => taskById.get(u.id)?.title ?? u.id).join(', ')} — Maeve
+            has their names.
+          </div>
+        )}
       </div>
 
       <div
         className="relative w-full select-none"
-        style={{ aspectRatio: '1 / 1' }}
+        style={{ aspectRatio: `${OVERHEAD_FRAME_W} / ${OVERHEAD_FRAME_H}` }}
         role="img"
-        aria-label={`Inside ${model.project.title} — its tasks`}
+        aria-label={`Inside ${model.project.title} from above — its tasks as domed rooms`}
       >
-        {/* the Zenaf background and the architecture dome — the
-            same frame the project level stands in */}
-        <img
-          data-testid="palace-zenaf-background"
-          src={plateImage}
-          alt=""
-          draggable={false}
-          className="absolute inset-0 block h-full w-full object-cover"
-        />
-        <img
-          data-testid="palace-architecture"
-          src={architectureImage}
-          alt=""
-          draggable={false}
+        {/* 1 — the sky band, and nothing else: the top of the
+            living-sky plate, stretched over the frame (no
+            mountains, no strata, no lake ride this crop) */}
+        <svg
+          data-testid="palace-sky"
           className="absolute inset-0 block h-full w-full"
+          viewBox="0 0 1024 400"
+          preserveAspectRatio="none"
+          aria-hidden
+        >
+          <image href={plateImage} x={0} y={0} width={1024} height={1536} preserveAspectRatio="none" />
+        </svg>
+
+        {/* 2 — the shell's back half, above the floor's centre
+            line, its floor opening cut away */}
+        <OverheadShellHalf half="back" />
+
+        {/* 3 — the floor: the study's pale paving inside the
+            view's floor ellipse */}
+        <div
+          data-testid="palace-floor"
+          className="absolute"
+          style={{
+            left: ohPctX(OH_CX - OH_FLOOR_RX),
+            top: ohPctY(OH_CY - OH_FLOOR_RY),
+            width: ohPctX(2 * OH_FLOOR_RX),
+            height: ohPctY(2 * OH_FLOOR_RY),
+            borderRadius: '50%',
+            backgroundImage: `url(${pavingImage})`,
+            backgroundSize: '31.25% 43.4%',
+          }}
         />
 
-        <div className="absolute inset-0" style={{ clipPath: CONTAINER_CLIP_PATH }}>
-          {/* the dependency lines — one for every pair the
-              packing did not seat as neighbours, drawn beneath
-              the circles, rim to rim, in plain stone tone */}
-          <svg
-            className="pointer-events-none absolute inset-0 block h-full w-full"
-            viewBox={`0 0 ${SCENE2_FRAME} ${SCENE2_FRAME}`}
-            aria-hidden
-          >
-            {layout.links.map((l) => {
-              const a = placedByKey.get(l.aKey)!
-              const b = placedByKey.get(l.bKey)!
-              const d = Math.hypot(b.x - a.x, b.y - a.y) || 1
-              const ux = (b.x - a.x) / d
-              const uy = (b.y - a.y) / d
-              return (
-                <line
-                  key={`${l.aKey}|${l.bKey}`}
-                  data-testid="palace-task-link"
-                  x1={a.x + ux * a.r}
-                  y1={a.y + uy * a.r}
-                  x2={b.x - ux * b.r}
-                  y2={b.y - uy * b.r}
-                  stroke={PAL.stoneDark}
-                  strokeWidth={3}
-                />
-              )
-            })}
-          </svg>
+        {/* 4 — the dependency lines, beneath the rooms */}
+        <svg
+          className="pointer-events-none absolute inset-0 block h-full w-full"
+          viewBox={`0 0 ${OVERHEAD_FRAME_W} ${OVERHEAD_FRAME_H}`}
+          preserveAspectRatio="none"
+          aria-hidden
+        >
+          {drawnLinks.map((l) => {
+            const d = Math.hypot(l.b.x - l.a.x, l.b.y - l.a.y) || 1
+            const ux = (l.b.x - l.a.x) / d
+            const uy = (l.b.y - l.a.y) / d
+            const [x1, y1] = ohProject(l.a.x + ux * l.a.r, l.a.y + uy * l.a.r)
+            const [x2, y2] = ohProject(l.b.x - ux * l.b.r, l.b.y - uy * l.b.r)
+            return (
+              <line
+                key={l.key}
+                data-testid="palace-task-link"
+                x1={x1}
+                y1={y1}
+                x2={x2}
+                y2={y2}
+                stroke={PAL.stoneDark}
+                strokeWidth={3}
+              />
+            )
+          })}
+        </svg>
 
-          {/* the tasks — one circle each, drawn back-to-front
-              by depth, as the floors are */}
-          {[...layout.tasks]
-            .sort((a, b) => a.y + a.r - (b.y + b.r))
-            .map((p) => {
-              const task = taskByKey.get(p.key)!
-              const glassColour = glassColorFor(
-                interactionIndex.get(interactionKey('task', task.id)),
-              )
-              return (
-                <button
-                  key={task.id}
-                  type="button"
-                  data-testid={`palace-task-${task.id}`}
-                  title={task.title}
-                  aria-label={task.title}
-                  onClick={() => onOpenTask(task.id)}
-                  className="absolute block cursor-pointer overflow-hidden rounded-full p-0"
+        {/* 5 — the rooms, back-to-front, the hearth among them */}
+        {drawables.map((d) => {
+          if (d.kind === 'hearth') {
+            return (
+              <React.Fragment key="hearth">
+                <div
+                  data-testid="palace-overhead-hearth"
+                  className="pointer-events-none absolute"
                   style={{
-                    left: pct(p.x - p.r),
-                    top: pct(p.y - p.r),
-                    width: pct(2 * p.r),
-                    aspectRatio: '1 / 1',
-                    background: SCENE2_CIRCLE,
+                    left: ohPctX(OH_CX - OH_S * 12),
+                    top: ohPctY(OH_CY - OH_S * OH_K * 12),
+                    width: ohPctX(2 * OH_S * 12),
+                    height: ohPctY(2 * OH_S * OH_K * 12),
                   }}
                 >
-                  <FloorPlateImage plate={plate} colour={glassColour} />
-                  <span
-                    className="pointer-events-none absolute inset-0 rounded-full"
-                    style={{
-                      background:
-                        'radial-gradient(circle at 50% 42%, rgba(243, 234, 214, 0.30), rgba(243, 234, 214, 0.06) 72%)',
-                    }}
+                  <div
+                    className="absolute inset-0 rounded-full"
+                    style={{ background: '#8a7358' }}
                   />
-                </button>
-              )
-            })}
-        </div>
+                  <div
+                    className="absolute rounded-full"
+                    style={{ inset: '16%', background: '#5d4630' }}
+                  />
+                  <div
+                    className="absolute rounded-full"
+                    style={{ inset: '31%', background: '#3d2b1c' }}
+                  />
+                </div>
+                <img
+                  data-testid="palace-overhead-fire"
+                  src={fireImage}
+                  alt=""
+                  draggable={false}
+                  className="pointer-events-none absolute block"
+                  style={{
+                    left: ohPctX(OH_CX - (OH_FLAME_H * FLAME_ASPECT) / 2),
+                    bottom: ohPctY(OVERHEAD_FRAME_H - (OH_CY + 22)),
+                    width: ohPctX(OH_FLAME_H * FLAME_ASPECT),
+                  }}
+                />
+              </React.Fragment>
+            )
+          }
+          if (d.kind === 'fixture') {
+            const f = d.fixture
+            const art = artifactArt(f.kind)
+            return renderRoom(
+              f.id,
+              f.x,
+              f.y,
+              f.r,
+              `palace-artifact-${f.kind}`,
+              art.label,
+              () => onOpenArtifact(f.kind),
+              f.kind,
+            )
+          }
+          const task = taskById.get(d.id)
+          return renderRoom(
+            d.id,
+            d.x,
+            d.y,
+            d.r,
+            `palace-task-${d.id}`,
+            task?.title ?? d.id,
+            () => onOpenTask(d.id),
+          )
+        })}
 
-        {/* the hearth — the project frame's one fire, the same
-            ring and the same founder flame as the level above */}
-        <div
-          data-testid="palace-building-hearth"
-          className="pointer-events-none absolute"
-          style={{
-            left: pct(hearth.x - hearth.r),
-            top: pct(hearth.y - hearth.r),
-            width: pct(2 * hearth.r),
-            aspectRatio: '1 / 1',
-          }}
-        />
-        <img
-          data-testid="palace-building-fire"
-          src={fireImage}
-          alt=""
-          draggable={false}
-          className="pointer-events-none absolute block"
-          style={{
-            left: pct(hearth.x - (HEARTH_FLAME_H * FLAME_ASPECT) / 2),
-            bottom: pct(SCENE2_FRAME - hearth.y),
-            width: pct(HEARTH_FLAME_H * FLAME_ASPECT),
-          }}
-        />
+        {/* 6 — the shell's front band, over the rooms' feet */}
+        <OverheadShellHalf half="front" />
 
         {model.tasks.length === 0 && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">

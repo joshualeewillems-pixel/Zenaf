@@ -7,18 +7,26 @@
  * painting. (The compound and building scenes are positioned DOM
  * since Scenes 1 and 2, and the room scene since the chamber
  * rebuild. The floor-plan scene is retired — founder, 2026-11-26:
- * the dome serves both levels, so the task level renders here in
- * its place: positioned DOM circles over one SVG lines layer.)
+ * the dome serves both levels. The task level is the overhead
+ * plan since 2026-11-27: positioned DOM domed rooms over the
+ * sky/shell SVG layers and one SVG lines layer.)
  * True on-device painting remains the founder's visual acceptance.
  */
 import { describe, it, expect, vi } from 'vitest'
 import * as React from 'react'
 import { createRoot } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
-import { BuildingScene, CompoundScene, RoomScene, TaskScene } from './palaceCanvas'
-import { buildBuilding, buildCompound, buildRoom, buildTaskLevel, type PalaceData } from './palaceLogic'
-import { planTaskScene, taskSizeWeight, type RoomPlate } from './palaceScene2Logic'
-import type { SubjectInteraction } from './palaceSceneLogic'
+import { BuildingScene, CompoundScene, OverheadScene, RoomScene } from './palaceCanvas'
+import {
+  buildBuilding,
+  buildCompound,
+  buildRoom,
+  buildTaskLevel,
+  type PalaceData,
+  type TaskLevelModel,
+} from './palaceLogic'
+import { planOverheadLayout, type OverheadLayout } from './palaceOverheadLogic'
+import { taskSizeWeight, type RoomPlate } from './palaceScene2Logic'
 import type { Initiative, Project, Task } from '../vision-execution/types'
 
 /* The glass hook is stubbed to a marker URL: jsdom cannot load or
@@ -72,6 +80,27 @@ const TASKS = [
   task({ id: 'tf', title: 'Convergent', dependency_ids: ['ta', 'tb'] }),
 ]
 
+/** The overhead layout for a task-level model, computed the way
+ *  the view computes it (cold, with the standing fixtures). */
+function overheadLayoutFor(model: TaskLevelModel): OverheadLayout {
+  const partners = new Map<string, Set<string>>()
+  const link = (a: string, b: string) => {
+    const set = partners.get(a) ?? new Set<string>()
+    set.add(b)
+    partners.set(a, set)
+  }
+  for (const l of model.links) {
+    link(l.aId, l.bId)
+    link(l.bId, l.aId)
+  }
+  return planOverheadLayout(
+    model.tasks.map((t) => ({ id: t.id, weight: taskSizeWeight(t.estimated_hours) })),
+    partners,
+    null,
+    { fixtures: true },
+  )
+}
+
 const DATA: PalaceData = {
   ideas: [{ id: 'id1', title: 'Apprentice', summary: '', description: '', status: 'New', tags: [], created_by: '', created_at: '', updated_at: '' }],
   initiatives: [I1],
@@ -90,8 +119,11 @@ describe('scene geometry scan', () => {
         onAttend: () => {}, onOpenBuilding: () => {}, onOpenProject: () => {}, onOpenLooseTasks: () => {},
         onSelectIdea: () => {}, selectedIdeaId: null,
       }))],
-      ['tasks', renderToHtml(React.createElement(TaskScene, {
-        model: buildTaskLevel(DATA, P1), plate: 'rose', onOpenTask: () => {},
+      ['tasks', renderToHtml(React.createElement(OverheadScene, {
+        model: buildTaskLevel(DATA, P1),
+        layout: overheadLayoutFor(buildTaskLevel(DATA, P1)),
+        onOpenTask: () => {},
+        onOpenArtifact: () => {},
       }))],
       ['room-waiting', renderToHtml(React.createElement(RoomScene, {
         model: buildRoom(DATA, TASKS[2]), lit: true, onBringFire: () => {}, onThreshold: () => {},
@@ -113,8 +145,9 @@ describe('scene geometry scan', () => {
     // The compound serializes NO SVG anymore — the drawn strip
     // below the plan is retired (founder, 2026-11-26: everything
     // stands in the plan), so the compound is positioned DOM end
-    // to end. The task level still carries one SVG layer — the
-    // dependency lines beneath the circles. The room scenes are
+    // to end. The task level (the overhead plan) carries SVG
+    // layers — the sky band, the shell's two halves, the
+    // dependency lines beneath the rooms. The room scenes are
     // the furnished chamber now — positioned DOM over the
     // founder's rose plate, no drawn room geometry to scan.
     expect(scenes[0][1]).not.toContain('<svg')
@@ -136,23 +169,33 @@ describe('scene geometry scan', () => {
     expect(compound).not.toContain('palace-loose-task-lt')
     expect(compound).toContain('palace-drawing-table')
     expect(compound).toContain('palace-idea-id1')
-    // The task level stands in the same dome: the project's
-    // tasks as circles (its subtask stands in no circle), the
-    // one hearth with the same founder flame, and exactly the
-    // dependency lines the packer itself reports — a line for
-    // every pair it did not seat as neighbours, none for the
-    // pairs it did.
+    // The task level is the overhead plan: the project's tasks
+    // as domed rooms (its subtask stands in no room), the shell
+    // in its two halves around the paved floor under the sky
+    // band, the one hearth with the founder flame, the four
+    // standing artifact rooms — and exactly the dependency lines
+    // for the pairs the packing did not seat as neighbours.
     const tasksHtml = scenes[1][1]
     expect(tasksHtml).toContain('palace-task-ta')
     expect(tasksHtml).toContain('palace-task-tf')
     expect(tasksHtml).not.toContain('palace-task-te')
-    expect(tasksHtml).toContain('palace-building-hearth')
+    expect(tasksHtml).toContain('palace-sky')
+    expect(tasksHtml).toContain('palace-shell-back')
+    expect(tasksHtml).toContain('palace-shell-front')
+    expect(tasksHtml).toContain('palace-floor')
+    expect(tasksHtml).toContain('palace-overhead-hearth')
     expect(tasksHtml).toContain('palace-fire')
+    for (const kind of ['vessel', 'scales', 'table', 'chest']) {
+      expect(tasksHtml).toContain(`palace-artifact-${kind}`)
+    }
     const taskLevel = buildTaskLevel(DATA, P1)
-    const expectedLinks = planTaskScene(
-      taskLevel.tasks.map((t) => ({ key: t.id, weight: taskSizeWeight(t.estimated_hours) })),
-      taskLevel.links.map((l) => ({ aKey: l.aId, bKey: l.bId })),
-    ).links.length
+    const scanLayout = overheadLayoutFor(taskLevel)
+    const scanPlaced = new Map(scanLayout.placed.map((p) => [p.id, p]))
+    const expectedLinks = taskLevel.links.filter((l) => {
+      const a = scanPlaced.get(l.aId)!
+      const b = scanPlaced.get(l.bId)!
+      return Math.hypot(b.x - a.x, b.y - a.y) - a.r - b.r > 6 + 1.5
+    }).length
     expect((tasksHtml.match(/palace-task-link/g) ?? []).length).toBe(expectedLinks)
     // The room furniture is the founder's supplied art (2026-11-26),
     // state-selected: this room's task carries no estimate, no
@@ -290,7 +333,7 @@ describe('scene geometry scan', () => {
   })
 })
 
-describe('the task level — dependencies drawn only where the packing could not join them', () => {
+describe('the task level (the overhead plan) — dependencies drawn only where the packing could not join them', () => {
   function taskLevelData(
     specs: { id: string; hours: number | null; deps?: string[] }[],
   ): PalaceData {
@@ -314,21 +357,22 @@ describe('the task level — dependencies drawn only where the packing could not
     }
   }
 
-  function renderTasks(data: PalaceData, interactions?: SubjectInteraction[]): string {
+  function renderTasks(data: PalaceData): string {
     const proj = data.projects[0]
+    const model = buildTaskLevel(data, proj)
     return renderToHtml(
-      React.createElement(TaskScene, {
-        model: buildTaskLevel(data, proj),
-        plate: 'rose' as RoomPlate,
+      React.createElement(OverheadScene, {
+        model,
+        layout: overheadLayoutFor(model),
         onOpenTask: () => {},
-        interactions,
+        onOpenArtifact: () => {},
       }),
     )
   }
 
   it('a pair seated as neighbours draws no line', () => {
-    // Six tasks; Gamma-of-this-fixture (t4) waits on t3 — the
-    // packing seats them tangent, so no line is drawn for them.
+    // Six tasks; t4 waits on t3 — the packing seats partners as
+    // neighbours where it can, so no line is drawn for them.
     const data = taskLevelData([
       { id: 't1', hours: 10 }, { id: 't2', hours: 6 }, { id: 't3', hours: 4 },
       { id: 't4', hours: 3, deps: ['t3'] }, { id: 't5', hours: 2 }, { id: 't6', hours: 1 },
@@ -339,35 +383,31 @@ describe('the task level — dependencies drawn only where the packing could not
   })
 
   it('a pair the packing cannot join draws exactly one line', () => {
-    // Ten tasks of near-equal estimate crowd the pockets; the
-    // pair joins the two unit-estimate tasks, which seat last
-    // into separate pockets — exactly one line, and no other
-    // pair exists to draw one. (Fixture re-based 2026-11-26:
-    // the flame's breathing room reshaped the pockets and the
-    // old descending-weights pair now seats adjacent.)
+    // Twenty tasks crowd the floor; the pair joins the two
+    // unit-estimate tasks, which seat last into separate pockets
+    // (their measured rim gap under the packing law is ~55
+    // units, far beyond the preferred passage) — exactly one
+    // line, and no other pair exists to draw one.
     const data = taskLevelData([
-      { id: 'a', hours: 26 }, { id: 'b', hours: 24 }, { id: 'c', hours: 22 },
-      { id: 'd', hours: 20 }, { id: 'e', hours: 18 }, { id: 'f', hours: 16 },
-      { id: 'g', hours: 14 }, { id: 'h', hours: 12 }, { id: 'x', hours: 1 },
+      ...Array.from({ length: 18 }, (_, i) => ({ id: `r${i}`, hours: 20 - i })),
+      { id: 'x', hours: 1 },
       { id: 'y', hours: 1, deps: ['x'] },
     ])
     const html = renderTasks(data)
     expect((html.match(/palace-task-link/g) ?? []).length).toBe(1)
   })
 
-  it('a task’s stained glass takes the colour of the seat talking about that task', () => {
+  it('the shell takes no seat tint — its stained glass is baked art', () => {
     const data = taskLevelData([
       { id: 't1', hours: 10 }, { id: 't2', hours: 6 }, { id: 't3', hours: 4 },
       { id: 't4', hours: 3, deps: ['t3'] }, { id: 't5', hours: 2 }, { id: 't6', hours: 1 },
     ])
-    const interactions: SubjectInteraction[] = [
-      { entity_type: 'task', entity_id: 't3', total: 2, per_seat: { champion: 2 } },
-    ]
-    const html = renderTasks(data, interactions)
-    // t3's circle asks for the rose plate tinted with Valen's
-    // colour (the marker the stubbed glass hook returns); the
-    // uninteracted tasks keep the natural master.
-    expect(html).toContain('glass-tinted:rose:#e24e4e')
-    expect(html).toContain('palace-room-rose')
+    const html = renderTasks(data)
+    // No circle asks the glass hook for a tint here (the marker
+    // the stubbed hook returns never appears): the overhead's
+    // shell is the extracted art itself, in both halves.
+    expect(html).not.toContain('glass-tinted')
+    expect(html).toContain('dome-shell-extracted-v2')
+    expect(html).toContain('founder-domed-')
   })
 })

@@ -1298,7 +1298,7 @@ export function OverheadScene({
       </div>
 
       <div
-        className="relative w-full select-none"
+        className="relative w-full select-none overflow-hidden"
         style={{ aspectRatio: `${OVERHEAD_FRAME_W} / ${OVERHEAD_FRAME_H}` }}
         role="img"
         aria-label={`Inside ${model.project.title} from above — its tasks as domed rooms`}
@@ -1317,14 +1317,23 @@ export function OverheadScene({
           aria-hidden
         />
 
-        {/* 1b — the palace below (founder, 2026-11-27): the
-            architecture's lower portion standing under the
-            plan, so the dome sits on the palace instead of
-            floating in the sky. Its drum flanks the plan's
-            lower sides; its stepped podium lands at the
-            frame's bottom; the shell's front wall, drawn
-            last, covers its top. Colour-graded to the same
-            palace family as the shell and rooms. */}
+        {/* 1b — the palace below (founder, 2026-11-27): a
+            purpose-made palace body standing under the plan,
+            so the dome sits on the palace instead of floating
+            in the sky. GPT drew the drum and stepped podium;
+            the asset is angle-corrected to the dome's own
+            projection (its podium ellipse stretched to the
+            floor's K) and colour-graded to the palace family.
+            The placement below is the founder's fitted one
+            (study proofs v8–v14, settled 2026-11-27): the
+            drum registered to the shell wall's outer width,
+            widened a touch, stretched top-to-bottom twice,
+            nudged right, down, up and half back left until
+            it sat right under the dome. In frame units the
+            piece (native 1283×1184) displays at 1731×1891
+            from (-65, 530); the frame's overflow-hidden
+            clips its spill, and the shell's front wall,
+            drawn last, covers its top. */}
         <img
           data-testid="palace-below"
           src={palaceBelowImage}
@@ -1332,10 +1341,10 @@ export function OverheadScene({
           draggable={false}
           className="pointer-events-none absolute block"
           style={{
-            left: 0,
-            top: ohPctY(1153),
-            width: ohPctX(OVERHEAD_FRAME_W),
-            height: ohPctY(737),
+            left: '-4.17%',
+            top: '28.04%',
+            width: '110.98%',
+            height: '100.03%',
           }}
           aria-hidden
         />

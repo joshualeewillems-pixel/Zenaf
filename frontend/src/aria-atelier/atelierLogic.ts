@@ -199,26 +199,15 @@ export function buildGarden(bundle: GardenBundle, cairnIndex: CairnIndex): Ateli
 }
 
 /**
- * Deterministic garden layout: cairns and loose stones on a ring
- * around the well (centre 50%, 44%), starting at the top and running
- * clockwise, clamped inside the field. Pure — the same garden always
- * lays out the same way. (Kept for the fan's anchor math; the ring
- * itself is laid out by gardenLayout, which guarantees the shown
- * items' labels never overlap.)
+ * The garden's face is the founder's painting (Screen 1, ruled
+ * 2026-11-27): the Zenaf sky over the raked-sand garden, the stone
+ * basin at its centre holding the live well. Shown items stand on
+ * painted-scene seats (GARDEN_SEATS, laid out by scenePlacements,
+ * which guarantees the shown items' labels never overlap, never
+ * leave the scene, and never cover the basin). The cast's face is
+ * the second painting (Screen 2): the same garden from above, the
+ * formation stack drawing on the water inside its well disc.
  */
-export function gardenPositions(count: number): Array<{ x: number; y: number }> {
-  const out: Array<{ x: number; y: number }> = []
-  for (let i = 0; i < count; i++) {
-    const angle = (-90 + (360 / Math.max(count, 1)) * i) * (Math.PI / 180)
-    const x = 50 + 36 * Math.cos(angle)
-    const y = 44 + 35 * Math.sin(angle)
-    out.push({
-      x: Math.min(86, Math.max(14, x)),
-      y: Math.min(83, Math.max(17, y)),
-    })
-  }
-  return out
-}
 
 /* ------------------------------------------------------------------ */
 /* Parents + loose — the garden's default face (founder, 2026-11-24)   */
@@ -285,25 +274,78 @@ export function looseCairns(garden: AtelierGarden): AtelierCairn[] {
 }
 
 /* ------------------------------------------------------------------ */
-/* The ring layout — shown labels NEVER overlap                        */
+/* The painted scenes — measured geometry, seats, shown labels         */
 /* ------------------------------------------------------------------ */
 
 /**
- * The garden field's reference size: the layout is computed in
- * pixels on a 360×396 field (the garden's 10/11 aspect at the
- * narrowest pane the surface is designed for — a phone's stacked
- * world pane). On any wider field the same percentage positions
- * spread further apart in pixels while the labels keep their
- * pixel size, so a layout that is overlap-free here stays
- * overlap-free there.
+ * The scene element presents the founder's painting at its natural
+ * aspect (1086×1448), width 100% of the world pane, never cropped.
+ * The layout is computed in pixels on a 360×480 reference scene
+ * (the painting's 3/4 aspect at the narrowest pane the surface is
+ * designed for — a phone's stacked world pane). On any wider scene
+ * the same percentage positions spread further apart in pixels
+ * while the labels keep their pixel size, so a layout that is
+ * overlap-free here stays overlap-free there.
  */
-export const GARDEN_REF_W = 360
-export const GARDEN_REF_H = 396
-/** The well's centre and radius on the reference field (the well
- *  is 47% of the field's width, centred at 50%, 44%). */
-export const GARDEN_WELL = { cx: GARDEN_REF_W / 2, cy: GARDEN_REF_H * 0.44, r: (GARDEN_REF_W * 0.47) / 2 }
+export const SCENE_REF_W = 360
+export const SCENE_REF_H = 480
 /** Clear space kept between neighbouring footprints. */
 export const GARDEN_GAP = 8
+
+/**
+ * Screen 1's basin water, measured on the painting: the ellipse
+ * the live well element covers. Centre and radii as fractions of
+ * the scene (rx of its width, ry of its height). The well element
+ * is a circle of diameter 2·rx of the scene's width, presented
+ * with scaleY so it lands in the basin's perspective: the
+ * ellipse's height ÷ its width on the painting's own pixels,
+ * (0.036 × 1448) / (0.142 × 1086) ≈ 0.338.
+ */
+export const SCENE1_BASIN = { cx: 0.589, cy: 0.506, rx: 0.142, ry: 0.036 }
+export const SCENE1_WELL_SCALE_Y = 0.338
+
+/**
+ * Screen 2's well, measured on the painting: the disc the live
+ * water and the formation stack are clipped to (centre as
+ * fractions of the scene, r of its width), and the painting's own
+ * stone ring and lotus, carried as overlays above the water at
+ * their cropped placements (fractions of the scene).
+ */
+export const SCENE2_DISC = { cx: 0.488, cy: 0.49, r: 0.164 }
+export const SCENE2_RING_OVERLAY = { left: 352 / 1086, top: 532 / 1448, width: 356 / 1086 }
+export const SCENE2_LOTUS_OVERLAY = { left: 311 / 1086, top: 616 / 1448, width: 163 / 1086 }
+
+/** The basin ellipse on the reference scene, px. */
+export const SCENE_BASIN_REF = {
+  cx: SCENE1_BASIN.cx * SCENE_REF_W,
+  cy: SCENE1_BASIN.cy * SCENE_REF_H,
+  rx: SCENE1_BASIN.rx * SCENE_REF_W,
+  ry: SCENE1_BASIN.ry * SCENE_REF_H,
+}
+
+/**
+ * The painted-scene seat table: seats on the sand around the
+ * basin, in prominence order — the shown items (initiatives,
+ * loose cairns, loose stones, in display order) take seats in
+ * this order. x/y are fractions of the scene; scale is the seat's
+ * depth scale (foreground seats stand larger, back seats
+ * smaller). Every seat anchor stands clear of the basin ellipse;
+ * scenePlacements keeps every footprint clear of it too.
+ */
+export const GARDEN_SEATS: Array<{ x: number; y: number; scale: number }> = [
+  { x: 0.24, y: 0.7, scale: 1.15 },
+  { x: 0.78, y: 0.72, scale: 1.15 },
+  { x: 0.12, y: 0.55, scale: 1.0 },
+  { x: 0.88, y: 0.57, scale: 1.0 },
+  { x: 0.3, y: 0.86, scale: 1.25 },
+  { x: 0.66, y: 0.87, scale: 1.25 },
+  { x: 0.33, y: 0.4, scale: 0.8 },
+  { x: 0.74, y: 0.41, scale: 0.8 },
+  { x: 0.16, y: 0.38, scale: 0.75 },
+  { x: 0.86, y: 0.36, scale: 0.75 },
+  { x: 0.06, y: 0.78, scale: 1.1 },
+  { x: 0.94, y: 0.8, scale: 1.1 },
+]
 
 export interface GardenFootprint {
   /** Full footprint width in px: the wider of the pile and its
@@ -314,16 +356,16 @@ export interface GardenFootprint {
 }
 
 export interface GardenPlacement {
-  /** Anchor position, % of the field (the cairn's translate point:
+  /** Anchor position, % of the scene (the cairn's translate point:
    *  centred horizontally, 56% down its footprint). */
   x: number
   y: number
-  /** Uniform scale applied to every item in this layout (the
-   *  cairn element's transform): 1 for gardens that fit at full
-   *  size, smaller when the shown set is crowded — the whole set
-   *  shrinks together rather than collapsing into overlap. */
+  /** The cairn element's transform scale: its seat's depth scale,
+   *  times the layout's uniform shrink when a crowded garden does
+   *  not fit at seat size (the whole set shrinks together rather
+   *  than collapsing into overlap). */
   scale: number
-  /** The footprint box on the reference field, px — at the
+  /** The footprint box on the reference scene, px — at the
    *  layout's scale, i.e. the box as actually rendered. */
   box: { left: number; top: number; width: number; height: number }
 }
@@ -372,54 +414,61 @@ function overlaps(a: PlacedBox, b: PlacedBox, gap: number): { ox: number; oy: nu
   return ox > 0 && oy > 0 ? { ox, oy } : null
 }
 
-function clampToField(p: PlacedBox): boolean {
+function clampToScene(p: PlacedBox): boolean {
   const b = boxOf(p)
-  const bleed = 6 // the garden already lets piles kiss the edge (overflow hidden)
+  // No bleed: every footprint — pile, name label, count line —
+  // stays inside the scene. (The ring layout let boxes kiss the
+  // edge under overflow:hidden, which is how name labels came to
+  // clip off the garden's right edge on device.)
   let dx = 0
   let dy = 0
-  if (b.left < -bleed) dx = -bleed - b.left
-  if (b.left + b.width > GARDEN_REF_W + bleed) dx = GARDEN_REF_W + bleed - (b.left + b.width)
-  if (b.top < -bleed) dy = -bleed - b.top
-  if (b.top + b.height > GARDEN_REF_H + bleed) dy = GARDEN_REF_H + bleed - (b.top + b.height)
+  if (b.left < 0) dx = -b.left
+  if (b.left + b.width > SCENE_REF_W) dx = SCENE_REF_W - (b.left + b.width)
+  if (b.top < 0) dy = -b.top
+  if (b.top + b.height > SCENE_REF_H) dy = SCENE_REF_H - (b.top + b.height)
   p.cx += dx
   p.cy += dy
   return dx !== 0 || dy !== 0
 }
 
-/** The well is water (founder, 2026-11-25: "let's not populate
- *  artifacts on top of the well"). NOTHING the layout places may
- *  intersect the well disc: no cairn, no stone, no label — the
- *  footprint box IS the pile plus its name label and count line,
- *  so box-vs-disc disjointness covers all three, and an item whose
- *  footprint merely touches the rim's edge from outside is fine
- *  while one whose footprint crosses the disc is a violation.
- *  (Before this fix the layout contained no well check at all —
- *  the relaxation's penalty counted only item-vs-item overlap, so
- *  the shake step could teleport the worst-overlapping cairn to
- *  the field's emptiest spot: the middle of the well.) The layout's
- *  other hard guarantee stands alongside: the shown cairns' LABELS
- *  never overlap each other. */
-
-/** Does this rendered box (px, reference field) intersect the
- *  well disc? Rect–circle test: the box's closest point to the
- *  disc centre must lie at or beyond the radius. */
-export function boxIntersectsWell(box: { left: number; top: number; width: number; height: number }): boolean {
-  const nx = Math.max(box.left, Math.min(GARDEN_WELL.cx, box.left + box.width))
-  const ny = Math.max(box.top, Math.min(GARDEN_WELL.cy, box.top + box.height))
-  const dx = nx - GARDEN_WELL.cx
-  const dy = ny - GARDEN_WELL.cy
-  return dx * dx + dy * dy < GARDEN_WELL.r * GARDEN_WELL.r
+function boxInScene(p: PlacedBox): boolean {
+  const b = boxOf(p)
+  return b.left >= 0 && b.top >= 0 && b.left + b.width <= SCENE_REF_W && b.top + b.height <= SCENE_REF_H
 }
 
-/** Push a placed box radially out of the well disc until its
- *  footprint is disjoint (then re-clamp to the field). Returns
+/** The basin is water (founder, 2026-11-25: "let's not populate
+ *  artifacts on top of the well"). NOTHING the layout places may
+ *  cover the basin ellipse: no cairn, no stone, no label — the
+ *  footprint box IS the pile plus its name label and count line,
+ *  so box-vs-ellipse disjointness covers all three, and an item
+ *  whose footprint merely touches the water's edge from outside
+ *  is fine while one whose footprint crosses it is a violation.
+ *  The layout's other hard guarantees stand alongside: the shown
+ *  cairns' LABELS never overlap each other, and every footprint
+ *  stays inside the scene. */
+
+/** Does this rendered box (px, reference scene) intersect the
+ *  basin ellipse? Tested in the y-scaled space where the ellipse
+ *  is a circle (a rect stays a rect under the axis scaling, so
+ *  the closest-point test stays exact). */
+export function boxIntersectsBasin(box: { left: number; top: number; width: number; height: number }): boolean {
+  const s = SCENE_BASIN_REF.rx / SCENE_BASIN_REF.ry
+  const nx = Math.max(box.left, Math.min(SCENE_BASIN_REF.cx, box.left + box.width))
+  const ny = Math.max(box.top * s, Math.min(SCENE_BASIN_REF.cy * s, (box.top + box.height) * s))
+  const dx = nx - SCENE_BASIN_REF.cx
+  const dy = ny - SCENE_BASIN_REF.cy * s
+  return dx * dx + dy * dy < SCENE_BASIN_REF.rx * SCENE_BASIN_REF.rx
+}
+
+/** Push a placed box radially out of the basin ellipse until its
+ *  footprint is disjoint (then re-clamp to the scene). Returns
  *  true when the box moved. Bounded: a box that cannot clear the
- *  disc inside the field is left where the steps end — the layout
- *  tests pin the realistic gardens. */
-function resolveWell(p: PlacedBox): boolean {
-  if (!boxIntersectsWell(boxOf(p))) return false
-  let dx = p.cx - GARDEN_WELL.cx
-  let dy = p.cy - GARDEN_WELL.cy
+ *  ellipse inside the scene is left where the steps end — the
+ *  layout tests pin the realistic gardens. */
+function resolveBasin(p: PlacedBox): boolean {
+  if (!boxIntersectsBasin(boxOf(p))) return false
+  let dx = p.cx - SCENE_BASIN_REF.cx
+  let dy = p.cy - SCENE_BASIN_REF.cy
   const len = Math.hypot(dx, dy)
   if (len < 0.001) {
     dx = 0
@@ -428,250 +477,117 @@ function resolveWell(p: PlacedBox): boolean {
     dx /= len
     dy /= len
   }
-  for (let step = 0; step < 90; step++) {
-    p.cx += dx * 4
-    p.cy += dy * 4
-    clampToField(p)
-    if (!boxIntersectsWell(boxOf(p))) return true
+  for (let step = 0; step < 120; step++) {
+    p.cx += dx * 3
+    p.cy += dy * 3
+    clampToScene(p)
+    if (!boxIntersectsBasin(boxOf(p))) return true
   }
   return true
 }
 
 /** Deterministic de-overlap: push overlapping footprints apart
  *  along their smaller overlap axis, keep every box out of the
- *  well and inside the field, until nothing overlaps or the
- *  iteration budget runs out. Returns true when overlap-free. */
-/** Total pairwise overlap (area, gap-inflated) one box has with
- *  the rest — the penalty a placement pays. Standing on the well
- *  dominates any item overlap, so the shake step never chooses
- *  the disc as an escape. */
-function penaltyOf(placed: PlacedBox[], idx: number, gap: number): number {
-  let total = 0
-  if (boxIntersectsWell(boxOf(placed[idx]))) total += 1_000_000
-  for (let j = 0; j < placed.length; j++) {
-    if (j === idx) continue
-    const o = overlaps(placed[idx], placed[j], gap)
-    if (o) total += o.ox * o.oy
-  }
-  return total
-}
-
-/** Escape a local minimum: move the worst-overlapping box to
- *  the field position (coarse grid) with the lowest penalty. */
-function shake(placed: PlacedBox[], gap: number): boolean {
-  let worst = -1
-  let worstPenalty = 0
-  for (let i = 0; i < placed.length; i++) {
-    const p = penaltyOf(placed, i, gap)
-    if (p > worstPenalty) {
-      worstPenalty = p
-      worst = i
-    }
-  }
-  if (worst < 0) return false
-  const box = placed[worst]
-  const home = { cx: box.cx, cy: box.cy }
-  let best = { cx: box.cx, cy: box.cy }
-  let bestPenalty = worstPenalty
-  for (let gx = box.w / 2 - 6; gx <= GARDEN_REF_W - box.w / 2 + 6; gx += 14) {
-    for (let gy = box.h * 0.56 - 6; gy <= GARDEN_REF_H - box.h * 0.44 + 6; gy += 14) {
-      box.cx = gx
-      box.cy = gy
-      const p = penaltyOf(placed, worst, gap)
-      if (p < bestPenalty) {
-        bestPenalty = p
-        best = { cx: gx, cy: gy }
-      }
-    }
-  }
-  box.cx = best.cx
-  box.cy = best.cy
-  return best.cx !== home.cx || best.cy !== home.cy
-}
-
+ *  basin and inside the scene, until nothing overlaps or the
+ *  iteration budget runs out. Returns true when every guarantee
+ *  holds: pairwise gap respected, basin clear, all in-scene. */
 function relax(placed: PlacedBox[], gap: number): boolean {
   const settled = () =>
-    placed.every((p) => !boxIntersectsWell(boxOf(p))) &&
-    placed.every((p, i) => placed.every((q, j) => i === j || !overlaps(p, q, gap)))
-  for (let round = 0; round < 8; round++) {
-    for (let iter = 0; iter < 400; iter++) {
-      let moved = false
-      for (let i = 0; i < placed.length; i++) {
-        for (let j = i + 1; j < placed.length; j++) {
-          const o = overlaps(placed[i], placed[j], gap)
-          if (!o) continue
-          moved = true
-          const a = placed[i]
-          const b = placed[j]
-          if (o.ox < o.oy) {
-            const dir = b.cx >= a.cx ? 1 : -1
-            a.cx -= (dir * o.ox) / 2
-            b.cx += (dir * o.ox) / 2
-          } else {
-            const dir = b.cy >= a.cy ? 1 : -1
-            a.cy -= (dir * o.oy) / 2
-            b.cy += (dir * o.oy) / 2
-          }
+    placed.every((p) => boxInScene(p) && !boxIntersectsBasin(boxOf(p))) &&
+    placed.every((p, i) => placed.every((q, k) => i === k || !overlaps(p, q, gap)))
+  for (let iter = 0; iter < 600; iter++) {
+    let moved = false
+    for (let i = 0; i < placed.length; i++) {
+      for (let j = i + 1; j < placed.length; j++) {
+        const o = overlaps(placed[i], placed[j], gap)
+        if (!o) continue
+        moved = true
+        const a = placed[i]
+        const b = placed[j]
+        if (o.ox < o.oy) {
+          const dir = b.cx >= a.cx ? 1 : -1
+          a.cx -= (dir * o.ox) / 2
+          b.cx += (dir * o.ox) / 2
+        } else {
+          const dir = b.cy >= a.cy ? 1 : -1
+          a.cy -= (dir * o.oy) / 2
+          b.cy += (dir * o.oy) / 2
         }
       }
-      for (const p of placed) {
-        if (clampToField(p)) moved = true
-        if (resolveWell(p)) moved = true
-      }
-      if (!moved) break
     }
-    if (settled()) return true
-    if (!shake(placed, gap)) break
+    for (const p of placed) {
+      if (clampToScene(p)) moved = true
+      if (resolveBasin(p)) moved = true
+    }
+    if (!moved) break
   }
   return settled()
 }
 
-interface RingConfig {
-  twoRings: boolean
-  /** How items are dealt to the two rings: by balanced arc load,
-   *  in consecutive pairs, or strictly alternating. */
-  deal: 'load' | 'pairs' | 'alternate'
-  inner: { rx: number; ry: number }
-  /** Inner ring's start offset, in slots of its first item. */
-  innerOffsetSlots: number
-}
-
 /**
- * Ring start by arc-length allocation: each item claims arc
- * equal to its footprint width plus the gap, and stands at its
- * claim's midpoint — neighbours start separated by construction,
- * and the relaxation only has to polish. The inner ring starts
- * offset, so its items sit in the outer ring's gaps rather than
- * directly behind its piles.
- */
-function ringStart(items: GardenFootprint[], cfg: RingConfig): PlacedBox[] {
-  const rings: number[][] = cfg.twoRings ? [[], []] : [[...items.keys()]]
-  if (cfg.twoRings) {
-    if (cfg.deal === 'load') {
-      const loads = [0, 0]
-      items.forEach((f, i) => {
-        const r = loads[0] <= loads[1] ? 0 : 1
-        rings[r].push(i)
-        loads[r] += f.widthPx + GARDEN_GAP
-      })
-    } else if (cfg.deal === 'pairs') {
-      items.forEach((_, i) => rings[Math.floor(i / 2) % 2].push(i))
-    } else {
-      items.forEach((_, i) => rings[i % 2].push(i))
-    }
-  }
-  const radii: Array<{ rx: number; ry: number }> = [{ rx: 133, ry: 140 }, cfg.inner]
-  const out: PlacedBox[] = new Array(items.length)
-  rings.forEach((idxs, ring) => {
-    const { rx, ry } = radii[ring]
-    const rEff = Math.sqrt((rx * rx + ry * ry) / 2)
-    const total = idxs.reduce((n, i) => n + items[i].widthPx + GARDEN_GAP, 0)
-    // A ring with room to spare spreads its items around the
-    // whole ellipse; a full ring packs from the top.
-    const spread = Math.min(total, 2 * Math.PI * rEff)
-    let cursor = -spread / 2
-    if (ring === 1 && idxs.length) {
-      cursor += cfg.innerOffsetSlots * (items[idxs[0]].widthPx + GARDEN_GAP)
-    }
-    for (const i of idxs) {
-      const demand = items[i].widthPx + GARDEN_GAP
-      const theta = -Math.PI / 2 + (cursor + demand / 2) / rEff
-      out[i] = {
-        cx: GARDEN_WELL.cx + rx * Math.cos(theta),
-        cy: GARDEN_WELL.cy + ry * Math.sin(theta),
-        w: items[i].widthPx,
-        h: items[i].heightPx,
-      }
-      cursor += demand
-    }
-  })
-  return out
-}
-
-/** Anchor start: items dealt to the field's lobes (corners and
- *  edge midpoints, in reading order) — a strong start for the
- *  small shown sets the rule produces, where ring starts can
- *  trap the relaxation between the well and the rim. */
-function anchorStart(items: GardenFootprint[]): PlacedBox[] {
-  const anchors: Array<{ fx: number; fy: number }> = [
-    { fx: 0.23, fy: 0.15 },
-    { fx: 0.77, fy: 0.15 },
-    { fx: 0.23, fy: 0.85 },
-    { fx: 0.77, fy: 0.85 },
-    { fx: 0.5, fy: 0.09 },
-    { fx: 0.5, fy: 0.91 },
-    { fx: 0.09, fy: 0.47 },
-    { fx: 0.91, fy: 0.47 },
-  ]
-  return items.map((f, i) => {
-    const a = anchors[i % anchors.length]
-    const extra = Math.floor(i / anchors.length)
-    return {
-      cx: a.fx * GARDEN_REF_W + extra * 14,
-      cy: a.fy * GARDEN_REF_H + extra * 14,
-      w: f.widthPx,
-      h: f.heightPx,
-    }
-  })
-}
-
-/**
- * Lay out the ring's shown items so their footprints — pile, name
- * label, count line — NEVER overlap each other, NEVER intersect
- * the well disc, and stay in the field. Several deterministic
- * starts (ring allocations, field anchors) are relaxed in turn
- * until both invariants hold. A garden that does not fit at full
- * size is retried at a smaller uniform scale (the whole shown set
+ * Seat the ring's shown items on the painted scene: item i takes
+ * seat i of GARDEN_SEATS (prominence order), its footprint scaled
+ * by the seat's depth scale, then the ring layout's collision
+ * machinery — retained from gardenLayout, re-based on the
+ * painting — polishes the seats: footprints are clamped inside
+ * the scene, pushed clear of the basin ellipse, and de-overlapped
+ * pairwise, so the shown cairns' LABELS never overlap, never
+ * leave the scene, and never cover the water. A garden that does
+ * not fit at seat size is retried at a smaller uniform shrink
+ * (seat positions and their relative scales hold; the whole set
  * shrinks together — a cairn is never dropped and labels never
- * collide); the scale ladder bottoms out at 0.55, past which the
- * tightest relaxed packing is returned — with the well guarantee
- * still enforced on the way out, since that one is absolute.
- * Pure and deterministic.
+ * collide); the ladder bottoms out at 0.6, past which the
+ * tightest polished packing is returned — with the basin and
+ * in-scene guarantees still enforced on the way out, since those
+ * are absolute. Items beyond the seat table (a garden showing
+ * more than GARDEN_SEATS.length parents + loose) cycle the table
+ * with a downward nudge and a further shrink — outside the
+ * guaranteed count. Pure and deterministic.
  */
-export function gardenLayout(items: GardenFootprint[]): GardenPlacement[] {
+export function scenePlacements(items: GardenFootprint[]): GardenPlacement[] {
   if (items.length === 0) return []
-  const startMakers: Array<(scaled: GardenFootprint[]) => PlacedBox[]> = [
-    (scaled) => ringStart(scaled, { twoRings: false, deal: 'load', inner: { rx: 99, ry: 103 }, innerOffsetSlots: 0.5 }),
-    (scaled) => anchorStart(scaled),
-    (scaled) => ringStart(scaled, { twoRings: true, deal: 'load', inner: { rx: 99, ry: 103 }, innerOffsetSlots: 0.5 }),
-    (scaled) => ringStart(scaled, { twoRings: true, deal: 'pairs', inner: { rx: 99, ry: 103 }, innerOffsetSlots: 0.5 }),
-    (scaled) => ringStart(scaled, { twoRings: true, deal: 'alternate', inner: { rx: 88, ry: 92 }, innerOffsetSlots: 1 }),
-  ]
-  const finish = (placed: PlacedBox[], scale: number): GardenPlacement[] =>
-    placed.map((p) => {
-      const b = boxOf(p)
-      return { x: (p.cx / GARDEN_REF_W) * 100, y: (p.cy / GARDEN_REF_H) * 100, scale, box: b }
-    })
-  let last: { placed: PlacedBox[]; scale: number } | null = null
-  for (const scale of [1, 0.85, 0.72, 0.6, 0.55]) {
-    const scaled = items.map((f) => ({
-      widthPx: f.widthPx * scale,
-      heightPx: f.heightPx * scale,
-    }))
-    for (const make of startMakers) {
-      const placed = make(scaled)
-      if (relax(placed, GARDEN_GAP)) return finish(placed, scale)
-      last = { placed, scale }
+  const seatOf = (i: number): { cx: number; cy: number; scale: number } => {
+    const seat = GARDEN_SEATS[i % GARDEN_SEATS.length]
+    const cycle = Math.floor(i / GARDEN_SEATS.length)
+    return {
+      cx: seat.x * SCENE_REF_W,
+      cy: seat.y * SCENE_REF_H + cycle * 26,
+      scale: seat.scale * Math.pow(0.9, cycle),
     }
   }
-  // The fallback packing may still touch the well; the water is
-  // water, so the disc is cleared even here (a label compromise in
-  // a pathological garden outranks nothing — the well does).
-  for (const p of last!.placed) {
-    resolveWell(p)
-    clampToField(p)
+  const finish = (placed: PlacedBox[], scales: number[]): GardenPlacement[] =>
+    placed.map((p, i) => {
+      const b = boxOf(p)
+      return { x: (p.cx / SCENE_REF_W) * 100, y: (p.cy / SCENE_REF_H) * 100, scale: scales[i], box: b }
+    })
+  let last: { placed: PlacedBox[]; scales: number[] } | null = null
+  for (const shrink of [1, 0.85, 0.72, 0.6]) {
+    const scales = items.map((_, i) => seatOf(i).scale * shrink)
+    const placed = items.map((f, i) => {
+      const s = seatOf(i)
+      return { cx: s.cx, cy: s.cy, w: f.widthPx * scales[i], h: f.heightPx * scales[i] }
+    })
+    if (relax(placed, GARDEN_GAP)) return finish(placed, scales)
+    last = { placed, scales }
   }
-  return finish(last!.placed, last!.scale)
+  // The fallback packing may still touch the basin; the water is
+  // water, so the ellipse is cleared even here (a label compromise
+  // in a pathological garden outranks nothing — the basin does).
+  for (const p of last!.placed) {
+    resolveBasin(p)
+    clampToScene(p)
+  }
+  return finish(last!.placed, last!.scales)
 }
 
 /* ------------------------------------------------------------------ */
 /* The fan — an opened cairn's stones, never on the water              */
 /* ------------------------------------------------------------------ */
 
-/** A fan's estimated box as % of the garden field, measured on the
- *  reference field: fan stones are 76px wide with the fan's gaps
+/** A fan's estimated box as % of the scene, measured on the
+ *  reference scene: fan stones are 76px wide with the fan's gaps
  *  and padding (atelier.css .atelier-fan / .atelier-fan-stone),
- *  wrapping at 94% of the field's width. On any wider field the
+ *  wrapping at 94% of the scene's width. On any wider scene the
  *  fan's fixed pixel size is a smaller share, so the reference
  *  estimate is the conservative one. */
 export interface FanBox {
@@ -685,51 +601,55 @@ export function fanBoxFor(stoneCount: number): FanBox {
   const gap = 5.6
   const padX = 12.8
   const padY = 11.2
-  const maxW = GARDEN_REF_W * 0.94
+  const maxW = SCENE_REF_W * 0.94
   const perRow = Math.max(1, Math.floor((maxW - padX + gap) / (stoneW + gap)))
   const cols = Math.min(n, perRow)
   const rows = Math.ceil(n / perRow)
   const widthPx = Math.min(maxW, cols * stoneW + (cols - 1) * gap + padX)
   const heightPx = rows * 54 + (rows - 1) * gap + padY
   return {
-    widthPct: (widthPx / GARDEN_REF_W) * 100,
-    heightPct: (heightPx / GARDEN_REF_H) * 100,
+    widthPct: (widthPx / SCENE_REF_W) * 100,
+    heightPct: (heightPx / SCENE_REF_H) * 100,
   }
 }
 
-/** The well disc in the garden's % space, as an ellipse: centre
- *  (50, 44); radius 23.5% of the width, and 23.5 × 10/11 % of the
- *  height (the garden's aspect is 10/11). */
-const WELL_PCT = { cx: 50, cy: 44, rx: 23.5, ry: 23.5 * (10 / 11) }
-
-/** Distance from the disc centre to the fan box's closest point,
- *  in the y-scaled space where the ellipse is a circle (a rect
- *  stays a rect under the axis scaling, so this stays exact).
- *  Below WELL_PCT.rx the box intersects the disc. */
-function fanWellClosest(left: number, top: number, box: FanBox): number {
-  const s = WELL_PCT.rx / WELL_PCT.ry
-  const nx = Math.max(left, Math.min(WELL_PCT.cx, left + box.widthPct))
-  const ny = Math.max(top * s, Math.min(WELL_PCT.cy * s, (top + box.heightPct) * s))
-  return Math.hypot(nx - WELL_PCT.cx, ny - WELL_PCT.cy * s)
+/** The basin in the scene's % space, as an ellipse: centre
+ *  (58.9, 50.6); radii 14.2% of the width and 3.6% of the height
+ *  (SCENE1_BASIN, the painting's measured water). */
+const BASIN_PCT = {
+  cx: SCENE1_BASIN.cx * 100,
+  cy: SCENE1_BASIN.cy * 100,
+  rx: SCENE1_BASIN.rx * 100,
+  ry: SCENE1_BASIN.ry * 100,
 }
 
-function fanBoxIntersectsWell(left: number, top: number, box: FanBox): boolean {
-  return fanWellClosest(left, top, box) < WELL_PCT.rx
+/** Distance from the ellipse centre to the fan box's closest point,
+ *  in the y-scaled space where the ellipse is a circle (a rect
+ *  stays a rect under the axis scaling, so this stays exact).
+ *  Below BASIN_PCT.rx the box intersects the ellipse. */
+function fanBasinClosest(left: number, top: number, box: FanBox): number {
+  const s = BASIN_PCT.rx / BASIN_PCT.ry
+  const nx = Math.max(left, Math.min(BASIN_PCT.cx, left + box.widthPct))
+  const ny = Math.max(top * s, Math.min(BASIN_PCT.cy * s, (top + box.heightPct) * s))
+  return Math.hypot(nx - BASIN_PCT.cx, ny - BASIN_PCT.cy * s)
+}
+
+function fanBoxIntersectsBasin(left: number, top: number, box: FanBox): boolean {
+  return fanBasinClosest(left, top, box) < BASIN_PCT.rx
 }
 
 /**
- * Where a fan sits: centred near its anchor, below it — or above
+ * Where a fan sits: centred on its anchor, below it — or above
  * it when the anchor stands low — the garden's standing placement.
- * If that box would rest on the well disc, the flipped side is
- * tried, then the fan is walked radially outward from the disc's
- * centre in every direction (the anchor's own ray first) until
- * its whole box is clear of the water. A fan too large to clear
- * the disc anywhere inside the field at the reference width (a
- * dozen-plus stones on a phone-width pane) takes the placement
- * whose box penetrates the disc least — bottom-hugging, in
- * practice; on any wider field the same fan is a smaller share
- * of the field and clears outright. A fan is a resting artifact
- * while it stands open; the water is water.
+ * If that box would rest on the basin ellipse, the flipped side
+ * is tried, then the fan is walked radially outward from the
+ * ellipse's centre in every direction (the anchor's own ray
+ * first) until its whole box is clear of the water. A fan too
+ * large to clear the ellipse anywhere inside the scene at the
+ * reference width takes the placement whose box penetrates the
+ * ellipse least; on any wider scene the same fan is a smaller
+ * share of the scene and clears outright. A fan is a resting
+ * artifact while it stands open; the water is water.
  */
 export function fanPositionClear(
   anchor: { x: number; y: number },
@@ -740,10 +660,10 @@ export function fanPositionClear(
     top: Math.max(0, Math.min(100 - box.heightPct, top)),
   })
   const penetration = (p: { left: number; top: number }) =>
-    Math.max(0, WELL_PCT.rx - fanWellClosest(p.left - box.widthPct / 2, p.top, box))
+    Math.max(0, BASIN_PCT.rx - fanBasinClosest(p.left - box.widthPct / 2, p.top, box))
   const clear = (p: { left: number; top: number }) => penetration(p) <= 0
   const legacy = place(
-    Math.max(38, Math.min(62, anchor.x)),
+    anchor.x,
     anchor.y > 70 ? anchor.y - 7 - box.heightPct : anchor.y + 7,
   )
   if (clear(legacy)) return legacy
@@ -754,13 +674,13 @@ export function fanPositionClear(
   if (clear(flipped)) return flipped
   let best = penetration(flipped) < penetration(legacy) ? flipped : legacy
   let bestPen = penetration(best)
-  // Radial walks in the scaled space (where the disc is a
+  // Radial walks in the scaled space (where the ellipse is a
   // circle): the anchor's ray first, then the cardinals and
   // diagonals. Each walk steps the fan's centre outward and
-  // tests the field-clamped placement.
-  const s = WELL_PCT.rx / WELL_PCT.ry
-  let ax = anchor.x - WELL_PCT.cx
-  let ay = (anchor.y - WELL_PCT.cy) * s
+  // tests the scene-clamped placement.
+  const s = BASIN_PCT.rx / BASIN_PCT.ry
+  let ax = anchor.x - BASIN_PCT.cx
+  let ay = (anchor.y - BASIN_PCT.cy) * s
   const alen = Math.hypot(ax, ay)
   if (alen < 0.001) {
     ax = 0
@@ -782,8 +702,8 @@ export function fanPositionClear(
   ]
   for (const [dx, dy] of dirs) {
     for (let d = 0; d <= 130; d += 2) {
-      const cx = WELL_PCT.cx + dx * d
-      const cy = WELL_PCT.cy + (dy * d) / s
+      const cx = BASIN_PCT.cx + dx * d
+      const cy = BASIN_PCT.cy + (dy * d) / s
       const p = place(cx, cy - box.heightPct / 2)
       if (clear(p)) return p
       const pen = penetration(p)

@@ -17,12 +17,18 @@ import {
   FILL_TAU,
   FORMATION_SCALE,
   GARDEN_GAP,
-  GARDEN_REF_H,
-  GARDEN_REF_W,
-  GARDEN_WELL,
+  GARDEN_SEATS,
+  SCENE1_BASIN,
+  SCENE1_WELL_SCALE_Y,
+  SCENE2_DISC,
+  SCENE2_LOTUS_OVERLAY,
+  SCENE2_RING_OVERLAY,
+  SCENE_BASIN_REF,
+  SCENE_REF_H,
+  SCENE_REF_W,
   STAGE_COUNT,
   STACK_DEFAULT,
-  boxIntersectsWell,
+  boxIntersectsBasin,
   bringToFront,
   buildGarden,
   buoyancyDrift,
@@ -43,11 +49,10 @@ import {
   fillPresence,
   fillStep,
   gardenFootprint,
-  gardenLayout,
-  gardenPositions,
   looseCairns,
   ringInitiatives,
   rungOf,
+  scenePlacements,
   stageForDepth,
   talkDepth,
   type FanBox,
@@ -326,21 +331,6 @@ describe('the stack channels', () => {
   })
 })
 
-describe('gardenPositions', () => {
-  it('is deterministic and keeps every cairn inside the field', () => {
-    expect(gardenPositions(6)).toEqual(gardenPositions(6))
-    for (const n of [1, 2, 5, 9, 14]) {
-      for (const p of gardenPositions(n)) {
-        expect(p.x).toBeGreaterThanOrEqual(14)
-        expect(p.x).toBeLessThanOrEqual(86)
-        expect(p.y).toBeGreaterThanOrEqual(17)
-        expect(p.y).toBeLessThanOrEqual(83)
-      }
-    }
-    expect(gardenPositions(0)).toEqual([])
-  })
-})
-
 describe('parents + loose — the ring grouping', () => {
   it('groups an initiative’s cairns into one ring pile; loose cairns stand alone', () => {
     const g = buildGarden(
@@ -383,17 +373,66 @@ describe('parents + loose — the ring grouping', () => {
   })
 })
 
-describe('gardenLayout — shown labels never overlap, and nothing stands on the well', () => {
+describe('the painted scenes — measured geometry', () => {
+  it('pins Screen 1’s basin ellipse and the well’s perspective squash', () => {
+    expect(SCENE1_BASIN).toEqual({ cx: 0.589, cy: 0.506, rx: 0.142, ry: 0.036 })
+    // The squash is the ellipse's own aspect on the painting's
+    // pixels: (ry × 1448) / (rx × 1086).
+    expect(SCENE1_WELL_SCALE_Y).toBeCloseTo(0.338, 3)
+    expect(SCENE1_WELL_SCALE_Y).toBeCloseTo((0.036 * 1448) / (0.142 * 1086), 2)
+    // The reference-scene ellipse is the same ellipse in px.
+    expect(SCENE_BASIN_REF.cx).toBeCloseTo(0.589 * SCENE_REF_W)
+    expect(SCENE_BASIN_REF.cy).toBeCloseTo(0.506 * SCENE_REF_H)
+    expect(SCENE_BASIN_REF.rx).toBeCloseTo(0.142 * SCENE_REF_W)
+    expect(SCENE_BASIN_REF.ry).toBeCloseTo(0.036 * SCENE_REF_H)
+  })
+
+  it('pins Screen 2’s disc and the ring/lotus overlay placements', () => {
+    expect(SCENE2_DISC).toEqual({ cx: 0.488, cy: 0.49, r: 0.164 })
+    expect(SCENE2_RING_OVERLAY.left).toBeCloseTo(352 / 1086)
+    expect(SCENE2_RING_OVERLAY.top).toBeCloseTo(532 / 1448)
+    expect(SCENE2_RING_OVERLAY.width).toBeCloseTo(356 / 1086)
+    expect(SCENE2_LOTUS_OVERLAY.left).toBeCloseTo(311 / 1086)
+    expect(SCENE2_LOTUS_OVERLAY.top).toBeCloseTo(616 / 1448)
+    expect(SCENE2_LOTUS_OVERLAY.width).toBeCloseTo(163 / 1086)
+  })
+
+  it('the seat table: at least ten seats, in the ruled prominence order, every anchor clear of the basin', () => {
+    expect(GARDEN_SEATS.length).toBeGreaterThanOrEqual(10)
+    expect(GARDEN_SEATS.slice(0, 10)).toEqual([
+      { x: 0.24, y: 0.7, scale: 1.15 },
+      { x: 0.78, y: 0.72, scale: 1.15 },
+      { x: 0.12, y: 0.55, scale: 1.0 },
+      { x: 0.88, y: 0.57, scale: 1.0 },
+      { x: 0.3, y: 0.86, scale: 1.25 },
+      { x: 0.66, y: 0.87, scale: 1.25 },
+      { x: 0.33, y: 0.4, scale: 0.8 },
+      { x: 0.74, y: 0.41, scale: 0.8 },
+      { x: 0.16, y: 0.38, scale: 0.75 },
+      { x: 0.86, y: 0.36, scale: 0.75 },
+    ])
+    // Every seat anchor stands on the sand: its normalised
+    // distance from the basin centre is well outside the ellipse.
+    for (const seat of GARDEN_SEATS) {
+      const q =
+        ((seat.x * SCENE_REF_W - SCENE_BASIN_REF.cx) / SCENE_BASIN_REF.rx) ** 2 +
+        ((seat.y * SCENE_REF_H - SCENE_BASIN_REF.cy) / SCENE_BASIN_REF.ry) ** 2
+      expect(q).toBeGreaterThan(2)
+    }
+  })
+})
+
+describe('scenePlacements — seats on the sand, labels in bounds, nothing on the basin', () => {
   const fp = (title: string, pileH = 90, count = true): GardenFootprint =>
     gardenFootprint({ title, pileWidthPx: 104, pileHeightPx: pileH, showCount: count })
 
   function expectLegible(items: GardenFootprint[]) {
-    const placed = gardenLayout(items)
+    const placed = scenePlacements(items)
     expect(placed).toHaveLength(items.length)
     // The water is water: no footprint — pile, name label, count
-    // line — intersects the well disc.
+    // line — covers the basin ellipse.
     for (const [i, p] of placed.entries()) {
-      expect(boxIntersectsWell(p.box), `item ${i} stands on the well`).toBe(false)
+      expect(boxIntersectsBasin(p.box), `item ${i} stands on the basin`).toBe(false)
     }
     // Pairwise: no two footprint boxes come within the gap.
     for (let i = 0; i < placed.length; i++) {
@@ -408,27 +447,34 @@ describe('gardenLayout — shown labels never overlap, and nothing stands on the
         ).toBe(true)
       }
     }
+    // Every label box is clamped inside the scene — the live
+    // defect of labels clipping off the right edge cannot
+    // reproduce: no bleed is allowed at all.
     for (const p of placed) {
-      // Inside the field (6px edge bleed allowed, as the garden
-      // already lets piles kiss the rim).
-      expect(p.box.left).toBeGreaterThanOrEqual(-6.5)
-      expect(p.box.top).toBeGreaterThanOrEqual(-6.5)
-      expect(p.box.left + p.box.width).toBeLessThanOrEqual(GARDEN_REF_W + 6.5)
-      expect(p.box.top + p.box.height).toBeLessThanOrEqual(GARDEN_REF_H + 6.5)
+      expect(p.box.left).toBeGreaterThanOrEqual(-0.5)
+      expect(p.box.top).toBeGreaterThanOrEqual(-0.5)
+      expect(p.box.left + p.box.width).toBeLessThanOrEqual(SCENE_REF_W + 0.5)
+      expect(p.box.top + p.box.height).toBeLessThanOrEqual(SCENE_REF_H + 0.5)
     }
     return placed
   }
 
-  it('lays out a small garden legibly and deterministically', () => {
+  it('seats a small garden in prominence order at seat scale, deterministically', () => {
     const items = [fp('Zenaf — outsourced executive function', 55), fp('Meet your council', 50)]
-    expect(gardenLayout(items)).toEqual(gardenLayout(items))
+    expect(scenePlacements(items)).toEqual(scenePlacements(items))
     const placed = expectLegible(items)
-    // A garden that fits — alongside the well, which is real
-    // space the layout may not use — stands at full size.
-    expect(placed.every((p) => p.scale === 1)).toBe(true)
+    // The first two shown items take the two foreground seats at
+    // the seats' own depth scale — within the in-bounds clamp's
+    // reach (the second item's wide label is pulled 0.7% in from
+    // the scene's right edge, the clamp doing its work).
+    for (const [i, p] of placed.entries()) {
+      expect(Math.abs(p.x - GARDEN_SEATS[i].x * 100)).toBeLessThan(1.5)
+      expect(Math.abs(p.y - GARDEN_SEATS[i].y * 100)).toBeLessThan(1.5)
+      expect(p.scale).toBe(GARDEN_SEATS[i].scale)
+    }
   })
 
-  it('a crowded garden shrinks uniformly rather than overlapping', () => {
+  it('keeps a full seat table legible — ten shown items, several with label-capping titles', () => {
     const titles = [
       'Zenaf — outsourced executive function',
       'Meet your council',
@@ -438,40 +484,21 @@ describe('gardenLayout — shown labels never overlap, and nothing stands on the
       'W1 live test task',
       'Loose errand',
       'Fix the gate latch',
-    ]
-    const placed = expectLegible(titles.map((t, i) => fp(t, 55 + (i % 4) * 16, i % 3 !== 0)))
-    // One uniform scale for the whole set, never below the floor.
-    expect(new Set(placed.map((p) => p.scale)).size).toBe(1)
-    expect(placed[0].scale).toBeGreaterThanOrEqual(0.55)
-  })
-
-  it('keeps a crowded garden legible — long titles, eight shown items', () => {
-    // The crowded end of what the parents+loose rule shows: two
-    // initiative piles plus a half-dozen loose items, several
-    // with label-capping titles.
-    const titles = [
-      'Zenaf — outsourced executive function',
-      'Meet your council',
-      'Tier 0 — In flight, decide now',
-      'Downstream builds (noting producer + Slice 2)',
-      'Capability B trial — dentist follow-up',
-      'W1 live test task',
-      'Loose errand',
-      'Fix the gate latch',
+      'Water the greenhouse beds',
+      'Sharpen the spare blades',
     ]
     expectLegible(titles.map((t, i) => fp(t, 55 + (i % 4) * 16, i % 3 !== 0)))
   })
 
   it('an empty garden lays out empty', () => {
-    expect(gardenLayout([])).toEqual([])
+    expect(scenePlacements([])).toEqual([])
   })
 
   it('the founder’s garden: one large initiative, loose projects, loose stones — nothing on the water', () => {
-    // The shape of the founder's 2026-11-25 screenshot, where the
-    // 30-stone Zenaf cairn stood in the middle of the well and a
-    // loose stone sat on its rim: several initiatives (one large),
-    // loose projects, loose stones. Every placement's footprint +
-    // label box must be disjoint from the well disc.
+    // The shape of the founder's real garden: several initiatives
+    // (one large), loose projects, loose stones. Every
+    // placement's footprint + label box must be disjoint from
+    // the basin ellipse.
     const items = [
       fp('Zenaf — outsourced executive function', 170),
       fp('Meet your council', 95),
@@ -484,108 +511,84 @@ describe('gardenLayout — shown labels never overlap, and nothing stands on the
     const placed = expectLegible(items)
     for (const p of placed) {
       // Disjointness stated geometrically, independent of the
-      // helper: the box's closest point to the disc centre lies
-      // at or beyond the radius.
-      const nx = Math.max(p.box.left, Math.min(GARDEN_WELL.cx, p.box.left + p.box.width))
-      const ny = Math.max(p.box.top, Math.min(GARDEN_WELL.cy, p.box.top + p.box.height))
-      expect(Math.hypot(nx - GARDEN_WELL.cx, ny - GARDEN_WELL.cy)).toBeGreaterThanOrEqual(
-        GARDEN_WELL.r - 0.001,
-      )
+      // helper: the box's closest point to the ellipse centre, in
+      // the scaled space where the ellipse is a circle, lies at
+      // or beyond the radius.
+      const s = SCENE_BASIN_REF.rx / SCENE_BASIN_REF.ry
+      const nx = Math.max(p.box.left, Math.min(SCENE_BASIN_REF.cx, p.box.left + p.box.width))
+      const ny = Math.max(p.box.top * s, Math.min(SCENE_BASIN_REF.cy * s, (p.box.top + p.box.height) * s))
+      expect(
+        Math.hypot(nx - SCENE_BASIN_REF.cx, ny - SCENE_BASIN_REF.cy * s),
+      ).toBeGreaterThanOrEqual(SCENE_BASIN_REF.rx - 0.001)
     }
   })
 
-  it('a single huge cairn still cannot be shaken onto the well', () => {
-    // The old failure in miniature: one oversized item whose
-    // lowest-overlap escape was the empty middle of the disc.
-    const placed = gardenLayout([fp('Zenaf — outsourced executive function', 200)])
+  it('a single huge cairn still cannot be pushed onto the basin', () => {
+    const placed = scenePlacements([fp('Zenaf — outsourced executive function', 200)])
     expect(placed).toHaveLength(1)
-    expect(boxIntersectsWell(placed[0].box)).toBe(false)
+    expect(boxIntersectsBasin(placed[0].box)).toBe(false)
   })
 })
 
-describe('boxIntersectsWell', () => {
-  it('a box over the water intersects; a box at the field’s corner does not', () => {
+describe('boxIntersectsBasin', () => {
+  it('a box over the water intersects; a box at the scene’s corner does not', () => {
     expect(
-      boxIntersectsWell({ left: GARDEN_WELL.cx - 20, top: GARDEN_WELL.cy - 20, width: 40, height: 40 }),
+      boxIntersectsBasin({
+        left: SCENE_BASIN_REF.cx - 20,
+        top: SCENE_BASIN_REF.cy - 8,
+        width: 40,
+        height: 16,
+      }),
     ).toBe(true)
-    expect(boxIntersectsWell({ left: 0, top: 0, width: 40, height: 40 })).toBe(false)
+    expect(boxIntersectsBasin({ left: 0, top: 0, width: 40, height: 40 })).toBe(false)
   })
 
-  it('a footprint that merely crosses the rim intersects; one tangent outside does not', () => {
-    // A box whose right edge reaches 10px into the disc from the left.
+  it('a footprint that merely crosses the water’s edge intersects; one tangent outside does not', () => {
+    // A box whose right edge reaches 10px into the ellipse from
+    // the left, centred on the ellipse's vertical centre.
     const crossing = {
-      left: GARDEN_WELL.cx - GARDEN_WELL.r - 30,
-      top: GARDEN_WELL.cy - 10,
+      left: SCENE_BASIN_REF.cx - SCENE_BASIN_REF.rx - 30,
+      top: SCENE_BASIN_REF.cy - 5,
       width: 40,
-      height: 20,
+      height: 10,
     }
-    expect(boxIntersectsWell(crossing)).toBe(true)
+    expect(boxIntersectsBasin(crossing)).toBe(true)
     // The same box pulled 11px further out: its closest point is
     // 1px beyond the radius.
-    expect(boxIntersectsWell({ ...crossing, left: crossing.left - 11 })).toBe(false)
+    expect(boxIntersectsBasin({ ...crossing, left: crossing.left - 11 })).toBe(false)
   })
 })
 
 describe('the fan — never on the water either', () => {
   /** Independent check: dense sampling of the fan box against
-   *  the well ellipse in % space (centre 50/44, radii 23.5 ×
-   *  23.5·10/11). A sample strictly inside the ellipse is a
-   *  violation. */
-  function fanIntersectsWell(leftPct: number, topPct: number, box: FanBox): boolean {
-    const rx = 23.5
-    const ry = 23.5 * (10 / 11)
+   *  the basin ellipse in % space (centre 58.9/50.6, radii 14.2 ×
+   *  3.6 — SCENE1_BASIN). A sample strictly inside the ellipse is
+   *  a violation. */
+  function fanIntersectsBasin(leftPct: number, topPct: number, box: FanBox): boolean {
+    const rx = SCENE1_BASIN.rx * 100
+    const ry = SCENE1_BASIN.ry * 100
     for (let i = 0; i <= 48; i++) {
       for (let j = 0; j <= 48; j++) {
         const x = leftPct - box.widthPct / 2 + (box.widthPct * i) / 48
         const y = topPct + (box.heightPct * j) / 48
-        const q = ((x - 50) / rx) ** 2 + ((y - 44) / ry) ** 2
+        const q = ((x - SCENE1_BASIN.cx * 100) / rx) ** 2 + ((y - SCENE1_BASIN.cy * 100) / ry) ** 2
         if (q < 0.99) return true
       }
     }
     return false
   }
 
-  /** The share of the fan box's sampled points inside the well
-   *  ellipse — the coverage a too-large fan cannot avoid. */
-  function fanWellCoverage(leftPct: number, topPct: number, box: FanBox): number {
-    const rx = 23.5
-    const ry = 23.5 * (10 / 11)
-    let inside = 0
-    let total = 0
-    for (let i = 0; i <= 48; i++) {
-      for (let j = 0; j <= 48; j++) {
-        const x = leftPct - box.widthPct / 2 + (box.widthPct * i) / 48
-        const y = topPct + (box.heightPct * j) / 48
-        const q = ((x - 50) / rx) ** 2 + ((y - 44) / ry) ** 2
-        total++
-        if (q < 1) inside++
-      }
-    }
-    return inside / total
-  }
-
-  it('places fans clear of the disc for anchors all around the well', () => {
-    const anchors = [
-      { x: 50, y: 16 },
-      { x: 50, y: 72 },
-      { x: 14, y: 44 },
-      { x: 86, y: 44 },
-      { x: 24, y: 22 },
-      { x: 76, y: 24 },
-      { x: 24, y: 66 },
-      { x: 76, y: 64 },
-      { x: 38, y: 30 },
-      { x: 62, y: 58 },
-    ]
+  it('places fans clear of the basin for anchors at every seat', () => {
+    const anchors = GARDEN_SEATS.map((s) => ({ x: s.x * 100, y: s.y * 100 }))
     for (const anchor of anchors) {
       for (const count of [1, 3, 6, 8]) {
         const box = fanBoxFor(count)
         const pos = fanPositionClear(anchor, box)
         expect(
-          fanIntersectsWell(pos.left, pos.top, box),
+          fanIntersectsBasin(pos.left, pos.top, box),
           `anchor ${anchor.x},${anchor.y} count ${count}`,
         ).toBe(false)
-        // And the fan stays inside the field.
+        // And the fan stays inside the scene.
         expect(pos.left - box.widthPct / 2).toBeGreaterThanOrEqual(-0.001)
         expect(pos.left + box.widthPct / 2).toBeLessThanOrEqual(100.001)
         expect(pos.top).toBeGreaterThanOrEqual(-0.001)
@@ -594,19 +597,24 @@ describe('the fan — never on the water either', () => {
     }
   })
 
-  it('a twelve-stone fan at reference width cannot fully clear — and is placed to barely touch the water', () => {
-    // At 360px wide, a 12-stone fan is ~93% × ~47% of the field:
-    // no in-field placement is fully clear of a 47%-wide disc.
-    // The placement must hug the field's bottom, keeping the
-    // sampled coverage of the fan box by the disc small (the
-    // legacy placement covered ~3x this).
-    for (const anchor of [{ x: 50, y: 16 }, { x: 14, y: 44 }, { x: 86, y: 44 }, { x: 50, y: 72 }]) {
+  it('even a twelve-stone fan clears the basin outright', () => {
+    // The painted basin is a small ellipse (28.4% × 7.2% of the
+    // scene) where the old well disc was 47% wide: at the
+    // reference width a 12-stone fan — ~93% × ~38% of the scene —
+    // now always finds a fully clear placement.
+    for (const anchor of [
+      { x: 58.9, y: 40 },
+      { x: 24, y: 70 },
+      { x: 88, y: 57 },
+      { x: 33, y: 40 },
+      { x: 66, y: 87 },
+    ]) {
       const box = fanBoxFor(12)
       const pos = fanPositionClear(anchor, box)
       expect(
-        fanWellCoverage(pos.left, pos.top, box),
+        fanIntersectsBasin(pos.left, pos.top, box),
         `anchor ${anchor.x},${anchor.y}`,
-      ).toBeLessThanOrEqual(0.12)
+      ).toBe(false)
     }
   })
 

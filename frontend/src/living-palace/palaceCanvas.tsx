@@ -15,8 +15,10 @@
  * palaceSceneLogic. The building layer is Scene 2 (founder,
  * 2026-11-26): the room-circles in their relaxed Apollonian
  * spacing — see the BuildingScene section and
- * palaceScene2Logic. The floor / room layers below are
- * unchanged.
+ * palaceScene2Logic. The room layer is the founder's furnished
+ * chamber (2026-11-26): his rose plate as the room itself, his
+ * artifacts standing at the seats he marked in the studies —
+ * see the RoomScene section. The floor layer below is unchanged.
  *
  * Surface rule: the scenes carry no legends, no vocabulary panels,
  * no explanations of themselves. What a tap reveals lives in the
@@ -56,6 +58,9 @@ import vesselPlainImage from './assets/palace-vessel-plain.webp'
 import scalesImage from './assets/palace-scales.webp'
 import scalesWeighedImage from './assets/palace-scales-weighed.webp'
 import chestImage from './assets/palace-chest.webp'
+import chestOpenImage from './assets/palace-chest-open.webp'
+import drawingTableImage from './assets/palace-drawing-table.webp'
+import roomRoseImage from './assets/palace-room-rose.jpg'
 import { BONSAI_ASPECT, BONSAI_BASE_LIFT, useBenchBonsaiImage } from './palacePlant'
 import architectureImage from './assets/palace-architecture.webp'
 import plateImage from '../assets/living-sky/plate.webp'
@@ -1216,31 +1221,6 @@ function ArtImage({
   )
 }
 
-/** The Kintsugi vessel — the founder's art. Gold seams only where
- *  a recorded repair stands (vesselGold); otherwise the same
- *  vessel with its seams as unfilled stone cracks. */
-export function VesselArt({
-  gold,
-  cx,
-  base,
-  height,
-}: {
-  gold: boolean
-  cx: number
-  base: number
-  height: number
-}) {
-  return (
-    <ArtImage
-      href={gold ? vesselGoldImage : vesselPlainImage}
-      extent={VESSEL_EXTENT}
-      cx={cx}
-      base={base}
-      height={height}
-    />
-  )
-}
-
 /** The scales — an instrument. Its pans stand empty unless
  *  weighed: a room whose task carries a recorded estimate shows
  *  the weight resting in the pan (Scales-1 — established material
@@ -1268,16 +1248,248 @@ export function ScalesArt({
   )
 }
 
-/** The chest — the founder's art, a single state. (Whether the
- *  room's task holds recorded material is carried by the chest's
- *  presence and its panel, as before.) */
-export function ChestArt({ cx, base, height }: { cx: number; base: number; height: number }) {
-  return <ArtImage href={chestImage} extent={CHEST_EXTENT} cx={cx} base={base} height={height} />
+  /* ------------------------------------------------------------------ */
+/* room — the furnished chamber (founder, 2026-11-26: "Perfect!      */
+/* Implement the palace as we've discussed")                           */
+/*                                                                     */
+/* The room stops being the drawn cutaway: the room IS one of the    */
+/* founder's unfurnished chamber plates — the rose chamber for       */
+/* every room in this build (the plate he tuned the seats on) —      */
+/* furnished with his artifacts at the seats he marked through       */
+/* studies A1–A7 (room-study-A7-fitted.png). A plate-frame           */
+/* composition like BuildingScene: the plate, then plain             */
+/* positioned elements, placed by OBJECT bounds (the alpha-bbox      */
+/* fractions measured off each asset) — never by canvas bounds:      */
+/* the chest's canvas carries empty margin under the object,         */
+/* which floated it in the studies until the anchoring was fixed.    */
+/*                                                                     */
+/* State rules, all existing: the vessel is gold iff the attributed  */
+/* read's accepted supersession stands (vesselGold); the scales      */
+/* are weighed iff the task carries a recorded estimate; the chest   */
+/* stands OPEN iff the room holds recorded material (its held        */
+/* list), closed iff it holds none; the founder's flame stands in    */
+/* the plate's own hearth ring iff the room is lit (Maeve            */
+/* attending), rendered in front of the drawing table; the window    */
+/* state reads on the plate's three lancet windows. Every testid,    */
+/* handler and staged focus is the old room's.                       */
+/* ------------------------------------------------------------------ */
+
+const ROOM_FRAME = 1254
+const roomPct = (units: number) => `${(units / ROOM_FRAME) * 100}%`
+
+/** An artifact's object bounds within its square canvas, as
+ *  fractions of the canvas side, measured off the shipped asset's
+ *  alpha: the object's base line, its centre, its right edge. */
+interface ObjectExtent {
+  base: number
+  cx: number
+  right: number
+}
+const VESSEL_OBJECT: ObjectExtent = { base: 0.982, cx: 0.494, right: 0.82 }
+const SCALES_OBJECT: ObjectExtent = { base: 0.979, cx: 0.501, right: 0.95 }
+const CHEST_OBJECT: ObjectExtent = { base: 0.886, cx: 0.499, right: 0.955 }
+const CHEST_OPEN_OBJECT: ObjectExtent = { base: 0.966, cx: 0.493, right: 0.939 }
+const TABLE_OBJECT: ObjectExtent = { base: 0.845, cx: 0.496, right: 0.959 }
+
+/** One of the founder's artifacts as a tappable plate-frame
+ *  element: the button is the asset's canvas box, positioned so
+ *  the OBJECT inside it lands on its seat — its base on the given
+ *  line, centred on the given x or with its right edge on it. */
+function RoomArt({
+  href,
+  extent,
+  side,
+  objCx,
+  objRight,
+  objBottom,
+  testid,
+  label,
+  onClick,
+}: {
+  href: string
+  extent: ObjectExtent
+  /** The canvas side, in frame units (the brief's image height). */
+  side: number
+  objCx?: number
+  objRight?: number
+  objBottom: number
+  testid: string
+  label: string
+  onClick: () => void
+}) {
+  const left = objRight != null ? objRight - extent.right * side : (objCx ?? 0) - extent.cx * side
+  const top = objBottom - extent.base * side
+  return (
+    <button
+      type="button"
+      data-testid={testid}
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      className="absolute block cursor-pointer p-0"
+      style={{
+        left: roomPct(left),
+        top: roomPct(top),
+        width: roomPct(side),
+        aspectRatio: '1 / 1',
+        background: 'transparent',
+        border: 'none',
+      }}
+    >
+      <img src={href} alt="" draggable={false} className="block h-full w-full" />
+    </button>
+  )
 }
 
-/* ------------------------------------------------------------------ */
-/* room                                                                */
-/* ------------------------------------------------------------------ */
+/** The mandala — the old room's glyph, unchanged: earned where
+ *  recorded edges converge, or standing as Aria's guest object
+ *  where she attends. In the chamber it centres on the plate's
+ *  rose window. */
+function MandalaGlyph() {
+  return (
+    <svg viewBox="-24 -24 48 48" className="block h-full w-full" aria-hidden>
+      <g opacity={0.9}>
+        <circle r={24} fill="none" stroke={PAL.maeve} strokeWidth={2.2} />
+        <circle r={15} fill="none" stroke={PAL.maeve} strokeWidth={1.5} />
+        <circle r={5} fill={PAL.maeve} />
+        {[0, 60, 120, 180, 240, 300].map((a) => (
+          <line
+            key={a}
+            x1={Math.cos((a * Math.PI) / 180) * 15}
+            y1={Math.sin((a * Math.PI) / 180) * 15}
+            x2={Math.cos((a * Math.PI) / 180) * 24}
+            y2={Math.sin((a * Math.PI) / 180) * 24}
+            stroke={PAL.maeve}
+            strokeWidth={1.5}
+          />
+        ))}
+      </g>
+    </svg>
+  )
+}
+
+/** The room's plant — Severine's Bench bonsai (palacePlant, as in
+ *  PR #463), standing on the floor front-left. Where canvas
+ *  painting is unavailable the PlantGlyph stands, as it always
+ *  has — no other art is substituted. (This seat is provisional:
+ *  it was not among the founder's marked seats.) */
+function RoomPlant({ state, onClick }: { state: 'growing' | 'fruiting'; onClick: () => void }) {
+  const href = useBenchBonsaiImage(state)
+  const imgH = 120
+  const imgW = imgH / BONSAI_ASPECT
+  const imgBottom = 1005 + BONSAI_BASE_LIFT * imgH
+  return (
+    <button
+      type="button"
+      data-testid="palace-room-plant"
+      title="Rumi's plant"
+      aria-label="Rumi's plant"
+      onClick={onClick}
+      className="absolute block cursor-pointer p-0"
+      style={{
+        left: roomPct(150 - imgW / 2),
+        top: roomPct(imgBottom - imgH),
+        width: roomPct(imgW),
+        height: roomPct(imgH),
+        background: 'transparent',
+        border: 'none',
+      }}
+    >
+      {href ? (
+        <img src={href} alt="" draggable={false} className="block h-full w-full" />
+      ) : (
+        <svg viewBox="-48 -114 96 114" className="block h-full w-full" aria-hidden>
+          <PlantGlyph x={0} base={0} state={state} scale={3} />
+        </svg>
+      )}
+    </button>
+  )
+}
+
+/** Guest objects — each stands ONLY where the attributed read
+ *  shows its seat attending this room's subject (Guests-1); each
+ *  keeps its own form, as a guest here. Aria's guest object is
+ *  the mandala, not a row piece. The row stands on the floor
+ *  front-left of the hearth. */
+const GUEST_ROW_ORDER: SeatId[] = ['champion', 'skeptic', 'ambassador', 'maverick', 'mentor']
+const GUEST_GLYPHS: Partial<
+  Record<SeatId, { title: string; viewBox: string; w: number; h: number; body: React.ReactNode }>
+> = {
+  champion: {
+    title: "Valen's battle plan",
+    viewBox: '-31 -23 62 46',
+    w: 62,
+    h: 46,
+    body: (
+      <>
+        <rect x={-31} y={-23} width={62} height={46} rx={2} fill={PAL.paper} stroke={PAL.stoneDark} strokeWidth={1.6} />
+        <polyline points="-21,13 -7,-5 7,7 21,-13" fill="none" stroke={SEAT_COLORS.champion} strokeWidth={2.2} />
+        <circle cx={-21} cy={13} r={3.2} fill={SEAT_COLORS.champion} />
+        <circle cx={21} cy={-13} r={3.2} fill={SEAT_COLORS.champion} />
+      </>
+    ),
+  },
+  skeptic: {
+    title: "Severine's lens",
+    viewBox: '-18 -18 46 46',
+    w: 46,
+    h: 46,
+    body: (
+      <>
+        <circle r={15} fill="#eef2f7" opacity={0.6} stroke={PAL.stoneDark} strokeWidth={3} />
+        <line x1={10} y1={10} x2={25} y2={25} stroke={PAL.woodDark} strokeWidth={5} strokeLinecap="round" />
+      </>
+    ),
+  },
+  ambassador: {
+    title: "Lucian's cup",
+    viewBox: '-16 -6 34 22',
+    w: 34,
+    h: 22,
+    body: (
+      <>
+        <ellipse cx={0} cy={11} rx={15} ry={3.4} fill={PAL.stone} stroke={PAL.stoneDark} />
+        <path d="M -11 -3 L 11 -3 L 8 9 L -8 9 Z" fill="#eef2f7" stroke={SEAT_COLORS.ambassador} strokeWidth={1.8} />
+        <path d="M 11 -1 A 5.5 4.5 0 1 1 11 6" fill="none" stroke={SEAT_COLORS.ambassador} strokeWidth={1.8} />
+      </>
+    ),
+  },
+  maverick: {
+    title: "Jynx's scroll",
+    viewBox: '-25 -7 52 14',
+    w: 52,
+    h: 14,
+    body: (
+      <>
+        <rect x={-25} y={-7} width={45} height={14} rx={7} fill={PAL.paper} stroke={SEAT_COLORS.maverick} strokeWidth={1.8} />
+        <circle cx={20} cy={0} r={7} fill="#e6dcc4" stroke={SEAT_COLORS.maverick} strokeWidth={1.8} />
+        <circle cx={20} cy={0} r={2.8} fill="none" stroke={SEAT_COLORS.maverick} strokeWidth={1.4} />
+      </>
+    ),
+  },
+  mentor: {
+    title: "Rumi's cairn",
+    viewBox: '-16 -12 32 23',
+    w: 32,
+    h: 23,
+    body: (
+      <>
+        <ellipse cx={0} cy={6} rx={16} ry={5} fill={PAL.stone} stroke={PAL.stoneDark} />
+        <ellipse cx={0} cy={-1} rx={11.5} ry={4.4} fill="#c4b494" stroke={PAL.stoneDark} />
+        <ellipse cx={0} cy={-7.5} rx={7.5} ry={3.8} fill={SEAT_COLORS.mentor} stroke={PAL.stoneDark} />
+      </>
+    ),
+  },
+}
+
+/** The plate's three lancet windows, in frame units (measured off
+ *  the rose plate): the window state's overlay ground. */
+const LANCETS = [
+  { x: 500, w: 48 },
+  { x: 572, w: 68 },
+  { x: 696, w: 48 },
+]
+const LANCET_BOX = { x: 492, y: 442, w: 260, h: 172 }
 
 export function RoomScene({
   model,
@@ -1306,237 +1518,262 @@ export function RoomScene({
   guests?: SeatId[]
   onGuest?: (seat: SeatId) => void
 }) {
-  const W = 640
-  const H = 430
   const waited = model.waitsOn[0]
+  /** The chest stands open iff the room holds recorded material —
+   *  its held list (notes, description, criteria) is non-empty. */
+  const chestOpen = model.held != null
+  const rowGuests = GUEST_ROW_ORDER.filter((seat) => guests.includes(seat))
+  /** The window's reading of the waited-on rooms, on the plate's
+   *  lancets: a wall still being built tints them the amber tone;
+   *  a completed wall leaves them pale and bright; nothing waited
+   *  on, no overlay. */
+  const lancetTone =
+    model.windowState === 'building'
+      ? 'rgba(216, 164, 65, 0.45)'
+      : model.windowState === 'complete'
+        ? 'rgba(255, 246, 214, 0.60)'
+        : 'transparent'
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block" role="img" aria-label={`Room — ${model.task.title}`}>
-      {/* back wall + floor */}
-      <rect x={70} y={56} width={500} height={264} fill={PAL.wall} />
-      <path d={`M 70 320 L 570 320 L 626 402 L 14 402 Z`} fill="#d9c8a6" stroke={WALL_LINE} />
-      {/* side walls, so furniture sits IN the planes */}
-      <polygon points="14,402 70,320 70,56 14,120" fill="#e6dbc0" />
-      <polygon points="626,402 570,320 570,56 626,120" fill="#e6dbc0" />
-      <rect x={70} y={56} width={500} height={264} fill="none" stroke={WALL_LINE} strokeWidth={2} />
+    <div
+      className="relative w-full select-none"
+      style={{ aspectRatio: '1 / 1' }}
+      role="img"
+      aria-label={`Room — ${model.task.title}`}
+    >
+      {/* the chamber itself — the founder's rose plate */}
+      <img
+        src={roomRoseImage}
+        alt=""
+        draggable={false}
+        className="absolute inset-0 block h-full w-full"
+      />
 
-      {/* the window in the right wall — the waited-on room's state */}
-      <g
+      {/* the window state, read on the plate's three lancet
+          windows. The group keeps the old window's tap: it opens
+          the waited-on room. */}
+      <div
         data-testid="palace-room-window"
+        data-window-state={model.windowState ?? 'none'}
         onClick={() => waited && onOpenWaitedOn(waited.id)}
-        style={{ cursor: waited ? 'pointer' : 'default' }}
-        transform="matrix(-1 0.44 0 1 640 -158)"
+        className="absolute block"
+        style={{
+          left: roomPct(LANCET_BOX.x),
+          top: roomPct(LANCET_BOX.y),
+          width: roomPct(LANCET_BOX.w),
+          height: roomPct(LANCET_BOX.h),
+          cursor: waited ? 'pointer' : 'default',
+        }}
       >
-        <rect x={26} y={252} width={34} height={66} fill="#f3e9cd" stroke={WALL_LINE} strokeWidth={2} />
-        {model.windowState === 'building' && (
-          <g stroke="#8a7a5c" strokeWidth={1.6}>
-            <line x1={28} y1={292} x2={58} y2={292} />
-            <line x1={28} y1={282} x2={52} y2={282} />
-            <line x1={28} y1={272} x2={46} y2={272} />
-          </g>
-        )}
-        {model.windowState === 'complete' && (
-          <g stroke="#8a7a5c" strokeWidth={1.6}>
-            <line x1={28} y1={296} x2={58} y2={296} />
-            <line x1={28} y1={286} x2={58} y2={286} />
-            <line x1={28} y1={276} x2={58} y2={276} />
-            <line x1={28} y1={266} x2={58} y2={266} />
-          </g>
-        )}
-        {!model.windowState && (
-          <g>
-            <circle cx={43} cy={272} r={4} fill="#e8b64c" />
-            <line x1={28} y1={300} x2={58} y2={300} stroke="#9db38a" strokeWidth={2.4} />
-          </g>
-        )}
-      </g>
-      {model.growth && (
-        <g data-testid="palace-room-plant" onClick={() => onFurniture('plant')} style={{ cursor: 'pointer' }}>
-          <circle cx={556} cy={292} r={30} fill="transparent" />
-          <PlantMark x={556} base={316} state={model.growth} scale={0.9} />
-        </g>
-      )}
-
-      {/* hearth in the left wall */}
-      <g
-        data-testid="palace-room-hearth"
-        onClick={onBringFire}
-        style={{ cursor: 'pointer' }}
-        transform="matrix(1 0.44 0 1 0 -158)"
-      >
-        <title>The hearth</title>
-        <rect x={19} y={310} width={48} height={92} fill="transparent" />
-        <HearthGlyph x={43} base={402} w={44} h={86} lit={lit} flame="founder" />
-      </g>
-
-      {/* the doorway, with its threshold slab */}
-      <g data-testid="palace-room-threshold" onClick={onThreshold} style={{ cursor: 'pointer' }}>
-        <title>The threshold</title>
-        <g transform="matrix(-1 0.44 0 1 640 -158)">
-          <rect x={86} y={238} width={40} height={164} fill="#cbb691" opacity={0} />
-          <path d="M 92 402 L 92 268 L 120 252 L 120 402 Z" fill={PAL.woodDark} opacity={0.9} />
-        </g>
-        <rect x={492} y={392} width={64} height={9} rx={2} fill={PAL.stone} stroke={PAL.stoneDark} />
-      </g>
-
-      {/* chambers within — the room's own subtasks, behind doorways */}
-      {model.subtasks.map((sub, i) => {
-        const x = 150 + i * 92
-        return (
-          <g
-            key={sub.id}
-            data-testid={`palace-subtask-${sub.id}`}
-            onClick={() => onOpenSubtask(sub.id)}
-            style={{ cursor: 'pointer' }}
-          >
-            <title>{sub.title}</title>
-            <path d={`M ${x} 320 L ${x} 246 L ${x + 26} 234 L ${x + 52} 246 L ${x + 52} 320 Z`} fill={PAL.woodDark} opacity={0.88} />
-            <text x={x + 26} y={338} textAnchor="middle" fontSize={9.5} fill={PAL.ink}>
-              {sub.title.length > 12 ? `${sub.title.slice(0, 11)}…` : sub.title}
-            </text>
-          </g>
-        )
-      })}
+        {LANCETS.map((l) => (
+          <span
+            key={l.x}
+            className="pointer-events-none absolute block"
+            style={{
+              left: `${((l.x - LANCET_BOX.x) / LANCET_BOX.w) * 100}%`,
+              top: `${((450 - LANCET_BOX.y) / LANCET_BOX.h) * 100}%`,
+              width: `${(l.w / LANCET_BOX.w) * 100}%`,
+              height: `${(155 / LANCET_BOX.h) * 100}%`,
+              background: lancetTone,
+              borderRadius: '45% 45% 0 0 / 26% 26% 0 0',
+            }}
+          />
+        ))}
+      </div>
 
       {/* the mandala — earned where recorded edges converge, or
-          standing as Aria's guest object where she attends */}
+          standing as Aria's guest object where she attends —
+          centred on the rose window */}
       {(model.mandala || guests.includes('conductor')) && (
-        <g
+        <button
+          type="button"
           data-testid="palace-room-mandala"
+          title="The mandala"
+          aria-label="The mandala"
           onClick={() => (guests.includes('conductor') && onGuest ? onGuest('conductor') : onFurniture('mandala'))}
-          style={{ cursor: 'pointer' }}
+          className="absolute block cursor-pointer p-0"
+          style={{
+            left: roomPct(627 - 75),
+            top: roomPct(268 - 75),
+            width: roomPct(150),
+            aspectRatio: '1 / 1',
+            background: 'transparent',
+            border: 'none',
+          }}
         >
-          <g transform="translate(320 366)" opacity={0.9}>
-            <circle r={24} fill="none" stroke={PAL.maeve} strokeWidth={2.2} />
-            <circle r={15} fill="none" stroke={PAL.maeve} strokeWidth={1.5} />
-            <circle r={5} fill={PAL.maeve} />
-            {[0, 60, 120, 180, 240, 300].map((a) => (
-              <line
-                key={a}
-                x1={Math.cos((a * Math.PI) / 180) * 15}
-                y1={Math.sin((a * Math.PI) / 180) * 15}
-                x2={Math.cos((a * Math.PI) / 180) * 24}
-                y2={Math.sin((a * Math.PI) / 180) * 24}
-                stroke={PAL.maeve}
-                strokeWidth={1.5}
-              />
-            ))}
-          </g>
-        </g>
+          <MandalaGlyph />
+        </button>
       )}
-
-      {/* the gathering table — recorded people, empty places */}
-      <g data-testid="palace-room-table" onClick={() => onFurniture('table')} style={{ cursor: 'pointer' }}>
-        <g transform="translate(268 356)">
-          <ellipse cx={0} cy={10} rx={86} ry={20} fill={PAL.wood} stroke={PAL.woodDark} strokeWidth={2} />
-          <ellipse cx={0} cy={4} rx={86} ry={20} fill="#bd9260" stroke={PAL.woodDark} strokeWidth={2} />
-          {Array.from({ length: Math.max(4, model.people.length) }, (_, i) => {
-            const n = Math.max(4, model.people.length)
-            const a = (i / n) * Math.PI * 2 + 0.5
-            const px = Math.cos(a) * 96
-            const py = Math.sin(a) * 26 + 4
-            const person = model.people[i]
-            return person ? (
-              <g key={i}>
-                <circle cx={px} cy={py} r={11} fill={PAL.maeve} stroke="#8a6248" />
-                <text x={px} y={py + 4} textAnchor="middle" fontSize={10} fill="#fff">
-                  {person.name.slice(0, 1)}
-                </text>
-              </g>
-            ) : (
-              <circle key={i} cx={px} cy={py} r={10} fill="none" stroke={PAL.stoneDark} strokeWidth={1.6} strokeDasharray="3.4 2.6" />
-            )
-          })}
-        </g>
-      </g>
 
       {/* the scales — an instrument; a weight rests in the pan only
-          where the room's task carries a recorded estimate */}
-      <g data-testid="palace-room-scales" onClick={() => onFurniture('scales')} style={{ cursor: 'pointer' }}>
-        <circle cx={452} cy={362} r={36} fill="transparent" />
-        <ScalesArt weighed={model.task.estimated_hours != null} cx={452} base={400} height={96} />
-      </g>
+          where the room's task carries a recorded estimate. Its
+          object stands on the upper-left alcove's ledge line. */}
+      <RoomArt
+        testid="palace-room-scales"
+        label="The scales"
+        href={model.task.estimated_hours != null ? scalesWeighedImage : scalesImage}
+        extent={SCALES_OBJECT}
+        side={195}
+        objCx={282}
+        objBottom={608}
+        onClick={() => onFurniture('scales')}
+      />
 
-      {/* the chest — the founder's art, a single state: it stands
-          in the room as it always has (the glyph's ajar-when-held
-          lid is retired with the glyph; held-ness speaks in the
-          chest's panel and in Maeve's chat) */}
-      <g data-testid="palace-room-chest" onClick={() => onFurniture('chest')} style={{ cursor: 'pointer' }}>
-        <ChestArt cx={120} base={402} height={74} />
-      </g>
+      {/* the chest — the founder's art in its two states: open
+          where the room holds recorded material, closed where it
+          holds none. Its object stands on the upper-right
+          alcove's ledge line, its right edge at the wall. */}
+      <RoomArt
+        testid="palace-room-chest"
+        label="The chest"
+        href={chestOpen ? chestOpenImage : chestImage}
+        extent={chestOpen ? CHEST_OPEN_OBJECT : CHEST_OBJECT}
+        side={185}
+        objRight={1070}
+        objBottom={616}
+        onClick={() => onFurniture('chest')}
+      />
+
+      {/* the drawing table — the founder's art, standing behind
+          the fire (the flame below renders in front of it) */}
+      <RoomArt
+        testid="palace-room-table"
+        label="The drawing table"
+        href={drawingTableImage}
+        extent={TABLE_OBJECT}
+        side={315}
+        objCx={695}
+        objBottom={949}
+        onClick={() => onFurniture('table')}
+      />
+
+      {/* the hearth's flame — the founder's own flame standing in
+          the plate's stone ring, lit only when Maeve attends this
+          room; it renders in front of the drawing table */}
+      {lit && (
+        <img
+          src={fireImage}
+          alt=""
+          draggable={false}
+          className="pointer-events-none absolute block"
+          style={{
+            left: roomPct(627 - (100 * FLAME_ASPECT) / 2),
+            top: roomPct(972 - 100),
+            width: roomPct(100 * FLAME_ASPECT),
+          }}
+        />
+      )}
+      {/* the hearth — the plate's own stone ring; tapping it
+          brings the fire, as it always did */}
+      <button
+        type="button"
+        data-testid="palace-room-hearth"
+        title="The hearth"
+        aria-label="The hearth"
+        onClick={onBringFire}
+        className="absolute block cursor-pointer p-0"
+        style={{
+          left: roomPct(627 - 80),
+          top: roomPct(910 - 85),
+          width: roomPct(160),
+          aspectRatio: '1 / 1',
+          background: 'transparent',
+          border: 'none',
+        }}
+      />
 
       {/* the Kintsugi vessel — the founder's art; gold seams only
-          on recorded repair, otherwise the same vessel, unfilled */}
-      <g data-testid="palace-room-vessel" onClick={() => onFurniture('vessel')} style={{ cursor: 'pointer' }}>
-        <VesselArt gold={model.vesselGold || vesselGold} cx={520} base={404} height={78} />
-      </g>
+          on recorded repair, otherwise the same vessel, unfilled.
+          It stands on the floor at the right. */}
+      <RoomArt
+        testid="palace-room-vessel"
+        label="The Kintsugi vessel"
+        href={model.vesselGold || vesselGold ? vesselGoldImage : vesselPlainImage}
+        extent={VESSEL_OBJECT}
+        side={205}
+        objCx={975}
+        objBottom={985}
+        onClick={() => onFurniture('vessel')}
+      />
 
-      {/* guest objects — each stands ONLY where the attributed read
-          shows its seat attending this room's subject (Guests-1);
-          each keeps its own form, as a guest here */}
-      {onGuest && guests.includes('champion') && (
-        <g data-testid="palace-room-guest-champion" onClick={() => onGuest('champion')} style={{ cursor: 'pointer' }}>
-          <title>Valen's battle plan</title>
-          <g transform="translate(452 108)">
-            <rect x={-31} y={-23} width={62} height={46} rx={2} fill={PAL.paper} stroke={PAL.stoneDark} strokeWidth={1.6} />
-            <polyline points="-21,13 -7,-5 7,7 21,-13" fill="none" stroke={SEAT_COLORS.champion} strokeWidth={2.2} />
-            <circle cx={-21} cy={13} r={3.2} fill={SEAT_COLORS.champion} />
-            <circle cx={21} cy={-13} r={3.2} fill={SEAT_COLORS.champion} />
-          </g>
-        </g>
-      )}
-      {onGuest && guests.includes('skeptic') && (
-        <g data-testid="palace-room-guest-skeptic" onClick={() => onGuest('skeptic')} style={{ cursor: 'pointer' }}>
-          <title>Severine's lens</title>
-          <g transform="translate(140 205)">
-            <circle r={15} fill="#eef2f7" opacity={0.6} stroke={PAL.stoneDark} strokeWidth={3} />
-            <line x1={10} y1={10} x2={25} y2={25} stroke={PAL.woodDark} strokeWidth={5} strokeLinecap="round" />
-          </g>
-        </g>
-      )}
-      {onGuest && guests.includes('ambassador') && (
-        <g data-testid="palace-room-guest-ambassador" onClick={() => onGuest('ambassador')} style={{ cursor: 'pointer' }}>
-          <title>Lucian's cup</title>
-          <g transform="translate(200 340)">
-            <ellipse cx={0} cy={11} rx={15} ry={3.4} fill={PAL.stone} stroke={PAL.stoneDark} />
-            <path d="M -11 -3 L 11 -3 L 8 9 L -8 9 Z" fill="#eef2f7" stroke={SEAT_COLORS.ambassador} strokeWidth={1.8} />
-            <path d="M 11 -1 A 5.5 4.5 0 1 1 11 6" fill="none" stroke={SEAT_COLORS.ambassador} strokeWidth={1.8} />
-          </g>
-        </g>
-      )}
-      {onGuest && guests.includes('maverick') && (
-        <g data-testid="palace-room-guest-maverick" onClick={() => onGuest('maverick')} style={{ cursor: 'pointer' }}>
-          <title>Jynx's scroll</title>
-          <g transform="translate(202 398)">
-            <rect x={-25} y={-7} width={45} height={14} rx={7} fill={PAL.paper} stroke={SEAT_COLORS.maverick} strokeWidth={1.8} />
-            <circle cx={20} cy={0} r={7} fill="#e6dcc4" stroke={SEAT_COLORS.maverick} strokeWidth={1.8} />
-            <circle cx={20} cy={0} r={2.8} fill="none" stroke={SEAT_COLORS.maverick} strokeWidth={1.4} />
-          </g>
-        </g>
-      )}
-      {onGuest && guests.includes('mentor') && (
-        <g data-testid="palace-room-guest-mentor" onClick={() => onGuest('mentor')} style={{ cursor: 'pointer' }}>
-          <title>Rumi's cairn</title>
-          <g transform="translate(448 396)">
-            <ellipse cx={0} cy={6} rx={16} ry={5} fill={PAL.stone} stroke={PAL.stoneDark} />
-            <ellipse cx={0} cy={-1} rx={11.5} ry={4.4} fill="#c4b494" stroke={PAL.stoneDark} />
-            <ellipse cx={0} cy={-7.5} rx={7.5} ry={3.8} fill={SEAT_COLORS.mentor} stroke={PAL.stoneDark} />
-          </g>
-        </g>
-      )}
+      {/* the plant, earned by the record's own growth reading */}
+      {model.growth && <RoomPlant state={model.growth} onClick={() => onFurniture('plant')} />}
 
-      {/* the name plate */}
-      <g pointerEvents="none">
-        {wrapTitle(model.task.title, 30, 2).map((line, li) => (
-          <text key={li} x={84} y={92 + li * 21} fontSize={17} fontWeight={600} fill={PAL.ink}>
-            {line}
-          </text>
-        ))}
-        <text x={84} y={92 + 48} fontSize={11.5} fill={PAL.inkSoft}>
-          {model.task.status}
-          {model.project ? ` · ${model.project.title}` : ' · standing on the grounds'}
-          {model.initiative ? ` · ${model.initiative.title}` : ''}
-        </text>
-      </g>
-    </svg>
+      {/* guest objects — a row on the floor front-left of the
+          hearth, each standing only where the attributed read
+          shows its seat attending this room's subject */}
+      {onGuest &&
+        rowGuests.map((seat, i) => {
+          const glyph = GUEST_GLYPHS[seat]!
+          const cx = 180 + i * 64
+          return (
+            <button
+              key={seat}
+              type="button"
+              data-testid={`palace-room-guest-${seat}`}
+              title={glyph.title}
+              aria-label={glyph.title}
+              onClick={() => onGuest(seat)}
+              className="absolute block cursor-pointer p-0"
+              style={{
+                left: roomPct(cx - glyph.w / 2),
+                top: roomPct(1010 - glyph.h),
+                width: roomPct(glyph.w),
+                height: roomPct(glyph.h),
+                background: 'transparent',
+                border: 'none',
+              }}
+            >
+              <svg viewBox={glyph.viewBox} className="block h-full w-full" aria-hidden>
+                {glyph.body}
+              </svg>
+            </button>
+          )
+        })}
+
+      {/* chambers within — the room's own subtasks, standing as
+          doorways on the floor's front edge */}
+      {model.subtasks.map((sub, i) => (
+        <button
+          key={sub.id}
+          type="button"
+          data-testid={`palace-subtask-${sub.id}`}
+          title={sub.title}
+          aria-label={sub.title}
+          onClick={() => onOpenSubtask(sub.id)}
+          className="absolute block cursor-pointer p-0"
+          style={{
+            left: roomPct(180 + i * 64 - 26),
+            top: roomPct(1110 - 86),
+            width: roomPct(52),
+            height: roomPct(86),
+            background: 'transparent',
+            border: 'none',
+          }}
+        >
+          <svg viewBox="0 -12 52 86" className="block h-full w-full" aria-hidden>
+            <path d="M 0 74 L 0 0 L 26 -12 L 52 0 L 52 74 Z" fill={PAL.woodDark} opacity={0.88} />
+          </svg>
+        </button>
+      ))}
+
+      {/* the entrance — a threshold, and an affordance: its tap
+          area stands over the chamber's front steps */}
+      <button
+        type="button"
+        data-testid="palace-room-threshold"
+        title="The threshold"
+        aria-label="The threshold"
+        onClick={onThreshold}
+        className="absolute block cursor-pointer p-0"
+        style={{
+          left: roomPct(627 - 100),
+          top: roomPct(1115),
+          width: roomPct(200),
+          height: roomPct(75),
+          background: 'transparent',
+          border: 'none',
+        }}
+      />
+    </div>
   )
 }

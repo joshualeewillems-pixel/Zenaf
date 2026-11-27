@@ -1154,12 +1154,13 @@ export function OverheadScene({
     | { kind: 'hearth' }
   const groundY = (d: Drawable): number =>
     d.kind === 'task' ? d.y : d.kind === 'fixture' ? d.fixture.y : 0
+  const hearthDrawable: Drawable = { kind: 'hearth' }
   const drawables: Drawable[] = [
     ...layout.placed.map(
       (p): Drawable => ({ kind: 'task', id: p.id, x: p.x, y: p.y, r: p.r }),
     ),
     ...layout.fixtures.map((f): Drawable => ({ kind: 'fixture', fixture: f })),
-    { kind: 'hearth' },
+    hearthDrawable,
   ].sort((a, b) => groundY(a) - groundY(b))
 
   /** A room's sprite box: the canvas placed so the sprite's

@@ -376,8 +376,17 @@ export default function LivingPalaceView({
     // (entity data reloaded), which is when a recompute is due.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskLevel, overheadKey])
-  const overheadReady =
-    overhead !== null && overhead.key === `${overheadKey}::${overheadFingerprint}`
+  /** The layout to render: the freshest computed for THIS layer.
+   *  While a recompute is in flight (the collection changed in
+   *  conversation), the standing layout stays on screen — when
+   *  the new one lands, the same room buttons re-render at their
+   *  new seats and the rooms TRAVEL there (the scene's position
+   *  transition), rather than the plan flashing away and the
+   *  rooms teleporting. */
+  const overheadForLayer =
+    overhead !== null && overheadKey !== null && overhead.key.startsWith(`${overheadKey}::`)
+      ? overhead.layout
+      : null
   /** The layer key at which the drawing-table room was opened —
    *  the project stands on the drawing table (the compound's
    *  table announcement, carried to the plan) until it is set
@@ -615,10 +624,10 @@ export default function LivingPalaceView({
           />
         )}
         {data && taskLevel && (current.layer === 'tasks' || current.layer === 'loose-tasks') && (
-          overheadReady ? (
+          overheadForLayer ? (
             <OverheadScene
               model={taskLevel}
-              layout={overhead.layout}
+              layout={overheadForLayer}
               vesselGold={subjectRead?.kintsugi?.restoration_of_understanding ?? false}
               onOpenTask={openTask}
               onOpenArtifact={onOverheadArtifact}

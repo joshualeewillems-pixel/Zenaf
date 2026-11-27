@@ -64,6 +64,7 @@ import {
 } from './palaceLogic'
 import { fetchAttributedRead, fetchPalaceEntities, fetchSubjectInteractions } from './palaceApi'
 import type { SubjectInteraction } from './palaceSceneLogic'
+import { plateForFloor, type RoomPlate } from './palaceScene2Logic'
 import { BuildingScene, CompoundScene, FloorScene, RoomScene } from './palaceCanvas'
 import './palace.css'
 
@@ -280,6 +281,21 @@ export default function LivingPalaceView({
     const task = data.tasks.find((t) => t.id === current.taskId)
     return task ? buildRoom(data, task) : null
   }, [data, current])
+  /** The room's chamber: the plate of the floor the room belongs
+   *  to, read off the building scene's own plan (plateForFloor —
+   *  the shared assignment, never re-derived). A room whose floor
+   *  cannot be resolved — a loose task, a loose project — stands
+   *  in the rose chamber. */
+  const roomPlate: RoomPlate = useMemo(() => {
+    if (!data || current.layer !== 'room' || !floorProject?.initiative_id) return 'rose'
+    const initiative = data.initiatives.find((i) => i.id === floorProject.initiative_id)
+    if (!initiative) return 'rose'
+    const buildingModel = buildBuilding(data, initiative)
+    return plateForFloor(
+      buildingModel.floors.map((f) => ({ key: f.project.id, roomCount: f.roomCount })),
+      floorProject.id,
+    )
+  }, [data, current, floorProject])
   const selectedIdea: Idea | null = useMemo(() => {
     if (!data || !selectedIdeaId || current.layer !== 'compound') return null
     return data.ideas.find((i) => i.id === selectedIdeaId) ?? null
@@ -480,6 +496,7 @@ export default function LivingPalaceView({
         {data && room && current.layer === 'room' && (
           <RoomScene
             model={room}
+            plate={roomPlate}
             lit={roomLit}
             onBringFire={() => {
               setRoomLit(true)

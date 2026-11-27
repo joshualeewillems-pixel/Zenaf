@@ -49,7 +49,7 @@ import {
 } from './palaceSceneLogic'
 import { CONTAINER_CLIP_PATH, SCENE2_FRAME, planBuildingScene, type RoomPlate } from './palaceScene2Logic'
 import { useTintedMaster } from './palaceTint'
-import { glassColorFor, useGlassPlate } from './palaceGlass'
+import { PLATE_URLS, glassColorFor, useGlassPlate } from './palaceGlass'
 import planImage from './assets/palace-plan.jpg'
 import frontWallImage from './assets/palace-front-wall.png'
 import fireImage from './assets/palace-fire.png'
@@ -60,7 +60,6 @@ import scalesWeighedImage from './assets/palace-scales-weighed.webp'
 import chestImage from './assets/palace-chest.webp'
 import chestOpenImage from './assets/palace-chest-open.webp'
 import drawingTableImage from './assets/palace-drawing-table.webp'
-import roomRoseImage from './assets/palace-room-rose.jpg'
 import { BONSAI_ASPECT, BONSAI_BASE_LIFT, useBenchBonsaiImage } from './palacePlant'
 import architectureImage from './assets/palace-architecture.webp'
 import plateImage from '../assets/living-sky/plate.webp'
@@ -1253,10 +1252,17 @@ export function ScalesArt({
 /* Implement the palace as we've discussed")                           */
 /*                                                                     */
 /* The room stops being the drawn cutaway: the room IS one of the    */
-/* founder's unfurnished chamber plates — the rose chamber for       */
-/* every room in this build (the plate he tuned the seats on) —      */
-/* furnished with his artifacts at the seats he marked through       */
-/* studies A1–A7 (room-study-A7-fitted.png). A plate-frame           */
+/* founder's unfurnished chamber plates, furnished with his          */
+/* artifacts at the seats he marked through studies A1–A7            */
+/* (room-study-A7-fitted.png). A room takes the chamber of the       */
+/* FLOOR it belongs to — the same plate the building scene shows     */
+/* for that floor (plateForFloor, the shared plan; founder,          */
+/* 2026-11-26 18:55 PT: "Good! Implement it!") — rose, spiral or     */
+/* tiers, each with its own seat table (the spiral and tiers seats   */
+/* are studies room-study-spiral-A7 / room-study-tiers-A7), and      */
+/* the founder's flame stands 1.5× larger in all three chambers      */
+/* (his ruling, same message). Unresolvable floor → rose.            */
+/* A plate-frame                                                   */
 /* composition like BuildingScene: the plate, then plain             */
 /* positioned elements, placed by OBJECT bounds (the alpha-bbox      */
 /* fractions measured off each asset) — never by canvas bounds:      */
@@ -1270,8 +1276,11 @@ export function ScalesArt({
 /* list), closed iff it holds none; the founder's flame stands in    */
 /* the plate's own hearth ring iff the room is lit (Maeve            */
 /* attending), rendered in front of the drawing table; the window    */
-/* state reads on the plate's three lancet windows. Every testid,    */
-/* handler and staged focus is the old room's.                       */
+/* state reads on the plate's windows — the rose chamber's three      */
+/* lancets, or the great round windows of the spiral and tiers       */
+/* chambers, whose hearths also carry the plate's front wall back    */
+/* over the flame's base so the fire stands in the pit. Every        */
+/* testid, handler and staged focus is the old room's.               */
 /* ------------------------------------------------------------------ */
 
 const ROOM_FRAME = 1254
@@ -1344,7 +1353,7 @@ function RoomArt({
 /** The mandala — the old room's glyph, unchanged: earned where
  *  recorded edges converge, or standing as Aria's guest object
  *  where she attends. In the chamber it centres on the plate's
- *  rose window. */
+ *  great window. */
 function MandalaGlyph() {
   return (
     <svg viewBox="-24 -24 48 48" className="block h-full w-full" aria-hidden>
@@ -1373,11 +1382,23 @@ function MandalaGlyph() {
  *  painting is unavailable the PlantGlyph stands, as it always
  *  has — no other art is substituted. (This seat is provisional:
  *  it was not among the founder's marked seats.) */
-function RoomPlant({ state, onClick }: { state: 'growing' | 'fruiting'; onClick: () => void }) {
+function RoomPlant({
+  state,
+  onClick,
+  cx = 150,
+  floorY = 1005,
+}: {
+  state: 'growing' | 'fruiting'
+  onClick: () => void
+  /** The seat's centre and floor line, per plate (rose's seat is
+   *  the original: centre 150, floor 1005). */
+  cx?: number
+  floorY?: number
+}) {
   const href = useBenchBonsaiImage(state)
   const imgH = 120
   const imgW = imgH / BONSAI_ASPECT
-  const imgBottom = 1005 + BONSAI_BASE_LIFT * imgH
+  const imgBottom = floorY + BONSAI_BASE_LIFT * imgH
   return (
     <button
       type="button"
@@ -1387,7 +1408,7 @@ function RoomPlant({ state, onClick }: { state: 'growing' | 'fruiting'; onClick:
       onClick={onClick}
       className="absolute block cursor-pointer p-0"
       style={{
-        left: roomPct(150 - imgW / 2),
+        left: roomPct(cx - imgW / 2),
         top: roomPct(imgBottom - imgH),
         width: roomPct(imgW),
         height: roomPct(imgH),
@@ -1482,14 +1503,106 @@ const GUEST_GLYPHS: Partial<
   },
 }
 
-/** The plate's three lancet windows, in frame units (measured off
- *  the rose plate): the window state's overlay ground. */
+/** The rose plate's three lancet windows, in frame units
+ *  (measured off the plate): the window state's overlay ground
+ *  in the rose chamber. */
 const LANCETS = [
   { x: 500, w: 48 },
   { x: 572, w: 68 },
   { x: 696, w: 48 },
 ]
 const LANCET_BOX = { x: 492, y: 442, w: 260, h: 172 }
+
+/** A window-state overlay shape, in frame units: a lancet of the
+ *  rose chamber, or one of the great round windows flanking the
+ *  spiral and tiers chambers' great window (their tall lancets
+ *  stand behind the staircase, so the state reads there). */
+type RoomWindowShape =
+  | { kind: 'lancet'; x: number; w: number; y: number; h: number }
+  | { kind: 'round'; cx: number; cy: number; r: number }
+
+/** One chamber's seat table — every positioned element of the
+ *  room, in frame units, placed by OBJECT bounds as the studies
+ *  placed them. The flame heights carry the founder's 1.5×
+ *  (2026-11-26 18:55 PT). */
+interface RoomSeatTable {
+  scales: { cx: number; bottom: number; side: number }
+  chest: { cx?: number; right?: number; bottom: number; side: number }
+  vessel: { cx: number; bottom: number; side: number }
+  table: { cx: number; bottom: number; side: number }
+  flame: { cx: number; base: number; height: number }
+  /** The hearth ring's centre — the tap target stands on it. */
+  hearth: { cx: number; cy: number }
+  /** The hearth's front-wall band: the plate's own stonework,
+   *  rendered back over the flame's base so the fire stands IN
+   *  the pit. Null where the chamber needs none (rose — the
+   *  approved rose study has none). */
+  wallBand: { x0: number; y0: number; x1: number; y1: number } | null
+  mandala: { cx: number; cy: number }
+  windowBox: { x: number; y: number; w: number; h: number }
+  windowShapes: RoomWindowShape[]
+  plant: { cx: number; bottom: number }
+  guestRow: { startX: number; bottom: number }
+  subtaskBottom: number
+  threshold: { x: number; y: number; w: number; h: number }
+}
+
+const ROOM_SEATS: Record<RoomPlate, RoomSeatTable> = {
+  rose: {
+    scales: { cx: 282, bottom: 608, side: 195 },
+    chest: { right: 1070, bottom: 616, side: 185 },
+    vessel: { cx: 975, bottom: 985, side: 205 },
+    table: { cx: 695, bottom: 949, side: 315 },
+    flame: { cx: 627, base: 972, height: 150 },
+    hearth: { cx: 627, cy: 910 },
+    wallBand: null,
+    mandala: { cx: 627, cy: 268 },
+    windowBox: LANCET_BOX,
+    windowShapes: LANCETS.map((l) => ({ kind: 'lancet' as const, x: l.x, w: l.w, y: 450, h: 155 })),
+    plant: { cx: 150, bottom: 1005 },
+    guestRow: { startX: 180, bottom: 1010 },
+    subtaskBottom: 1110,
+    threshold: { x: 527, y: 1115, w: 200, h: 75 },
+  },
+  spiral: {
+    scales: { cx: 280, bottom: 560, side: 170 },
+    chest: { cx: 965, bottom: 560, side: 160 },
+    vessel: { cx: 445, bottom: 1085, side: 190 },
+    table: { cx: 895, bottom: 1080, side: 260 },
+    flame: { cx: 632, base: 998, height: 188 },
+    hearth: { cx: 632, cy: 936 },
+    wallBand: { x0: 540, y0: 986, x1: 725, y1: 1020 },
+    mandala: { cx: 627, cy: 235 },
+    windowBox: { x: 345, y: 130, w: 565, h: 170 },
+    windowShapes: [
+      { kind: 'round', cx: 430, cy: 215, r: 85 },
+      { kind: 'round', cx: 825, cy: 215, r: 85 },
+    ],
+    plant: { cx: 200, bottom: 1100 },
+    guestRow: { startX: 180, bottom: 1110 },
+    subtaskBottom: 1150,
+    threshold: { x: 300, y: 1100, w: 650, h: 80 },
+  },
+  tiers: {
+    scales: { cx: 200, bottom: 522, side: 130 },
+    chest: { cx: 1050, bottom: 522, side: 125 },
+    vessel: { cx: 375, bottom: 1070, side: 180 },
+    table: { cx: 880, bottom: 1065, side: 240 },
+    flame: { cx: 620, base: 1078, height: 177 },
+    hearth: { cx: 620, cy: 1016 },
+    wallBand: { x0: 525, y0: 1062, x1: 720, y1: 1100 },
+    mandala: { cx: 627, cy: 180 },
+    windowBox: { x: 335, y: 110, w: 585, h: 160 },
+    windowShapes: [
+      { kind: 'round', cx: 415, cy: 190, r: 80 },
+      { kind: 'round', cx: 840, cy: 190, r: 80 },
+    ],
+    plant: { cx: 190, bottom: 1110 },
+    guestRow: { startX: 170, bottom: 1120 },
+    subtaskBottom: 1160,
+    threshold: { x: 280, y: 1110, w: 700, h: 90 },
+  },
+}
 
 export function RoomScene({
   model,
@@ -1502,9 +1615,14 @@ export function RoomScene({
   vesselGold = false,
   guests = [],
   onGuest,
+  plate = 'rose',
 }: {
   model: RoomModel
   lit: boolean
+  /** The chamber this room stands in — the plate of the floor it
+   *  belongs to (plateForFloor, the building scene's own plan).
+   *  Rose when the floor cannot be resolved. */
+  plate?: RoomPlate
   onBringFire: () => void
   onThreshold: () => void
   onOpenWaitedOn: (taskId: string) => void
@@ -1518,21 +1636,23 @@ export function RoomScene({
   guests?: SeatId[]
   onGuest?: (seat: SeatId) => void
 }) {
+  const seats = ROOM_SEATS[plate]
   const waited = model.waitsOn[0]
   /** The chest stands open iff the room holds recorded material —
    *  its held list (notes, description, criteria) is non-empty. */
   const chestOpen = model.held != null
   const rowGuests = GUEST_ROW_ORDER.filter((seat) => guests.includes(seat))
   /** The window's reading of the waited-on rooms, on the plate's
-   *  lancets: a wall still being built tints them the amber tone;
+   *  windows: a wall still being built tints them the amber tone;
    *  a completed wall leaves them pale and bright; nothing waited
    *  on, no overlay. */
-  const lancetTone =
+  const windowTone =
     model.windowState === 'building'
       ? 'rgba(216, 164, 65, 0.45)'
       : model.windowState === 'complete'
         ? 'rgba(255, 246, 214, 0.60)'
         : 'transparent'
+  const windowBox = seats.windowBox
   return (
     <div
       className="relative w-full select-none"
@@ -1540,49 +1660,67 @@ export function RoomScene({
       role="img"
       aria-label={`Room — ${model.task.title}`}
     >
-      {/* the chamber itself — the founder's rose plate */}
+      {/* the chamber itself — the founder's plate for this room's
+          floor: rose, spiral or tiers */}
       <img
-        src={roomRoseImage}
+        src={PLATE_URLS[plate]}
         alt=""
         draggable={false}
         className="absolute inset-0 block h-full w-full"
       />
 
-      {/* the window state, read on the plate's three lancet
-          windows. The group keeps the old window's tap: it opens
-          the waited-on room. */}
+      {/* the window state, read on the plate's windows — the rose
+          chamber's three lancets, or the great round windows
+          flanking the spiral and tiers chambers' great window.
+          The group keeps the old window's tap: it opens the
+          waited-on room. */}
       <div
         data-testid="palace-room-window"
         data-window-state={model.windowState ?? 'none'}
         onClick={() => waited && onOpenWaitedOn(waited.id)}
         className="absolute block"
         style={{
-          left: roomPct(LANCET_BOX.x),
-          top: roomPct(LANCET_BOX.y),
-          width: roomPct(LANCET_BOX.w),
-          height: roomPct(LANCET_BOX.h),
+          left: roomPct(windowBox.x),
+          top: roomPct(windowBox.y),
+          width: roomPct(windowBox.w),
+          height: roomPct(windowBox.h),
           cursor: waited ? 'pointer' : 'default',
         }}
       >
-        {LANCETS.map((l) => (
-          <span
-            key={l.x}
-            className="pointer-events-none absolute block"
-            style={{
-              left: `${((l.x - LANCET_BOX.x) / LANCET_BOX.w) * 100}%`,
-              top: `${((450 - LANCET_BOX.y) / LANCET_BOX.h) * 100}%`,
-              width: `${(l.w / LANCET_BOX.w) * 100}%`,
-              height: `${(155 / LANCET_BOX.h) * 100}%`,
-              background: lancetTone,
-              borderRadius: '45% 45% 0 0 / 26% 26% 0 0',
-            }}
-          />
-        ))}
+        {seats.windowShapes.map((shape) =>
+          shape.kind === 'lancet' ? (
+            <span
+              key={`lancet-${shape.x}`}
+              className="pointer-events-none absolute block"
+              style={{
+                left: `${((shape.x - windowBox.x) / windowBox.w) * 100}%`,
+                top: `${((shape.y - windowBox.y) / windowBox.h) * 100}%`,
+                width: `${(shape.w / windowBox.w) * 100}%`,
+                height: `${(shape.h / windowBox.h) * 100}%`,
+                background: windowTone,
+                borderRadius: '45% 45% 0 0 / 26% 26% 0 0',
+              }}
+            />
+          ) : (
+            <span
+              key={`round-${shape.cx}`}
+              className="pointer-events-none absolute block"
+              style={{
+                left: `${((shape.cx - shape.r - windowBox.x) / windowBox.w) * 100}%`,
+                top: `${((shape.cy - shape.r - windowBox.y) / windowBox.h) * 100}%`,
+                width: `${((2 * shape.r) / windowBox.w) * 100}%`,
+                height: `${((2 * shape.r) / windowBox.h) * 100}%`,
+                background: windowTone,
+                borderRadius: '50%',
+              }}
+            />
+          ),
+        )}
       </div>
 
       {/* the mandala — earned where recorded edges converge, or
           standing as Aria's guest object where she attends —
-          centred on the rose window */}
+          centred on the plate's great window */}
       {(model.mandala || guests.includes('conductor')) && (
         <button
           type="button"
@@ -1592,8 +1730,8 @@ export function RoomScene({
           onClick={() => (guests.includes('conductor') && onGuest ? onGuest('conductor') : onFurniture('mandala'))}
           className="absolute block cursor-pointer p-0"
           style={{
-            left: roomPct(627 - 75),
-            top: roomPct(268 - 75),
+            left: roomPct(seats.mandala.cx - 75),
+            top: roomPct(seats.mandala.cy - 75),
             width: roomPct(150),
             aspectRatio: '1 / 1',
             background: 'transparent',
@@ -1606,30 +1744,32 @@ export function RoomScene({
 
       {/* the scales — an instrument; a weight rests in the pan only
           where the room's task carries a recorded estimate. Its
-          object stands on the upper-left alcove's ledge line. */}
+          object stands on its alcove's ledge line. */}
       <RoomArt
         testid="palace-room-scales"
         label="The scales"
         href={model.task.estimated_hours != null ? scalesWeighedImage : scalesImage}
         extent={SCALES_OBJECT}
-        side={195}
-        objCx={282}
-        objBottom={608}
+        side={seats.scales.side}
+        objCx={seats.scales.cx}
+        objBottom={seats.scales.bottom}
         onClick={() => onFurniture('scales')}
       />
 
       {/* the chest — the founder's art in its two states: open
           where the room holds recorded material, closed where it
-          holds none. Its object stands on the upper-right
-          alcove's ledge line, its right edge at the wall. */}
+          holds none. Its object stands on its alcove's ledge
+          line — in the rose chamber with its right edge at the
+          wall, in the spiral and tiers chambers centred. */}
       <RoomArt
         testid="palace-room-chest"
         label="The chest"
         href={chestOpen ? chestOpenImage : chestImage}
         extent={chestOpen ? CHEST_OPEN_OBJECT : CHEST_OBJECT}
-        side={185}
-        objRight={1070}
-        objBottom={616}
+        side={seats.chest.side}
+        objCx={seats.chest.cx}
+        objRight={seats.chest.right}
+        objBottom={seats.chest.bottom}
         onClick={() => onFurniture('chest')}
       />
 
@@ -1640,15 +1780,16 @@ export function RoomScene({
         label="The drawing table"
         href={drawingTableImage}
         extent={TABLE_OBJECT}
-        side={315}
-        objCx={695}
-        objBottom={949}
+        side={seats.table.side}
+        objCx={seats.table.cx}
+        objBottom={seats.table.bottom}
         onClick={() => onFurniture('table')}
       />
 
       {/* the hearth's flame — the founder's own flame standing in
-          the plate's stone ring, lit only when Maeve attends this
-          room; it renders in front of the drawing table */}
+          the plate's stone ring at 1.5× (his ruling, 2026-11-26
+          18:55 PT), lit only when Maeve attends this room; it
+          renders in front of the drawing table */}
       {lit && (
         <img
           src={fireImage}
@@ -1656,9 +1797,25 @@ export function RoomScene({
           draggable={false}
           className="pointer-events-none absolute block"
           style={{
-            left: roomPct(627 - (100 * FLAME_ASPECT) / 2),
-            top: roomPct(972 - 100),
-            width: roomPct(100 * FLAME_ASPECT),
+            left: roomPct(seats.flame.cx - (seats.flame.height * FLAME_ASPECT) / 2),
+            top: roomPct(seats.flame.base - seats.flame.height),
+            width: roomPct(seats.flame.height * FLAME_ASPECT),
+          }}
+        />
+      )}
+      {/* the hearth's front wall — the plate's own stonework over
+          the flame's base, so the fire stands IN the pit (spiral
+          and tiers; the rose chamber needs none). It is the plate
+          itself, clipped to the band — nothing new is drawn. */}
+      {seats.wallBand && (
+        <div
+          data-testid="palace-room-hearth-wall"
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage: `url(${PLATE_URLS[plate]})`,
+            backgroundSize: '100% 100%',
+            clipPath: `inset(${roomPct(seats.wallBand.y0)} ${roomPct(ROOM_FRAME - seats.wallBand.x1)} ${roomPct(ROOM_FRAME - seats.wallBand.y1)} ${roomPct(seats.wallBand.x0)})`,
           }}
         />
       )}
@@ -1672,8 +1829,8 @@ export function RoomScene({
         onClick={onBringFire}
         className="absolute block cursor-pointer p-0"
         style={{
-          left: roomPct(627 - 80),
-          top: roomPct(910 - 85),
+          left: roomPct(seats.hearth.cx - 80),
+          top: roomPct(seats.hearth.cy - 85),
           width: roomPct(160),
           aspectRatio: '1 / 1',
           background: 'transparent',
@@ -1683,20 +1840,27 @@ export function RoomScene({
 
       {/* the Kintsugi vessel — the founder's art; gold seams only
           on recorded repair, otherwise the same vessel, unfilled.
-          It stands on the floor at the right. */}
+          It stands on the floor, at its chamber's seat. */}
       <RoomArt
         testid="palace-room-vessel"
         label="The Kintsugi vessel"
         href={model.vesselGold || vesselGold ? vesselGoldImage : vesselPlainImage}
         extent={VESSEL_OBJECT}
-        side={205}
-        objCx={975}
-        objBottom={985}
+        side={seats.vessel.side}
+        objCx={seats.vessel.cx}
+        objBottom={seats.vessel.bottom}
         onClick={() => onFurniture('vessel')}
       />
 
       {/* the plant, earned by the record's own growth reading */}
-      {model.growth && <RoomPlant state={model.growth} onClick={() => onFurniture('plant')} />}
+      {model.growth && (
+        <RoomPlant
+          state={model.growth}
+          cx={seats.plant.cx}
+          floorY={seats.plant.bottom}
+          onClick={() => onFurniture('plant')}
+        />
+      )}
 
       {/* guest objects — a row on the floor front-left of the
           hearth, each standing only where the attributed read
@@ -1704,7 +1868,7 @@ export function RoomScene({
       {onGuest &&
         rowGuests.map((seat, i) => {
           const glyph = GUEST_GLYPHS[seat]!
-          const cx = 180 + i * 64
+          const cx = seats.guestRow.startX + i * 64
           return (
             <button
               key={seat}
@@ -1716,7 +1880,7 @@ export function RoomScene({
               className="absolute block cursor-pointer p-0"
               style={{
                 left: roomPct(cx - glyph.w / 2),
-                top: roomPct(1010 - glyph.h),
+                top: roomPct(seats.guestRow.bottom - glyph.h),
                 width: roomPct(glyph.w),
                 height: roomPct(glyph.h),
                 background: 'transparent',
@@ -1743,7 +1907,7 @@ export function RoomScene({
           className="absolute block cursor-pointer p-0"
           style={{
             left: roomPct(180 + i * 64 - 26),
-            top: roomPct(1110 - 86),
+            top: roomPct(seats.subtaskBottom - 86),
             width: roomPct(52),
             height: roomPct(86),
             background: 'transparent',
@@ -1766,10 +1930,10 @@ export function RoomScene({
         onClick={onThreshold}
         className="absolute block cursor-pointer p-0"
         style={{
-          left: roomPct(627 - 100),
-          top: roomPct(1115),
-          width: roomPct(200),
-          height: roomPct(75),
+          left: roomPct(seats.threshold.x),
+          top: roomPct(seats.threshold.y),
+          width: roomPct(seats.threshold.w),
+          height: roomPct(seats.threshold.h),
           background: 'transparent',
           border: 'none',
         }}

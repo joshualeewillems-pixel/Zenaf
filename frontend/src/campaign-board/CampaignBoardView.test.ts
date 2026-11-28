@@ -73,6 +73,7 @@ vi.mock('../chat/CouncilChat', async () => {
 const fetchLog: { url: string; method: string }[] = []
 
 import CampaignBoardView from './CampaignBoardView'
+import { assumptionSetId } from '../vision-execution/temporalStanding'
 /** The board door, controllable per test: warm by default;
  *  the door test holds it shut and releases it by hand. */
 const boardPreloadControl = vi.hoisted(() => ({
@@ -819,6 +820,129 @@ describe('CampaignBoardView', () => {
     expect(layers).toHaveLength(1)
     expect(layers[0].getAttribute('data-layer-kind')).toBe('grove')
     expect(layers[0].textContent).toContain('Branch work')
+  })
+
+  it('standing spans read at a glance (S2): bracketed envelope, dashed forecast, dotted hypothesis, dotted envelope tail', async () => {
+    const base = {
+      brief: '', owner_id: null, supporting_owner_ids: [], priority: '',
+      start_date: null, end_date: null, estimated_weekly_hours: null,
+      next_step_ai: '', notes: '', created_at: '2026-10-01T00:00:00', updated_at: '2026-10-01T00:00:00',
+    }
+    const projects = [
+      { ...base, id: 'pe', initiative_id: 'i1', title: 'Recovered work', status: 'Active' },
+      { ...base, id: 'pf', initiative_id: 'i1', title: 'Forecast work', status: 'Active' },
+      { ...base, id: 'ph', initiative_id: 'i1', title: 'Hypothesis work', status: 'Active' },
+      { ...base, id: 'pu', initiative_id: null, title: 'Undated work', status: 'Draft' },
+    ]
+    const spanRow = (
+      id: string,
+      projectId: string,
+      snapshot: Record<string, unknown>,
+    ) => ({
+      id,
+      entity_type: 'project',
+      entity_id: projectId,
+      decision_type: 'temporal_span_recorded',
+      final_values_snapshot: snapshot,
+      created_at: '2026-11-28T00:00:00',
+    })
+    const decisions = [
+      spanRow('span-pe', 'pe', {
+        start: '2026-10-20', end: '2026-12-01',
+        origin: 'evidence-recovered', standing: 'evidence-recovered envelope',
+        role: 'window', effort: { kind: 'unknown' },
+        basis: ['recorded task due dates'], method: 'evidence recovery',
+      }),
+      spanRow('span-pf', 'pf', {
+        start: '2026-11-05', end: '2026-12-10',
+        origin: 'derived', standing: 'derived forecast',
+        role: 'window', effort: { kind: 'exact', hours: 25 },
+        conditionality: {
+          kind: 'conditional',
+          assumption_set_id: assumptionSetId(['pf-allocation-holds']),
+          assumptions: [
+            { id: 'pf-allocation-holds', type: 'allocation', statement: 'the recorded allocation holds' },
+          ],
+        },
+        basis: ['recorded estimated hours'], method: 'sizing',
+      }),
+      spanRow('span-ph', 'ph', {
+        start: '2026-12-10', end: '2027-02-07',
+        origin: 'proposed', standing: 'provisional',
+        role: 'window', effort: { kind: 'unknown' },
+        basis: ['nominal sizing'], method: 'derivation',
+      }),
+    ]
+    vi.stubGlobal(
+      'fetch',
+      stubFetch({
+        '/vision-execution/initiatives': [{ id: 'i1', title: 'Standing grounds' }],
+        '/vision-execution/projects': projects,
+        '/vision-execution/tasks': [],
+        '/vision-execution/decisions?entity_type=project&limit=500': decisions,
+      }),
+    )
+    await act(async () => {
+      root.render(React.createElement(CampaignBoardView))
+    })
+    await flush()
+    await flush()
+
+    // The initiative envelope (Oct 20 – Feb 7) rests on recorded and
+    // derived spans until Dec 10, then on the hypothesis alone:
+    // a solid segment, then a dotted tail.
+    const initLine = container.querySelector('[data-testid="initiative-line"]')!
+    expect(initLine).toBeTruthy()
+    expect(initLine.querySelector('[data-testid="initiative-line-firm"]')).toBeTruthy()
+    expect(initLine.querySelector('[data-testid="initiative-line-provisional"]')).toBeTruthy()
+
+    await openGround('i1')
+    const routeLines = [...container.querySelectorAll('[data-testid="route-line"]')]
+    expect(routeLines).toHaveLength(3)
+    const dashOf = (el: Element) => el.getAttribute('stroke-dasharray')
+    // The envelope: solid, bracketed as a measured extent.
+    const envelopeLine = routeLines.find((l) => dashOf(l) == null)!
+    expect(envelopeLine).toBeTruthy()
+    // The forecast: dashed. The hypothesis: dotted and faded, drawn
+    // at its recorded 59-day window — never a solid line, never
+    // shrunk to the nominal flag.
+    const forecastLine = routeLines.find((l) => dashOf(l) === '7 4')!
+    expect(forecastLine).toBeTruthy()
+    const hypothesisLine = routeLines.find((l) => dashOf(l) === '0.5 5')!
+    expect(hypothesisLine).toBeTruthy()
+    expect(hypothesisLine.getAttribute('opacity')).toBe('0.55')
+    const hypLen =
+      Number(hypothesisLine.getAttribute('x2')) - Number(hypothesisLine.getAttribute('x1'))
+    expect(hypLen).toBeGreaterThan(100)
+    // Exactly one bracket pair — the envelope lane's.
+    expect(container.querySelectorAll('[data-testid="span-bracket"]')).toHaveLength(1)
+    // The captions name the standings.
+    const text = container.textContent ?? ''
+    expect(text).toContain('evidence-recovered envelope')
+    expect(text).toContain('derived forecast · conditional')
+    expect(text).toContain('provisional hypothesis — recorded, not established')
+    // The hypothesis project wears NO red ! — a timeframe IS
+    // recorded for it. The one bang belongs to the truly undated
+    // loose project.
+    expect(container.querySelectorAll('[data-testid="no-timeframe-bang"]')).toHaveLength(1)
+
+    // Into the envelope project's focus board: the timeline strip
+    // carries the same grammar — bracketed, and lettered with the
+    // standing's name. (Lanes sort by title on the board, so the
+    // lane is found by its name, not by position.)
+    const lane = [...container.querySelectorAll('g')].find(
+      (g) => g.querySelector('text')?.textContent === 'Recovered work',
+    )!
+    const laneHit = lane.querySelector('rect[fill-opacity="0"]')!
+    await act(async () => {
+      laneHit.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+    expect(container.textContent).toContain('← All projects')
+    expect(container.textContent).toContain('Recovered work')
+    const stripLabel = container.querySelector('[data-testid="span-standing-label"]')
+    expect(stripLabel?.textContent).toBe('evidence-recovered envelope')
+    expect(container.querySelector('[data-testid="span-bracket"]')).toBeTruthy()
   })
 })
 

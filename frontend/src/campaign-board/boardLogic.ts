@@ -151,6 +151,70 @@ export function projectSpan(
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Standing presentation — how a span's standing reads on the board    */
+/* ------------------------------------------------------------------ */
+
+export interface SpanStandingStyle {
+  /** SVG stroke-dasharray for the span's line; undefined = solid. */
+  dasharray?: string
+  /** Line/glyph opacity: 1 for anything the record establishes or
+   *  recovers; less for what is only projected or proposed. */
+  opacity: number
+  /** The standing's presentation label (brief §2: the categories
+   *  survive as presentation vocabulary), or null for spans that
+   *  come straight from the record and need no qualifier. */
+  label: string | null
+  /** End ticks — a measured bracket — for spans grounded in
+   *  recorded evidence (recovered envelopes, historical
+   *  observations). */
+  bracketed: boolean
+}
+
+/**
+ * The board's standing grammar (Temporal Orchestration S2): one
+ * treatment per standing, shared by the overview and the focus
+ * board so a span reads the same way everywhere it is drawn.
+ *  - recorded (project/task dates): solid — the record itself.
+ *  - evidence-recovered envelope / historical observation: solid
+ *    and bracketed — measured off recorded evidence.
+ *  - established commitment: solid.
+ *  - derived forecast: dashed — projected from the record, not
+ *    yet real; a conditional forecast says so in its label.
+ *  - visitor target: dash-dot — aimed at, not committed.
+ *  - provisional hypothesis: dotted and faded — a recorded guess,
+ *    never to be mistaken for a commitment line.
+ * An invented provisional window (no standing record behind it)
+ * shares the hypothesis treatment: it, too, is only a guess.
+ */
+export function spanStandingStyle(span: BoardSpan): SpanStandingStyle {
+  switch (span.standing) {
+    case 'evidence-recovered envelope':
+    case 'historical observation':
+      return { opacity: 1, label: span.standing, bracketed: true }
+    case 'established commitment':
+      return { opacity: 1, label: span.standing, bracketed: false }
+    case 'derived forecast':
+      return {
+        dasharray: '7 4',
+        opacity: 0.9,
+        label: span.conditional ? 'derived forecast · conditional' : 'derived forecast',
+        bracketed: false,
+      }
+    case 'visitor target':
+      return { dasharray: '10 3 2 3', opacity: 0.9, label: 'visitor target', bracketed: false }
+    case 'provisional':
+      return { dasharray: '0.5 5', opacity: 0.55, label: 'provisional hypothesis', bracketed: false }
+    default:
+      break
+  }
+  if (span.source === 'provisional') {
+    // The invented window: no record behind it at all.
+    return { dasharray: '0.5 5', opacity: 0.55, label: null, bracketed: false }
+  }
+  return { opacity: 1, label: null, bracketed: false }
+}
+
 export function fractionForDate(span: BoardSpan, ms: number): number {
   const f = (ms - span.startMs) / (span.endMs - span.startMs)
   return Math.min(0.98, Math.max(0.02, f))
@@ -561,6 +625,14 @@ export interface OverviewProject {
    *  stands at its camp with its finish flag unplanted — its route is
    *  never stretched to an invented length. */
   spanned: boolean
+  /** True when the project's span is a recorded provisional
+   *  hypothesis (a standing record with standing 'provisional'):
+   *  drawn at its recorded window in the hypothesis treatment —
+   *  dotted, faded, finish flag unplanted — never as a solid route,
+   *  and never with the dateless camp's red ! (a timeframe IS
+   *  recorded; it is simply not established). Distinct from
+   *  `spanned`: nothing about it is established. */
+  hypothesis: boolean
 }
 
 const STATUS_ORDER: Record<string, number> = { Active: 0, Blocked: 1, Ready: 2, Draft: 3, Parked: 4 }
@@ -593,8 +665,10 @@ export function buildOverview(
         layers: [] as OverviewLayer[],
         openTaskCount: projectTasks.filter(isOpenTask).length,
         doneTaskCount: projectTasks.filter(isDoneTask).length,
-        routeDays: span.source === 'provisional' ? NOMINAL_DAYS : span.days,
+        routeDays:
+          span.source === 'provisional' && span.spanId == null ? NOMINAL_DAYS : span.days,
         spanned: span.source !== 'provisional',
+        hypothesis: span.source === 'provisional' && span.spanId != null,
       }
     })
 
@@ -689,11 +763,20 @@ export interface OverviewGroup {
   initiative: { id: string; title: string } | null
   projects: OverviewProject[]
   /** The initiative's own timeline: the envelope of its
-   *  projects' recorded spans — earliest start to latest
-   *  finish — or null when no project under it carries dates.
-   *  An initiative with no dated work has no timeline; the
-   *  board never invents one. */
+   *  projects' drawn spans — earliest start to latest finish —
+   *  or null when no project under it carries dates. Recorded
+   *  provisional hypotheses count toward the envelope (the
+   *  founder's envelopes always included them); invented windows
+   *  never do. An initiative with no dated work has no timeline;
+   *  the board never invents one. */
   span: BoardSpan | null
+  /** The latest finish among the envelope's non-provisional
+   *  contributors (recorded spans and standing records alike):
+   *  where the initiative's line stops being solid. Past it, the
+   *  envelope rests on provisional hypotheses alone and the line
+   *  turns dotted. Null when every contributor is a hypothesis —
+   *  the whole line is provisional. */
+  firmEndMs: number | null
 }
 
 /**
@@ -712,7 +795,7 @@ export function groupOverviewByInitiative(
   const byId = new Map(initiatives.map((i) => [i.id, i]))
   const groups: OverviewGroup[] = []
   const groupByInitiativeId = new Map<string, OverviewGroup>()
-  const unanchored: OverviewGroup = { initiative: null, projects: [], span: null }
+  const unanchored: OverviewGroup = { initiative: null, projects: [], span: null, firmEndMs: null }
   for (const o of overview) {
     const initiative = o.project.initiative_id ? byId.get(o.project.initiative_id) : undefined
     if (!initiative) {
@@ -721,7 +804,12 @@ export function groupOverviewByInitiative(
     }
     let group = groupByInitiativeId.get(initiative.id)
     if (!group) {
-      group = { initiative: { id: initiative.id, title: initiative.title }, projects: [], span: null }
+      group = {
+        initiative: { id: initiative.id, title: initiative.title },
+        projects: [],
+        span: null,
+        firmEndMs: null,
+      }
       groupByInitiativeId.set(initiative.id, group)
       groups.push(group)
     }
@@ -729,24 +817,30 @@ export function groupOverviewByInitiative(
   }
   if (unanchored.projects.length > 0) groups.push(unanchored)
   for (const g of groups) {
-    const spanned = g.projects.filter((o) => o.spanned)
-    if (spanned.length === 0) continue
-    const startMs = Math.min(...spanned.map((o) => o.span.startMs))
-    const endMs = Math.max(...spanned.map((o) => o.span.endMs))
+    const drawn = g.projects.filter((o) => o.spanned || o.hypothesis)
+    if (drawn.length === 0) continue
+    const startMs = Math.min(...drawn.map((o) => o.span.startMs))
+    const endMs = Math.max(...drawn.map((o) => o.span.endMs))
     g.span = {
       startMs,
       endMs,
       days: Math.max(1, Math.round((endMs - startMs) / DAY_MS)),
       source: 'tasks',
     }
+    const firm = drawn.filter((o) => o.span.standing !== 'provisional')
+    g.firmEndMs = firm.length ? Math.max(...firm.map((o) => o.span.endMs)) : null
   }
   return groups
 }
 
 /** Pixels per day so the longest real route fits the map, capped at the
- *  prototype's 26px/day. Provisional spans never stretch the scale. */
+ *  prototype's 26px/day. Invented provisional windows never stretch
+ *  the scale; recorded provisional hypotheses do — they are drawn at
+ *  their recorded windows, so the scale must fit them honestly. */
 export function computePxPerDay(overview: OverviewProject[], availablePx: number): number {
-  const realDays = overview.filter((o) => o.span.source !== 'provisional').map((o) => o.span.days)
+  const realDays = overview
+    .filter((o) => o.span.source !== 'provisional' || o.hypothesis)
+    .map((o) => o.span.days)
   const maxDays = realDays.length ? Math.max(...realDays) : 0
   if (!maxDays) return MAX_PX_PER_DAY
   return Math.min(MAX_PX_PER_DAY, Math.max(4, availablePx / maxDays))

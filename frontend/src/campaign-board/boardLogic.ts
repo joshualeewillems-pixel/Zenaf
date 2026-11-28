@@ -141,6 +141,9 @@ export interface BoardObstacle {
   domain: ObstacleDomain
   standing: ObstacleStanding
   label: string
+  /** For a crossing: the unfinished work in other projects this
+   *  step waits on — the dependency layers hang from these. */
+  waitsOn?: { taskId: string; projectId: string }[]
   /** The recorded wording behind the mark (task description / notes /
    *  completion criteria), preserved for the dossier popup. */
   detail: string
@@ -247,6 +250,7 @@ export function deriveObstacles(
         label: t.title,
         detail,
         fraction: frac,
+        waitsOn: crossDeps.map((d) => ({ taskId: d.id, projectId: d.project_id! })),
         rule: `This step waits on unfinished work in another project: ${crossDeps.map((d) => `“${d.title}”`).join(', ')}. A crossing — continuation depends on something not yet secured.`,
       })
     }
@@ -440,11 +444,40 @@ export interface OverviewTerrain extends TerrainFeature {
   fraction: number
 }
 
+/** One layer of a route's Gantt of sentences (founder,
+ *  2026-11-27): a sub-journey pinned to the main route at a
+ *  dependency joint (♦) or at a grove (🌳), drawn as its own
+ *  sentence — its own tally, its own terrain, its own finish.
+ *  A crossing's layer is the waited-on project's whole route;
+ *  a grove's layer is the parent step's children, branching
+ *  off the route where the grove stands. */
+export interface OverviewLayer {
+  id: string
+  kind: 'crossing' | 'grove'
+  /** Where the layer pins on the main route, 0..1 of the line. */
+  pinFraction: number
+  /** The name the layer carries: the waited-on step for a
+   *  crossing, the parent step for a grove — real names. */
+  label: string
+  /** The other project's title for a crossing; '' for a grove. */
+  subLabel: string
+  /** The sub-journey's own length in days. */
+  spanDays: number
+  /** The sub-journey's placed terrain. */
+  terrain: OverviewTerrain[]
+  /** Fractions within the sub-journey where its own
+   *  dependency joints (crossings and gates) stand. */
+  joints: number[]
+}
+
 export interface OverviewProject {
   project: Project
   span: BoardSpan
   obstacles: BoardObstacle[]
   terrain: OverviewTerrain[]
+  /** Dependency and grove layers under the route, in pin
+   *  order, at most four. */
+  layers: OverviewLayer[]
   openTaskCount: number
   doneTaskCount: number
   /** Days of line to draw: the real span, or NOMINAL_DAYS (flagged
@@ -465,7 +498,7 @@ export function buildOverview(
   tasks: Task[],
   nowMs: number,
 ): OverviewProject[] {
-  return projects
+  const base: OverviewProject[] = projects
     .filter((p) => p.status !== 'Complete')
     .map((project) => {
       const projectTasks = tasks.filter((t) => t.project_id === project.id)
@@ -484,18 +517,92 @@ export function buildOverview(
         span,
         obstacles: deriveObstacles(project, projectTasks, tasks, span, nowMs),
         terrain,
+        layers: [] as OverviewLayer[],
         openTaskCount: projectTasks.filter(isOpenTask).length,
         doneTaskCount: projectTasks.filter(isDoneTask).length,
         routeDays: span.source === 'provisional' ? NOMINAL_DAYS : span.days,
         spanned: span.source !== 'provisional',
       }
     })
-    .sort((x, y) => {
-      const sx = STATUS_ORDER[x.project.status] ?? 5
-      const sy = STATUS_ORDER[y.project.status] ?? 5
-      if (sx !== sy) return sx - sy
-      return x.project.title.localeCompare(y.project.title)
+
+  // Second pass: the layers. A crossing's layer is the
+  // waited-on project's own sentence, pinned at the joint; a
+  // grove's layer is its parent step's children, branching
+  // from where the grove stands — their window is the
+  // children's recorded dates, and a grove whose children
+  // carry no dates grows no layer (no invented length).
+  const byId = new Map(base.map((o) => [o.project.id, o]))
+  const placeIn = (list: Task[], span: BoardSpan): OverviewTerrain[] =>
+    declareTerrain(list).map((f) => {
+      const idx = list.findIndex((t) => t.id === f.taskId)
+      const anchor = idx >= 0 ? list[idx] : null
+      const due = anchor ? parseDateMs(anchor.due_date) : null
+      return { ...f, fraction: due != null ? fractionForDate(span, due) : (idx + 1) / (list.length + 1) }
     })
+  for (const o of base) {
+    const layers: OverviewLayer[] = []
+    for (const ob of o.obstacles) {
+      if (ob.kind !== 'crossing' || !ob.waitsOn?.length) continue
+      const other = byId.get(ob.waitsOn[0].projectId)
+      if (!other || other.project.id === o.project.id) continue
+      const waited = tasks.find((t) => t.id === ob.waitsOn![0].taskId)
+      layers.push({
+        id: `${ob.id}:layer`,
+        kind: 'crossing',
+        pinFraction: ob.fraction,
+        label: waited?.title ?? ob.label,
+        subLabel: other.project.title,
+        spanDays: other.span.days,
+        terrain: other.terrain,
+        joints: other.obstacles
+          .filter((x) => x.kind === 'crossing' || x.kind === 'gate')
+          .map((x) => x.fraction),
+      })
+    }
+    const projectTasks = tasks.filter((t) => t.project_id === o.project.id)
+    for (const f of o.terrain) {
+      if (f.kind !== 'grove') continue
+      const children = projectTasks.filter((t) => t.parent_task_id === f.taskId)
+      if (children.length === 0) continue
+      const dues = children
+        .map((t) => parseDateMs(t.due_date))
+        .filter((x): x is number => x != null)
+        .sort((a, b) => a - b)
+      const parent = projectTasks.find((t) => t.id === f.taskId)
+      const parentDue = parent ? parseDateMs(parent.due_date) : null
+      const start = dues.length ? dues[0] : parentDue
+      let end = dues.length ? dues[dues.length - 1] : parentDue
+      if (start == null || end == null) continue
+      if (end <= start) end = start + DAY_MS
+      const childSpan: BoardSpan = {
+        startMs: start,
+        endMs: end,
+        days: Math.max(1, Math.round((end - start) / DAY_MS)),
+        source: 'tasks',
+      }
+      const childObstacles = deriveObstacles(o.project, children, tasks, childSpan, nowMs)
+      layers.push({
+        id: `${f.taskId}:grove-layer`,
+        kind: 'grove',
+        pinFraction: f.fraction,
+        label: f.sourceLabel,
+        subLabel: '',
+        spanDays: childSpan.days,
+        terrain: placeIn(children, childSpan),
+        joints: childObstacles
+          .filter((x) => x.kind === 'crossing' || x.kind === 'gate')
+          .map((x) => x.fraction),
+      })
+    }
+    o.layers = layers.sort((a, b) => a.pinFraction - b.pinFraction).slice(0, 4)
+  }
+
+  return base.sort((x, y) => {
+    const sx = STATUS_ORDER[x.project.status] ?? 5
+    const sy = STATUS_ORDER[y.project.status] ?? 5
+    if (sx !== sy) return sx - sy
+    return x.project.title.localeCompare(y.project.title)
+  })
 }
 
 /* ------------------------------------------------------------------ */

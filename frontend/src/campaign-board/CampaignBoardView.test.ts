@@ -685,9 +685,9 @@ describe('CampaignBoardView', () => {
       { ...tbase, id: 'x1', project_id: 'px', title: 'The big push', status: 'Todo', estimated_hours: 24 },
       // A parent with three children: The Grove.
       { ...tbase, id: 'x2', project_id: 'px', title: 'Branch work', status: 'Todo' },
-      { ...tbase, id: 'x3', project_id: 'px', title: 'Branch one', status: 'Todo', parent_task_id: 'x2' },
-      { ...tbase, id: 'x4', project_id: 'px', title: 'Branch two', status: 'Todo', parent_task_id: 'x2' },
-      { ...tbase, id: 'x5', project_id: 'px', title: 'Branch three', status: 'Todo', parent_task_id: 'x2' },
+      { ...tbase, id: 'x3', project_id: 'px', title: 'Branch one', status: 'Todo', parent_task_id: 'x2', due_date: isoDaysFromNow(1) },
+      { ...tbase, id: 'x4', project_id: 'px', title: 'Branch two', status: 'Todo', parent_task_id: 'x2', due_date: isoDaysFromNow(3) },
+      { ...tbase, id: 'x5', project_id: 'px', title: 'Branch three', status: 'Todo', parent_task_id: 'x2', due_date: isoDaysFromNow(6) },
       // A blocked step: an obstacle on the route.
       { ...tbase, id: 'x6', project_id: 'px', title: 'Stuck step', status: 'Blocked' },
     ]
@@ -715,14 +715,27 @@ describe('CampaignBoardView', () => {
       s.getAttribute('data-sprite'),
     )
     // Both projects stand as strongholds with their camps; only
-    // the dated one's route is painted — its mountain, its
-    // grove, its obstacle crag, and the finish banner.
+    // the dated one's route is painted — its obstacle crag and
+    // the finish banners (the route's, and its grove layer's).
     expect(sprites.filter((s) => s === 'stronghold')).toHaveLength(2)
     expect(sprites.filter((s) => s === 'camp')).toHaveLength(2)
-    expect(sprites.filter((s) => s === 'finish-banner')).toHaveLength(1)
-    expect(sprites).toContain('mountain')
-    expect(sprites).toContain('grove')
+    expect(sprites.filter((s) => s === 'finish-banner')).toHaveLength(2)
     expect(sprites).toContain('obstacle-crag')
     expect(container.querySelectorAll('[data-testid="route-line"]')).toHaveLength(1)
+    // The mountain and the grove read in the sentence itself
+    // (founder, 2026-11-27): glyphs in line on the road, not
+    // sprites above it.
+    const glyphs = [...container.querySelectorAll('[data-testid="terrain-glyph"]')].map((g) =>
+      g.getAttribute('data-glyph'),
+    )
+    expect(glyphs).toContain('mountain')
+    expect(glyphs).toContain('grove')
+    // The grove grows a layer under the route — the parent
+    // step's children as their own sentence, carrying the
+    // parent's real name.
+    const layers = [...container.querySelectorAll('[data-testid="route-layer"]')]
+    expect(layers).toHaveLength(1)
+    expect(layers[0].getAttribute('data-layer-kind')).toBe('grove')
+    expect(layers[0].textContent).toContain('Branch work')
   })
 })

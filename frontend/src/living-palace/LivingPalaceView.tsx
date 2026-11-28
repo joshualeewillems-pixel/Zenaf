@@ -83,6 +83,8 @@ import {
   type OverheadLayout,
 } from './palaceOverheadLogic'
 import { BuildingScene, CompoundScene, OverheadScene, RoomScene } from './palaceCanvas'
+import { palaceAssetsReady, preloadPalaceAssets } from './palacePreload'
+import guardianLogo from '../assets/seats/guardian-logo.png'
 import './palace.css'
 
 type PalaceLayer =
@@ -144,6 +146,32 @@ export default function LivingPalaceView({
   onFollowGuest?: (seat: SeatId) => void
 } = {}) {
   const [data, setData] = useState<PalaceData | null>(null)
+  /** The door (founder, 2026-11-28): the palace's whole
+   *  imagery warms before the first scene paints — the seat's
+   *  logo spins at the door until everything nested is
+   *  accessible, so no level pops in piece by piece during
+   *  the descent. The ceiling is a mercy, not the design: if
+   *  an asset stalls on a bad connection the door opens
+   *  anyway after a long wait rather than trapping the
+   *  visitor outside. Once warm, re-entry never waits. */
+  const [assetsReady, setAssetsReady] = useState<boolean>(() => palaceAssetsReady())
+  useEffect(() => {
+    if (assetsReady) return
+    let live = true
+    const ceiling = setTimeout(() => {
+      if (live) setAssetsReady(true)
+    }, 20000)
+    void preloadPalaceAssets().then(() => {
+      if (live) {
+        clearTimeout(ceiling)
+        setAssetsReady(true)
+      }
+    })
+    return () => {
+      live = false
+      clearTimeout(ceiling)
+    }
+  }, [assetsReady])
   /** Per-subject seat-interaction counts — Scene 1's ivy read.
    *  Null until loaded; a failed read leaves it null and every
    *  building stands at resting ivy (stage 1, natural green). */
@@ -597,7 +625,18 @@ export default function LivingPalaceView({
           </div>
         )}
         {!data && !loadError && <p className="mt-10 text-center text-sm text-[#6b5b45]">Walking to the Palace…</p>}
-        {data && compound && current.layer === 'compound' && (
+        {data && !assetsReady && (
+          <div
+            data-testid="palace-preload-gate"
+            className="flex flex-col items-center justify-center gap-4 py-20"
+            role="status"
+            aria-label="Preparing the Palace"
+          >
+            <img src={guardianLogo} alt="" className="palace-logo-spin h-20 w-20 rounded-full" />
+            <p className="text-sm text-[#6b5b45]">Preparing the Palace…</p>
+          </div>
+        )}
+        {data && assetsReady && compound && current.layer === 'compound' && (
           <CompoundScene
             model={compound}
             attended={attendedCompound}
@@ -614,7 +653,7 @@ export default function LivingPalaceView({
             selectedIdeaId={selectedIdeaId}
           />
         )}
-        {data && building && current.layer === 'building' && (
+        {data && assetsReady && building && current.layer === 'building' && (
           <BuildingScene
             model={building}
             attendedFloorId={attendedFloorId}
@@ -623,7 +662,7 @@ export default function LivingPalaceView({
             interactions={interactions}
           />
         )}
-        {data && taskLevel && (current.layer === 'tasks' || current.layer === 'loose-tasks') && (
+        {data && assetsReady && taskLevel && (current.layer === 'tasks' || current.layer === 'loose-tasks') && (
           overheadForLayer ? (
             <OverheadScene
               model={taskLevel}
@@ -636,7 +675,7 @@ export default function LivingPalaceView({
             <p className="mt-10 text-center text-sm text-[#6b5b45]">Composing the plan…</p>
           )
         )}
-        {data && room && current.layer === 'room' && (
+        {data && assetsReady && room && current.layer === 'room' && (
           <RoomScene
             model={room}
             plate={roomPlate}

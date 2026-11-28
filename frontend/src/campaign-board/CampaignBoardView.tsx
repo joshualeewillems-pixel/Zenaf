@@ -42,6 +42,7 @@ import spriteCamp from './assets/sprites/camp.webp'
 import spriteCrag from './assets/sprites/obstacle-crag.webp'
 import spriteCopse from './assets/sprites/the-copse.webp'
 import spriteFinishBanner from './assets/sprites/finish-banner.webp'
+import spriteHoldWaystation from './assets/sprites/hold-waystation.webp'
 import spriteGrove from './assets/sprites/the-grove.webp'
 import spriteHill from './assets/sprites/the-hill.webp'
 import spriteMountain from './assets/sprites/the-mountain.webp'
@@ -1488,15 +1489,34 @@ function FocusBoard({
           aria-label={`Campaign map for ${project.title}`}
         >
           <rect width={MAP_W} height={FOCUS_H} fill={PARCHMENT} />
-          {/* faint contour wash */}
-          <g fill="none" stroke="#d8c9a3" strokeWidth="1.2" opacity="0.7">
-            <path d="M-20 90 C 180 40, 320 130, 520 84 C 660 52, 760 96, 830 70" />
-            <path d="M-20 420 C 200 380, 340 452, 540 410 C 680 382, 760 420, 830 396" />
-          </g>
+          {/* The scene stands on the campaign map itself
+              (founder, 2026-11-28 — "the scene itself should
+              also be populated with our map and its artifacts,
+              as we just defined"): the founder's painting drawn
+              across the whole frame at the overview's accepted
+              wash, its middle country — hills, lowlands, the
+              river bend — behind the routes. */}
+          <image
+            href={campaignMapArt}
+            x={0}
+            y={0}
+            width={MAP_W}
+            height={FOCUS_H}
+            preserveAspectRatio="xMidYMid slice"
+            opacity={0.5}
+            data-testid="focus-map-art"
+            style={{ pointerEvents: 'none' }}
+          />
 
-          {/* terrain — declared from the material, behind the routes */}
+          {/* terrain — declared from the material, behind the
+              routes. The painted artifacts stand here as they
+              do on the overview (founder, 2026-11-28): the
+              sprite kit, not vector shapes — the label keeps
+              its recorded facts (form, effort, tree count). */}
           {terrain.map((f) => {
             const at = terrainAt(f.taskId)
+            const spr = OV_TERRAIN_SPRITES[f.kind]
+            const sprH = spr ? spr.h + 10 : 0
             return (
               <g
                 key={`${f.kind}-${f.taskId}`}
@@ -1504,42 +1524,17 @@ function FocusBoard({
                 style={{ cursor: 'pointer' }}
                 onClick={() => setSelection({ kind: 'terrain', feature: f })}
               >
-                {f.kind === 'mountain' || f.kind === 'hill' ? (
-                  <>
-                    <path
-                      d={`M -52 18 L -14 ${-(26 + (f.effortDays ?? 1) * 11)} L -2 ${-(26 + (f.effortDays ?? 1) * 11) * 0.6} L 10 ${-(26 + (f.effortDays ?? 1) * 11) * 0.82} L 30 ${-(26 + (f.effortDays ?? 1) * 11) * 0.45} L 52 18 Z`}
-                      fill="#93a58c"
-                      stroke="#71855e"
-                      strokeWidth="1.2"
-                      strokeLinejoin="round"
-                    />
-                    <text y={-(26 + (f.effortDays ?? 1) * 11) - 8} textAnchor="middle" fontSize="11" fill="#54683f">
-                      {f.form} · {f.effortDays}d
-                    </text>
-                  </>
-                ) : f.kind === 'open' ? (
-                  <>
-                    <path d="M-52 16 Q-26 -4 0 8 Q26 -10 52 16 Z" fill="#a9bd8d" opacity="0.85" />
-                    <text y="-14" textAnchor="middle" fontSize="11" fill="#54683f">
-                      Open Ground · {f.effortDays}d
-                    </text>
-                  </>
+                {spr && (
+                  <OvSprite src={spr.src} name={f.kind} cx={0} base={16} h={sprH} ar={spr.ar} />
+                )}
+                {f.kind === 'mountain' || f.kind === 'hill' || f.kind === 'open' ? (
+                  <text y={-sprH - 4} textAnchor="middle" fontSize="11" fill="#54683f">
+                    {f.form} · {f.effortDays}d
+                  </text>
                 ) : (
-                  <>
-                    {Array.from({ length: f.treeCount ?? 0 }).map((_, ti) => {
-                      const offs = [[-40, 16], [-24, 26], [34, 18], [50, 28], [16, 30], [-6, 22], [-52, 30], [58, 14]]
-                      const o = offs[ti % offs.length]
-                      return (
-                        <g key={ti} transform={`translate(${o[0]},${o[1]})`}>
-                          <path d="M0 -16 L7 0 L3 0 L9 10 L-9 10 L-3 0 L-7 0 Z" fill="#5d7350" />
-                          <line x1="0" y1="10" x2="0" y2="15" stroke="#6b5133" strokeWidth="2" />
-                        </g>
-                      )
-                    })}
-                    <text y="58" textAnchor="middle" fontSize="11" fill="#54683f">
-                      {f.form} · {f.treeCount} tasks
-                    </text>
-                  </>
+                  <text y="58" textAnchor="middle" fontSize="11" fill="#54683f">
+                    {f.form} · {f.treeCount} tasks
+                  </text>
                 )}
               </g>
             )
@@ -1630,7 +1625,7 @@ function FocusBoard({
                   </>
                 ) : (
                   <>
-                    <path d="M0 -9 L7 0 L0 9 L-7 0 Z" fill={ob.kind === 'overdue' ? '#a8741a' : '#8c2e1e'} stroke={INK} strokeWidth="0.8" />
+                    <OvSprite src={spriteCrag} name="obstacle-crag" cx={0} base={11} h={30} ar={419 / 305} />
                     <text x={labelX} y={labelY} textAnchor="middle" fontSize="10.5" fill={ob.kind === 'overdue' ? '#7a5a12' : '#8c2e1e'}>
                       {ob.kindLabel}
                     </text>
@@ -1694,15 +1689,14 @@ function FocusBoard({
           {/* start camp + finish banner */}
           <g transform={`translate(${X0},${MID_Y})`} style={{ cursor: 'pointer' }} onClick={() => openEndpoint('start')}>
             {selection?.kind === 'start' && <circle r="16" fill="none" stroke={EMBER} strokeWidth="2" />}
-            <path d="M-13 10 L0 -12 L13 10 Z" fill="#8a6a42" stroke="#6b5133" strokeWidth="1.2" />
+            <OvSprite src={spriteCamp} name="camp" cx={0} base={12} h={36} ar={409 / 359} />
             <text x={startLabel ? startLabel.x - X0 : 0} y={startLabel ? startLabel.top + 11 - MID_Y : 28} textAnchor="middle" fontSize="11" fill={INK}>
               Start · {shortDate(new Date(span.startMs))}
             </text>
           </g>
           <g transform={`translate(${X1},${MID_Y})`} style={{ cursor: 'pointer' }} onClick={() => openEndpoint('finish')}>
             {selection?.kind === 'finish' && <circle r="16" fill="none" stroke={EMBER} strokeWidth="2" />}
-            <line x1="0" y1="12" x2="0" y2="-24" stroke={INK} strokeWidth="2.2" />
-            <path d="M0 -24 L20 -19 L0 -14 Z" fill={EMBER} />
+            <OvSprite src={spriteFinishBanner} name="finish-banner" cx={0} base={12} h={46} ar={422 / 384} />
             <text x={finishLabel ? finishLabel.x - X1 : 0} y={finishLabel ? finishLabel.top + 11 - MID_Y : 30} textAnchor="middle" fontSize="11" fill={INK}>
               Finish · {shortDate(new Date(span.endMs))}
             </text>
@@ -1777,11 +1771,7 @@ function FocusBoard({
               >
                 <circle r="17" fill="transparent" />
                 {staged && <circle r="15" fill="none" stroke="#a8741a" strokeWidth="2" />}
-                <line x1="0" y1="8" x2="0" y2="-16" stroke="#6b5133" strokeWidth="2.2" />
-                <path d="M0 -16 L14 -12.5 L0 -9 Z" fill="#a8741a" />
-                <ellipse cx="-5" cy="10" rx="7" ry="3.4" fill="#8d8574" stroke="#5f594c" strokeWidth="0.8" />
-                <ellipse cx="5" cy="10" rx="7" ry="3.4" fill="#9a927f" stroke="#5f594c" strokeWidth="0.8" />
-                <ellipse cx="0" cy="6.5" rx="5.5" ry="3" fill="#a39a86" stroke="#5f594c" strokeWidth="0.8" />
+                <OvSprite src={spriteHoldWaystation} name="hold-waystation" cx={0} base={12} h={38} ar={439 / 281} />
                 <text y="30" textAnchor="middle" fontSize="10.5" fontWeight="600" fill="#7a5a12" style={{ pointerEvents: 'none' }}>
                   Hold
                 </text>

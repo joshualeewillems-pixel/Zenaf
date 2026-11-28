@@ -346,6 +346,18 @@ describe('CampaignBoardView', () => {
     expect(container.textContent).toContain('The River')
     expect(container.textContent).toContain('Hold')
 
+    // The scene stands on the campaign map, populated with its
+    // artifacts (founder, 2026-11-28): the painting is the
+    // ground, and the kit stands in it — the camp at the start,
+    // the banner at the finish, the waystation for the Hold.
+    expect(container.querySelector('[data-testid="focus-map-art"]')).not.toBeNull()
+    const focusSprites = [...container.querySelectorAll('[data-sprite]')].map((i) =>
+      i.getAttribute('data-sprite'),
+    )
+    expect(focusSprites).toContain('camp')
+    expect(focusSprites).toContain('finish-banner')
+    expect(focusSprites).toContain('hold-waystation')
+
     // Tapping the signal stages it tentatively — and summons NO
     // card: no standing prose, no detail text, no declare form.
     // Explanation is Valen's, in the chat.

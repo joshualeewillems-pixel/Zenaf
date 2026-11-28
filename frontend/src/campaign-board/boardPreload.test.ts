@@ -8,9 +8,10 @@ import { BOARD_ASSET_URLS } from './boardPreload'
 
 describe('board preload', () => {
   it('aggregates the painted map and every sprite', () => {
-    // 1 map + 9 sprites (camp, crag, copse, finish banner,
-    // grove, hill, mountain, open ground, stronghold).
-    expect(BOARD_ASSET_URLS.length).toBe(10)
-    expect(new Set(BOARD_ASSET_URLS).size).toBe(10)
+    // 1 map + 10 sprites (camp, crag, copse, finish banner,
+    // grove, hill, hold waystation, mountain, open ground,
+    // stronghold).
+    expect(BOARD_ASSET_URLS.length).toBe(11)
+    expect(new Set(BOARD_ASSET_URLS).size).toBe(11)
   })
 })

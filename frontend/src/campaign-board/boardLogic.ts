@@ -615,6 +615,12 @@ export interface OverviewGroup {
    *  "unanchored"). */
   initiative: { id: string; title: string } | null
   projects: OverviewProject[]
+  /** The initiative's own timeline: the envelope of its
+   *  projects' recorded spans — earliest start to latest
+   *  finish — or null when no project under it carries dates.
+   *  An initiative with no dated work has no timeline; the
+   *  board never invents one. */
+  span: BoardSpan | null
 }
 
 /**
@@ -633,7 +639,7 @@ export function groupOverviewByInitiative(
   const byId = new Map(initiatives.map((i) => [i.id, i]))
   const groups: OverviewGroup[] = []
   const groupByInitiativeId = new Map<string, OverviewGroup>()
-  const unanchored: OverviewGroup = { initiative: null, projects: [] }
+  const unanchored: OverviewGroup = { initiative: null, projects: [], span: null }
   for (const o of overview) {
     const initiative = o.project.initiative_id ? byId.get(o.project.initiative_id) : undefined
     if (!initiative) {
@@ -642,13 +648,25 @@ export function groupOverviewByInitiative(
     }
     let group = groupByInitiativeId.get(initiative.id)
     if (!group) {
-      group = { initiative: { id: initiative.id, title: initiative.title }, projects: [] }
+      group = { initiative: { id: initiative.id, title: initiative.title }, projects: [], span: null }
       groupByInitiativeId.set(initiative.id, group)
       groups.push(group)
     }
     group.projects.push(o)
   }
   if (unanchored.projects.length > 0) groups.push(unanchored)
+  for (const g of groups) {
+    const spanned = g.projects.filter((o) => o.spanned)
+    if (spanned.length === 0) continue
+    const startMs = Math.min(...spanned.map((o) => o.span.startMs))
+    const endMs = Math.max(...spanned.map((o) => o.span.endMs))
+    g.span = {
+      startMs,
+      endMs,
+      days: Math.max(1, Math.round((endMs - startMs) / DAY_MS)),
+      source: 'tasks',
+    }
+  }
   return groups
 }
 

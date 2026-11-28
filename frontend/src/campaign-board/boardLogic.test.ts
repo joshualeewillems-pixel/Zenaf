@@ -827,3 +827,23 @@ describe('buildOverview layers — the Gantt of sentences', () => {
     expect(ov[0].layers.filter((l) => l.kind === 'grove')).toHaveLength(0)
   })
 })
+
+describe('initiative timelines — group spans', () => {
+  it('an initiative’s timeline is the envelope of its projects’ spans', () => {
+    const p1 = project({ id: 'g1', initiative_id: 'i1', start_date: '2026-06-03', end_date: '2026-06-10' })
+    const p2 = project({ id: 'g2', initiative_id: 'i1', start_date: '2026-06-08', end_date: '2026-06-29' })
+    const ov = buildOverview([p1, p2], [], NOW)
+    const groups = groupOverviewByInitiative(ov, [{ id: 'i1', title: 'Init' }])
+    expect(groups).toHaveLength(1)
+    expect(groups[0].span?.days).toBe(26)
+    expect(groups[0].span?.startMs).toBe(new Date('2026-06-03').getTime())
+    expect(groups[0].span?.endMs).toBe(new Date('2026-06-29').getTime())
+  })
+
+  it('an initiative with no dated projects has no timeline', () => {
+    const p1 = project({ id: 'g3', initiative_id: 'i1' })
+    const ov = buildOverview([p1], [], NOW)
+    const groups = groupOverviewByInitiative(ov, [{ id: 'i1', title: 'Init' }])
+    expect(groups[0].span).toBeNull()
+  })
+})

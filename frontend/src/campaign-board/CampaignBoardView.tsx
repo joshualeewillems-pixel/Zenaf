@@ -487,7 +487,13 @@ const OV_GROUP_HEAD_H = 28
 const OV_GROUP_PAD_TOP = 4
 const OV_GROUP_PAD_BOT = 10
 const OV_GROUP_GAP = 12
-const OV_TOP_PAD = 12
+/** Nothing stands above the castle (founder, 2026-11-28):
+ *  the painting's crown — banner, mountains, the castle on
+ *  its rock — stays clear, and the first ground begins below
+ *  the castle's hill. The castle's rock ends ~29% down the
+ *  painting (≈174 units at the board's width); the grounds
+ *  start a breath below it. */
+const OV_CASTLE_CLEAR = 186
 const OV_KEY_STRIP = 44
 /** Fixed cluster width for an unspanned project's ticks + flag: a
  *  camp grouping, never a scaled length. */
@@ -557,8 +563,14 @@ function OverviewBoard({
   // The board's scale: one shared width per day, adapted so
   // the longest route fits the map, capped at the day pitch.
   // Every route's tally is laid at this scale, so lengths
-  // stay comparable across the whole board.
-  const maxSpanDays = Math.max(1, ...overview.filter((o) => o.spanned).map((o) => o.span.days))
+  // stay comparable across the whole board. Initiative
+  // envelopes count too — an initiative's timeline is drawn
+  // at the same scale and must also fit.
+  const maxSpanDays = Math.max(
+    1,
+    ...overview.filter((o) => o.spanned).map((o) => o.span.days),
+    ...groups.map((g) => g.span?.days ?? 0),
+  )
   const pxPerDay = Math.min(OV_DAY_PITCH, (OV_W - OV_CAMP_X - 108) / maxSpanDays)
 
   // Lay out the grounds top to bottom. An initiative's ground is
@@ -566,10 +578,10 @@ function OverviewBoard({
   // open; the unanchored ground (loose projects) always stands
   // open. Lanes keep their board-order colours whether shown or
   // not, so opening a ground never recolours another lane.
-  let cursor = OV_TOP_PAD
+  let cursor = OV_CASTLE_CLEAR
   let colorSeq = 0
   const laidOut = groups.map((group, gi) => {
-    const headH = group.initiative ? OV_GROUP_HEAD_H : 6
+    const headH = group.initiative ? OV_GROUP_HEAD_H + (group.span ? 24 : 0) : 6
     const isOpen = !group.initiative || openInitiativeId === group.initiative.id
     const shown = isOpen ? group.projects : []
     const y = cursor
@@ -703,6 +715,48 @@ function OverviewBoard({
                   >
                     {group.projects.length} {group.projects.length === 1 ? 'project' : 'projects'}
                   </text>
+                  {/* The initiative's own timeline (founder,
+                      2026-11-28 — "why don't initiatives have
+                      timelines?"): the envelope of its projects'
+                      spans, spelled as a sentence at the board's
+                      scale under its name. An initiative whose
+                      projects carry no dates has none — the
+                      header stays one line, nothing invented. */}
+                  {group.span && (
+                    <g data-testid="initiative-line">
+                      <line
+                        x1={OV_CAMP_X}
+                        y1={y + 40}
+                        x2={OV_CAMP_X + group.span.days * pxPerDay}
+                        y2={y + 40}
+                        stroke="#6d5c22"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                      />
+                      {tallyFor(group.span.days).map((t, ti) => (
+                        <text
+                          key={ti}
+                          x={OV_CAMP_X + (t.startDay + t.unit.days / 2) * pxPerDay}
+                          y={y + 40 + t.unit.dy}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fontSize={t.unit.size - 3}
+                          fontWeight="700"
+                          fill="#6d5c22"
+                        >
+                          {t.unit.glyph}
+                        </text>
+                      ))}
+                      <OvSprite
+                        src={spriteFinishBanner}
+                        name="finish-banner"
+                        cx={OV_CAMP_X + group.span.days * pxPerDay}
+                        base={y + 43}
+                        h={18}
+                        ar={422 / 384}
+                      />
+                    </g>
+                  )}
                 </g>
               )}
               {group.initiative && (

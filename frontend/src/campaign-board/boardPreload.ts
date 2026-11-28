@@ -14,6 +14,7 @@ import spriteCamp from './assets/sprites/camp.webp'
 import spriteCrag from './assets/sprites/obstacle-crag.webp'
 import spriteCopse from './assets/sprites/the-copse.webp'
 import spriteFinishBanner from './assets/sprites/finish-banner.webp'
+import spriteHoldWaystation from './assets/sprites/hold-waystation.webp'
 import spriteGrove from './assets/sprites/the-grove.webp'
 import spriteHill from './assets/sprites/the-hill.webp'
 import spriteMountain from './assets/sprites/the-mountain.webp'
@@ -26,6 +27,7 @@ export const BOARD_ASSET_URLS: string[] = [
   spriteCrag,
   spriteCopse,
   spriteFinishBanner,
+  spriteHoldWaystation,
   spriteGrove,
   spriteHill,
   spriteMountain,

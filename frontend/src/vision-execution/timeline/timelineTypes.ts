@@ -33,6 +33,14 @@ export interface TimelineRow {
   parentTaskId?: string | null
   /** Titles of tasks this row waits on, resolved from dependency_ids */
   blockedBy?: string[]
+  /** Project rows: how the row's window was resolved (temporal
+   *  standing record / recorded dates / recovered task window), and
+   *  the standing record's standing + id when it came from one
+   *  (Temporal Orchestration S1). Rendering by standing is S2; the
+   *  resolution itself is already standing-aware. */
+  spanSource?: 'standing' | 'project' | 'tasks' | 'none'
+  spanStanding?: string
+  spanId?: string
 }
 
 export type TimelineZoom = 'week' | 'month'

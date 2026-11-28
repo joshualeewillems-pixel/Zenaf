@@ -7,6 +7,12 @@
 
 import type { Initiative, Project, Task } from '../types'
 import type { TimelineRow, TimelineBarStatus } from './timelineTypes'
+import {
+  foldTemporalStanding,
+  pickWindowSpan,
+  type TemporalDecisionRow,
+  type TemporalSpanRecord,
+} from '../temporalStanding'
 
 function normalizeStatus(status: string, notes?: string | null): TimelineBarStatus {
   const s = status.toLowerCase()
@@ -72,19 +78,53 @@ export function timelineRowSubline(
   return { text, title, summary: summaryText, waits }
 }
 
-/** Project bar: start_date → end_date, or created_at + 4 weeks if missing */
-function projectSpan(p: Project): { start: string | null; end: string | null } {
+export interface ProjectSpanResolution {
+  start: string | null
+  end: string | null
+  /** How the window was resolved: a temporal standing record, the
+   *  project's recorded dates, a window recovered from recorded task
+   *  due dates, or nothing ('none' — unspanned). There is no fifth
+   *  possibility: a window is never invented. The created_at + 28d
+   *  fallback this function used to apply is REMOVED (Temporal
+   *  Orchestration S1) — it manufactured a month of work no record
+   *  ever stated, unflagged. */
+  source: 'standing' | 'project' | 'tasks' | 'none'
+  /** The standing record this window came from, when source is 'standing'. */
+  standingSpan?: TemporalSpanRecord
+}
+
+/**
+ * The unified project-span resolution (shared semantics with the
+ * Campaign Board's projectSpan): a temporal standing record outranks
+ * recorded dates, which outrank a window recovered from recorded
+ * task due dates. An open-ended standing window (start evidenced, no
+ * end recorded) resolves start-only — the grid draws no bar until an
+ * end exists, and no end is invented for it.
+ */
+export function resolveProjectSpan(
+  p: Project,
+  projectTasks: Task[],
+  standingSpans?: TemporalSpanRecord[],
+): ProjectSpanResolution {
+  const win = pickWindowSpan(standingSpans)
+  if (win) {
+    const s = parseDate(win.start)
+    const e = parseDate(win.end)
+    if (s && e) return { start: s, end: e, source: 'standing', standingSpan: win }
+    if (e) return { start: e, end: e, source: 'standing', standingSpan: win }
+    if (s) return { start: s, end: null, source: 'standing', standingSpan: win }
+  }
   const start = parseDate(p.start_date)
   const end = parseDate(p.end_date)
-  if (start && end) return { start, end }
-  if (end) return { start: end, end } // single day
-  const created = parseDate(p.created_at)
-  if (created) {
-    const d = new Date(created)
-    d.setDate(d.getDate() + 28)
-    return { start: created, end: d.toISOString().slice(0, 10) }
-  }
-  return { start: null, end: null }
+  if (start && end) return { start, end, source: 'project' }
+  if (end) return { start: end, end, source: 'project' } // single day
+  const dues = projectTasks
+    .map((t) => parseDate(t.due_date))
+    .filter((x): x is string => x != null)
+    .sort()
+  if (dues.length) return { start: dues[0], end: dues[dues.length - 1], source: 'tasks' }
+  if (start) return { start, end: null, source: 'project' }
+  return { start: null, end: null, source: 'none' }
 }
 
 /** Task bar: due_date as single-day or week; or project window */
@@ -181,6 +221,11 @@ export interface BuildTimelineRowsInput {
   projects: Project[]
   tasks: Task[]
   collapsedIds: Set<string>
+  /** The owner's decision rows (GET /decisions), when the caller has
+   *  them: temporal standing records fold from these and outrank
+   *  recorded dates in span resolution. Absent → record resolution
+   *  only, exactly as before S1. */
+  decisions?: TemporalDecisionRow[]
 }
 
 export function buildTimelineRows({
@@ -188,8 +233,12 @@ export function buildTimelineRows({
   projects,
   tasks,
   collapsedIds,
+  decisions,
 }: BuildTimelineRowsInput): TimelineRow[] {
   const rows: TimelineRow[] = []
+  const standingFold = decisions ? foldTemporalStanding(decisions) : null
+  const standingFor = (projectId: string) =>
+    standingFold?.byProject.get(projectId)?.spans
   const tasksByProject = new Map<string, Task[]>()
   const orphanTasks: Task[] = []
   for (const t of tasks) {
@@ -222,8 +271,8 @@ export function buildTimelineRows({
     })
     if (initCollapsed) continue
     for (const p of initProjects) {
-      const projSpan = projectSpan(p)
       const projTasks = tasksByProject.get(p.id) || []
+      const projSpan = resolveProjectSpan(p, projTasks, standingFor(p.id))
       const projCollapsed = collapsedIds.has(p.id)
       rows.push({
         id: p.id,
@@ -240,6 +289,9 @@ export function buildTimelineRows({
         initiativeId: init.id,
         collapsed: projCollapsed,
         childCount: projTasks.length,
+        spanSource: projSpan.source,
+        spanStanding: projSpan.standingSpan?.standing,
+        spanId: projSpan.standingSpan?.id,
       })
       if (projCollapsed) continue
       pushTaskSubtree(rows, {
@@ -270,8 +322,8 @@ export function buildTimelineRows({
     })
     if (!collapsedIds.has('_unanchored')) {
       for (const p of unanchored) {
-        const projSpan = projectSpan(p)
         const projTasks = tasksByProject.get(p.id) || []
+        const projSpan = resolveProjectSpan(p, projTasks, standingFor(p.id))
         const projCollapsed = collapsedIds.has(p.id)
         rows.push({
           id: p.id,
@@ -287,6 +339,9 @@ export function buildTimelineRows({
           projectId: p.id,
           collapsed: projCollapsed,
           childCount: projTasks.length,
+          spanSource: projSpan.source,
+          spanStanding: projSpan.standingSpan?.standing,
+          spanId: projSpan.standingSpan?.id,
         })
         if (!projCollapsed) {
           pushTaskSubtree(rows, {

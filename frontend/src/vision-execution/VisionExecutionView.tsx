@@ -15,6 +15,7 @@ import {
   type RadarSignalItem,
   type ExecutionStep,
 } from './types'
+import type { TemporalDecisionRow } from './temporalStanding'
 import type { VeRadarBucketId } from './veRadarAwareness'
 import { canonicalCoreProfileId, coreProfileInfluencePickLabel } from './canonicalCoreProfile'
 import { TaskSoilDevAppend } from './dev/TaskSoilDevAppend'
@@ -5518,6 +5519,11 @@ export function VisionExecutionView({
   const [persons, setPersons] = useState<Person[]>([])
   const [capacityProfiles, setCapacityProfiles] = useState<CapacityProfile[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
+  // The owner's project decision rows — temporal standing records
+  // (S1) fold from these for the timeline's span resolution. Quiet
+  // state: a failed decisions read degrades the timeline to
+  // record-only resolution, never to an error surface.
+  const [projectDecisions, setProjectDecisions] = useState<TemporalDecisionRow[]>([])
 
   useEffect(() => {
     if (!councilVeEntityBundleRef) return
@@ -6141,6 +6147,15 @@ export function VisionExecutionView({
     }
   }, [])
 
+  const fetchProjectDecisions = useCallback(async () => {
+    try {
+      const data = await apiGet<TemporalDecisionRow[]>('/decisions?entity_type=project&limit=500')
+      setProjectDecisions(Array.isArray(data) ? data : [])
+    } catch {
+      setProjectDecisions([])
+    }
+  }, [])
+
   const fetchTasks = useCallback(async (projectId?: string) => {
     setLoading(true)
     setError(null)
@@ -6414,6 +6429,7 @@ export function VisionExecutionView({
       fetchTasks()
       fetchPersons()
       fetchIdeas()
+      fetchProjectDecisions()
     } else if (tab === 'people') {
       fetchPersons()
       fetchCapacity()
@@ -6432,7 +6448,7 @@ export function VisionExecutionView({
       fetchAssets()
       fetchPersons()
     }
-  }, [tab, fetchIdeas, fetchInitiatives, fetchProjects, fetchTasks, fetchPersons, fetchCapacity, fetchAssets, fetchRadar, fetchSeatRequests, fetchCapabilityOffers, fetchMaterialRequests, fetchMaterialOffers])
+  }, [tab, fetchIdeas, fetchInitiatives, fetchProjects, fetchTasks, fetchPersons, fetchCapacity, fetchAssets, fetchRadar, fetchSeatRequests, fetchCapabilityOffers, fetchMaterialRequests, fetchMaterialOffers, fetchProjectDecisions])
 
   const refetch = useCallback(() => {
     if (tab === 'ideas') fetchIdeas()
@@ -9553,6 +9569,7 @@ export function VisionExecutionView({
                 initiatives={initiatives}
                 projects={projects}
                 tasks={tasks}
+                decisions={projectDecisions}
                 selectedProjectId={detailProjectId}
                 selectedTaskId={detailTaskId}
                 onSelectInitiative={(id) => { setDetailInitiativeId(id); setDetailProjectId(null); setDetailTaskId(null); setSelectedId(id ?? null) }}

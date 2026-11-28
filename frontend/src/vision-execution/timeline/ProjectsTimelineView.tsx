@@ -10,6 +10,7 @@ import { defaultNestedCollapsedIds } from '../nestedVisibility'
 import type { TimelineZoom, TimelineRow } from './timelineTypes'
 import { TimelineTree } from './TimelineTree'
 import { TimelineGrid, getRange } from './TimelineGrid'
+import type { TemporalDecisionRow } from '../temporalStanding'
 
 export interface ProjectsTimelineViewProps {
   initiatives: Initiative[]
@@ -20,6 +21,9 @@ export interface ProjectsTimelineViewProps {
   onSelectProject: (id: string | null) => void
   onSelectTask: (id: string | null) => void
   onSelectInitiative?: (id: string | null) => void
+  /** The owner's decision rows, when the caller has them: temporal
+   *  standing records fold from these for span resolution (S1). */
+  decisions?: TemporalDecisionRow[]
 }
 
 const ROW_HEIGHT = TIMELINE_ROW_HEIGHT_PX
@@ -33,6 +37,7 @@ export function ProjectsTimelineView({
   onSelectProject,
   onSelectTask,
   onSelectInitiative,
+  decisions,
 }: ProjectsTimelineViewProps) {
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
   const [zoom, setZoom] = useState<TimelineZoom>('month')
@@ -79,8 +84,9 @@ export function ProjectsTimelineView({
         projects,
         tasks,
         collapsedIds,
+        decisions,
       }),
-    [initiatives, projects, tasks, collapsedIds]
+    [initiatives, projects, tasks, collapsedIds, decisions]
   )
 
   const { start: rangeStart, end: rangeEnd } = useMemo(

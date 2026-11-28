@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CapacityProfile, Person, Project, Task } from '../vision-execution/types'
+import type { TemporalSpanRecord } from '../vision-execution/temporalStanding'
 import {
   buildOverview,
   buildRoutes,
@@ -100,6 +101,84 @@ describe('projectSpan', () => {
     const span = projectSpan(project({ start_date: '2026-06-01', end_date: '2026-06-19' }), [], NOW)
     const mid = dateAtFraction(span, 0.5)
     expect(fractionForDate(span, mid.getTime())).toBeCloseTo(0.5, 5)
+  })
+
+  describe('with temporal standing records (S1)', () => {
+    function standingSpan(partial: Partial<TemporalSpanRecord>): TemporalSpanRecord {
+      return {
+        id: 'span-1',
+        project_id: 'p1',
+        start: '2026-06-02',
+        end: '2026-06-23',
+        origin: 'evidence-recovered',
+        standing: 'evidence-recovered envelope',
+        role: 'window',
+        conditionality: { kind: 'unconditional' },
+        effort: { kind: 'unknown' },
+        confidence_label: 'unknown',
+        basis: [],
+        method: '',
+        supersedes: null,
+        note: '',
+        recorded_at: '2026-06-15T00:00:00',
+        ...partial,
+      }
+    }
+
+    it('a standing window outranks the project’s recorded dates', () => {
+      const span = projectSpan(
+        project({ start_date: '2026-06-01', end_date: '2026-06-19' }),
+        [],
+        NOW,
+        [standingSpan({})],
+      )
+      expect(span.source).toBe('standing')
+      expect(span.standing).toBe('evidence-recovered envelope')
+      expect(span.origin).toBe('evidence-recovered')
+      expect(span.spanId).toBe('span-1')
+      expect(span.days).toBe(21)
+    })
+
+    it('a provisional standing record keeps the provisional flag at its recorded window', () => {
+      const span = projectSpan(project({}), [], NOW, [
+        standingSpan({ standing: 'provisional', origin: 'derived' }),
+      ])
+      expect(span.source).toBe('provisional')
+      expect(span.spanId).toBe('span-1')
+      // The recorded hypothesis window — NOT the invented today → +30d.
+      expect(span.days).toBe(21)
+    })
+
+    it('an open-ended standing window contributes its start; the end is recovered, never invented', () => {
+      const span = projectSpan(
+        project({}),
+        [task({ due_date: '2026-06-03' }), task({ id: 't2', due_date: '2026-06-10' })],
+        NOW,
+        [standingSpan({ start: '2026-06-01', end: null })],
+      )
+      expect(span.source).toBe('standing')
+      expect(span.startMs).toBe(new Date('2026-06-01').getTime())
+      expect(span.endMs).toBe(new Date('2026-06-10').getTime())
+    })
+
+    it('an open-ended standing window with no end anywhere stays unspanned (provisional)', () => {
+      const span = projectSpan(project({}), [task({})], NOW, [
+        standingSpan({ start: '2026-06-01', end: null }),
+      ])
+      expect(span.source).toBe('provisional')
+      expect(span.spanId).toBeUndefined()
+    })
+
+    it('buildOverview threads standing spans per project', () => {
+      const overview = buildOverview(
+        [project({})],
+        [],
+        NOW,
+        new Map([['p1', [standingSpan({})]]]),
+      )
+      expect(overview[0].span.source).toBe('standing')
+      expect(overview[0].spanned).toBe(true)
+    })
   })
 })
 

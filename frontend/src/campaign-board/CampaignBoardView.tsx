@@ -36,6 +36,10 @@ import { SEAT_COLORS } from '../council/colors'
 import championLogo from '../assets/seats/champion-logo.png'
 import { boardPreloader } from './boardPreload'
 import type { Project, Task } from '../vision-execution/types'
+import {
+  foldTemporalStanding,
+  type TemporalSpanRecord,
+} from '../vision-execution/temporalStanding'
 import { fetchBoardEntities, patchTaskDueDate, type BoardEntities } from './boardApi'
 import campaignMapArt from './assets/campaign-map.jpg'
 import spriteCamp from './assets/sprites/camp.webp'
@@ -178,9 +182,20 @@ export default function CampaignBoardView() {
   }, [load])
 
   const nowMs = useMemo(() => Date.now(), [entities])
+  // Temporal standing (S1) folds from the same decision rows as the
+  // declarations: span records the owner holds for each project,
+  // consumed by projectSpan ahead of every record derivation.
+  const standingByProject = useMemo(() => {
+    const map = new Map<string, TemporalSpanRecord[]>()
+    if (!entities) return map
+    for (const [projectId, standing] of foldTemporalStanding(entities.decisions).byProject) {
+      map.set(projectId, standing.spans)
+    }
+    return map
+  }, [entities])
   const overview = useMemo(
-    () => (entities ? buildOverview(entities.projects, entities.tasks, nowMs) : []),
-    [entities, nowMs],
+    () => (entities ? buildOverview(entities.projects, entities.tasks, nowMs, standingByProject) : []),
+    [entities, nowMs, standingByProject],
   )
   // River/Hold declarations are read from the record: folded from
   // the owner's decision rows on load (Board interaction pass,
@@ -195,7 +210,7 @@ export default function CampaignBoardView() {
     const project = entities.projects.find((p) => p.id === focusId)
     if (!project) return null
     const projectTasks = entities.tasks.filter((t) => t.project_id === project.id)
-    const span = projectSpan(project, projectTasks, nowMs)
+    const span = projectSpan(project, projectTasks, nowMs, standingByProject.get(project.id))
     const projectSignals = signalsForProject(entities.signals, project, projectTasks)
     return {
       project,
@@ -216,7 +231,7 @@ export default function CampaignBoardView() {
       rivers: declarations.rivers.filter((r) => r.projectId === project.id),
       holds: declarations.holds.filter((h) => h.projectId === project.id),
     }
-  }, [entities, focusId, nowMs, declarations])
+  }, [entities, focusId, nowMs, declarations, standingByProject])
 
   const applyTaskNow = useCallback((updated: Task) => {
     setEntities((prev) =>
@@ -1475,7 +1490,11 @@ function FocusBoard({
         <span className="text-xs text-stone-400">
           {focus.initiative ? `${focus.initiative.title} · ` : ''}
           {shortDate(new Date(span.startMs))} – {shortDate(new Date(span.endMs))}
-          {span.source === 'provisional' ? ' · dates not recorded yet' : ''}
+          {span.source === 'provisional' && !span.spanId ? ' · dates not recorded yet' : ''}
+          {span.source === 'provisional' && span.spanId
+            ? ' · provisional hypothesis — recorded, not established'
+            : ''}
+          {span.source === 'standing' && span.standing ? ` · ${span.standing}` : ''}
         </span>
       </div>
       {writeError && <p className="px-1 pb-2 text-xs text-red-300">{writeError}</p>}

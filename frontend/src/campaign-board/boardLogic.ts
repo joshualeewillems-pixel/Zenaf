@@ -28,6 +28,12 @@
  */
 import type { CapacityProfile, Person, Project, Task } from '../vision-execution/types'
 import { capacityDerived } from '../vision-execution/capacityDerived'
+import {
+  pickWindowSpan,
+  type TemporalOrigin,
+  type TemporalSpanRecord,
+  type TemporalStanding,
+} from '../vision-execution/temporalStanding'
 
 export const DAY_MS = 86_400_000
 /** A working day, for converting estimated_hours into the prototype's
@@ -65,19 +71,68 @@ export interface BoardSpan {
    *  'tasks' = window recovered from recorded task due dates;
    *  'provisional' = no dates recorded anywhere — a local planning
    *  window (today → +30d) that writes nothing until the user sets a
-   *  real date. */
-  source: 'project' | 'tasks' | 'provisional'
+   *  real date — OR a standing record whose standing is provisional
+   *  (then spanId names the record: a recorded hypothesis, drawn at
+   *  its recorded window, still flagged not-established);
+   *  'standing' = the window of a temporal standing record (S1),
+   *  whose standing/origin/spanId ride along below. */
+  source: 'project' | 'tasks' | 'provisional' | 'standing'
+  /** The standing record's standing, when this span came from one. */
+  standing?: TemporalStanding
+  /** The standing record's origin, when this span came from one. */
+  origin?: TemporalOrigin
+  /** The standing record's decision id, when this span came from one. */
+  spanId?: string
+  /** True when the standing record is conditional on an assumption set. */
+  conditional?: boolean
 }
 
-export function projectSpan(project: Project, tasks: Task[], nowMs: number): BoardSpan {
+/**
+ * The unified span resolution (Temporal Orchestration S1): a temporal
+ * standing record for the project — folded from the owner's decisions
+ * by temporalStanding.foldTemporalStanding — outranks the record
+ * derivations below, on the board and on the Gantt alike. A standing
+ * window with both bounds is the span. An open-ended standing window
+ * (a live project: start evidenced, no end recorded) contributes its
+ * start, with the end still recovered from the record; when no end
+ * exists anywhere the project stays unspanned here and the standing
+ * record simply has no line yet — no end is invented for it.
+ */
+export function projectSpan(
+  project: Project,
+  tasks: Task[],
+  nowMs: number,
+  standingSpans?: TemporalSpanRecord[],
+): BoardSpan {
   const pStart = parseDateMs(project.start_date)
   const pEnd = parseDateMs(project.end_date)
   const dues = tasks
     .map((t) => parseDateMs(t.due_date))
     .filter((x): x is number => x != null)
     .sort((a, b) => a - b)
-  const start = pStart ?? (dues.length ? dues[0] : null)
-  const end = pEnd ?? (dues.length ? dues[dues.length - 1] : null)
+  const recordStart = pStart ?? (dues.length ? dues[0] : null)
+  const recordEnd = pEnd ?? (dues.length ? dues[dues.length - 1] : null)
+  const win = pickWindowSpan(standingSpans)
+  if (win) {
+    const wStart = parseDateMs(win.start)
+    const wEnd = parseDateMs(win.end)
+    const start = wStart ?? recordStart
+    const end = wEnd ?? recordEnd
+    if (start != null && end != null && end > start) {
+      return {
+        startMs: start,
+        endMs: end,
+        days: Math.max(1, Math.round((end - start) / DAY_MS)),
+        source: win.standing === 'provisional' ? 'provisional' : 'standing',
+        standing: win.standing,
+        origin: win.origin,
+        spanId: win.id,
+        conditional: win.conditionality.kind === 'conditional',
+      }
+    }
+  }
+  const start = recordStart
+  const end = recordEnd
   if (start != null && end != null && end > start) {
     return {
       startMs: start,
@@ -514,12 +569,13 @@ export function buildOverview(
   projects: Project[],
   tasks: Task[],
   nowMs: number,
+  standingByProject?: Map<string, TemporalSpanRecord[]>,
 ): OverviewProject[] {
   const base: OverviewProject[] = projects
     .filter((p) => p.status !== 'Complete')
     .map((project) => {
       const projectTasks = tasks.filter((t) => t.project_id === project.id)
-      const span = projectSpan(project, projectTasks, nowMs)
+      const span = projectSpan(project, projectTasks, nowMs, standingByProject?.get(project.id))
       const terrain: OverviewTerrain[] = declareTerrain(projectTasks).map((f) => {
         const idx = projectTasks.findIndex((t) => t.id === f.taskId)
         const anchor = idx >= 0 ? projectTasks[idx] : null

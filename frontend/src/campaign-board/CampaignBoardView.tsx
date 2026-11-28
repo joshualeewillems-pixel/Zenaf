@@ -565,7 +565,15 @@ function OverviewBoard({
     if (!isOpen) colorSeq += group.projects.length
     return { group, gi, y, height, lanes, isOpen }
   })
-  const height = Math.max(cursor - OV_GROUP_GAP + OV_KEY_STRIP, 200)
+  // The stage never shrinks below the whole painting
+  // (founder, 2026-11-27): the map is the place the board
+  // lives on, not a strip behind the topmost grounds — with
+  // every ground closed the full painting still stands, and
+  // opened grounds span out across it, growing into the
+  // parchment below only when their scenes need more room
+  // than the painting gives.
+  const OV_ART_FULL_H = (OV_W * OV_ART_H) / OV_ART_W
+  const height = Math.max(cursor - OV_GROUP_GAP + OV_KEY_STRIP, OV_ART_FULL_H + OV_KEY_STRIP)
   const keyY = height - 18
   // The scale key shows the setting itself: the unit's period
   // count as a dotted line — three dots for a day, five for a
@@ -581,7 +589,7 @@ function OverviewBoard({
   // tall board it ends (and fades) well above the key strip,
   // on a short board it is cropped at the strip — the key
   // always sits on plain parchment.
-  const artH = Math.min((OV_W * OV_ART_H) / OV_ART_W, Math.max(height - OV_KEY_STRIP, 0))
+  const artH = OV_ART_FULL_H
   const popupEntry = popupId
     ? laidOut.flatMap((l) => l.lanes).find((l) => l.o.project.id === popupId)
     : undefined
@@ -641,17 +649,19 @@ function OverviewBoard({
           )}
           {laidOut.map(({ group, gi, y, height: groupH, lanes, isOpen }) => (
             <g key={group.initiative?.id ?? 'unanchored'}>
-              {/* the initiative's ground */}
+              {/* the initiative's ground — a territory on the
+                  map, not a card on top of it (founder,
+                  2026-11-27): a whisper of tint to gather its
+                  lanes, no border, the painting showing
+                  through */}
               <rect
                 x={10}
                 y={y}
                 width={OV_W - 20}
                 height={groupH}
-                rx={14}
+                rx={8}
                 fill={group.initiative ? (gi % 2 === 0 ? '#e0d0a4' : '#d5dbb0') : '#eae0c6'}
-                fillOpacity={0.7}
-                stroke="#9a7b24"
-                strokeOpacity={0.35}
+                fillOpacity={0.28}
               />
               {group.initiative && (
                 <g style={{ pointerEvents: 'none' }}>
@@ -909,16 +919,16 @@ function OverviewBoard({
           <g data-testid="scale-key">
             {keyLayout === 'inline' && (
               <>
-                <line
-                  x1={OV_CAMP_X}
-                  y1={keyY}
-                  x2={OV_CAMP_X + keyLen}
-                  y2={keyY}
-                  stroke={INK}
-                  strokeWidth="4"
-                  strokeLinecap="round"
-                  strokeDasharray="0.1 8"
-                />
+                {Array.from({ length: keyUnitDef.periods }).map((_, i) => (
+                  <circle
+                    key={i}
+                    data-testid="key-dot"
+                    cx={OV_CAMP_X + i * OV_KEY_DOT_PITCH}
+                    cy={keyY}
+                    r="2"
+                    fill={INK}
+                  />
+                ))}
                 <text x={OV_CAMP_X + keyLen + 10} y={keyY + 4} fontSize="11.5" fontWeight="600" fill={INK}>
                   {keyLabel}
                 </text>
@@ -926,16 +936,16 @@ function OverviewBoard({
             )}
             {keyLayout === 'stacked' && (
               <>
-                <line
-                  x1={OV_CAMP_X}
-                  y1={keyY - 8}
-                  x2={OV_CAMP_X + keyLen}
-                  y2={keyY - 8}
-                  stroke={INK}
-                  strokeWidth="4"
-                  strokeLinecap="round"
-                  strokeDasharray="0.1 8"
-                />
+                {Array.from({ length: keyUnitDef.periods }).map((_, i) => (
+                  <circle
+                    key={i}
+                    data-testid="key-dot"
+                    cx={OV_CAMP_X + i * OV_KEY_DOT_PITCH}
+                    cy={keyY - 8}
+                    r="2"
+                    fill={INK}
+                  />
+                ))}
                 <text x={OV_CAMP_X} y={keyY + 13} fontSize="11.5" fontWeight="600" fill={INK}>
                   {keyLabel}
                 </text>

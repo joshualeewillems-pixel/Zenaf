@@ -256,18 +256,26 @@ describe('CampaignBoardView', () => {
 
     const keyGroup = () => container.querySelector('[data-testid="scale-key"]')
     const keyTap = () => keyGroup()!.querySelector('rect')!
-    const keyLines = () =>
-      [...keyGroup()!.querySelectorAll('line')].filter((l) => l.getAttribute('stroke-dasharray') === '0.1 8')
-    const keyLen = () =>
-      keyLines().reduce((sum, l) => sum + Math.abs(Number(l.getAttribute('x2')) - Number(l.getAttribute('x1'))), 0)
+    const keyDots = () => [...keyGroup()!.querySelectorAll('[data-testid="key-dot"]')]
+    const keySpan = () => {
+      const dots = keyDots()
+      return dots.length > 1
+        ? Number(dots[dots.length - 1].getAttribute('cx')) - Number(dots[0].getAttribute('cx'))
+        : 0
+    }
 
-    // Standing look: one dotted line of three periods — three
-    // periods make a day (founder, 2026-11-27). The key's dots
-    // stand at the key's fixed pitch, 8.1.
+    // Standing look: exactly three period dots — three periods
+    // make a day (founder, 2026-11-27) — at the key's fixed
+    // pitch, 8.1. (A dashed line drew a fourth dot at its end;
+    // the key now draws its periods as themselves.)
     expect(container.textContent).toContain('[-----] = 1 day')
-    const dayLen = keyLen()
-    expect(dayLen).toBeCloseTo(3 * 8.1, 5)
-    expect(keyLines()).toHaveLength(1)
+    // The stage never shrinks below the whole painting: at the
+    // board's width the art stands ~600 tall, plus the key
+    // strip — even with every ground closed.
+    const svg = container.querySelector('svg')!
+    expect(Number(svg.getAttribute('viewBox')!.split(' ')[3])).toBeGreaterThanOrEqual(643)
+    expect(keyDots()).toHaveLength(3)
+    expect(keySpan()).toBeCloseTo(2 * 8.1, 5)
 
     // Tap → a week: five periods.
     await act(async () => {
@@ -276,8 +284,8 @@ describe('CampaignBoardView', () => {
     await flush()
     expect(container.textContent).toContain('[-----] = 1 week')
     expect(container.textContent).not.toContain('[-----] = 1 day')
-    expect(keyLines()).toHaveLength(1)
-    expect(keyLen()).toBeCloseTo(5 * 8.1, 5)
+    expect(keyDots()).toHaveLength(5)
+    expect(keySpan()).toBeCloseTo(4 * 8.1, 5)
 
     // Tap → a month: seven periods — never thirty.
     await act(async () => {
@@ -285,8 +293,8 @@ describe('CampaignBoardView', () => {
     })
     await flush()
     expect(container.textContent).toContain('[-----] = 1 month')
-    expect(keyLines()).toHaveLength(1)
-    expect(keyLen()).toBeCloseTo(7 * 8.1, 5)
+    expect(keyDots()).toHaveLength(7)
+    expect(keySpan()).toBeCloseTo(6 * 8.1, 5)
 
     // Tap → back to a day.
     await act(async () => {
@@ -294,7 +302,8 @@ describe('CampaignBoardView', () => {
     })
     await flush()
     expect(container.textContent).toContain('[-----] = 1 day')
-    expect(keyLen()).toBeCloseTo(dayLen, 5)
+    expect(keyDots()).toHaveLength(3)
+    expect(keySpan()).toBeCloseTo(2 * 8.1, 5)
   })
 
   it('draws the linked blocker signal + overcapacity; declarations render from the record, never from surface forms', async () => {

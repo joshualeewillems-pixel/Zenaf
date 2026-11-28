@@ -555,11 +555,7 @@ describe('CampaignBoardView', () => {
     expect(text).not.toContain('Meet the Bear')
     expect(text).not.toContain('Meet the Crane')
     // No routes are drawn while the grounds are closed.
-    expect(
-      [...container.querySelectorAll('line')].filter(
-        (l) => l.getAttribute('stroke-dasharray') === '0.5 7',
-      ),
-    ).toHaveLength(0)
+    expect(container.querySelectorAll('[data-testid="route-line"]')).toHaveLength(0)
 
     // Open the Zenaf core ground: its dated project stands as a
     // route at the shared scale (12 days × 26px/day).
@@ -569,12 +565,38 @@ describe('CampaignBoardView', () => {
     expect(idx('ZENAF CORE')).toBeLessThan(idx('Ship the thing'))
     expect(idx('Ship the thing')).toBeLessThan(idx('COUNCIL FELLOWSHIP'))
     expect(text).not.toContain('Meet the Bear')
-    const routeLines = [...container.querySelectorAll('line')].filter(
-      (l) => l.getAttribute('stroke-dasharray') === '0.5 7',
-    )
+    const routeLines = [...container.querySelectorAll('[data-testid="route-line"]')]
     expect(routeLines).toHaveLength(1)
     const len = Number(routeLines[0].getAttribute('x2')) - Number(routeLines[0].getAttribute('x1'))
     expect(len).toBe(12 * 26)
+    // The route is beaded in the key's unit: at 26px/day in day
+    // form the dot pitch is one day (dash period 26). Toggling
+    // the key re-beads the route — a week pitch, then a month
+    // pitch — and the next tap restores the day.
+    const keyTap = () => container.querySelector('[data-testid="scale-key"] rect')!
+    const pitch = () => {
+      const d = routeLines[0].getAttribute('stroke-dasharray')!.split(' ').map(Number)
+      return d[0] + d[1]
+    }
+    expect(pitch()).toBeCloseTo(26, 5)
+    await act(async () => {
+      keyTap().dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+    expect(container.textContent).toContain('[-----] = 1 week')
+    expect(pitch()).toBeCloseTo(26 * 7, 5)
+    await act(async () => {
+      keyTap().dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+    expect(container.textContent).toContain('[-----] = 1 month')
+    expect(pitch()).toBeCloseTo(26 * 30, 5)
+    await act(async () => {
+      keyTap().dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+    expect(container.textContent).toContain('[-----] = 1 day')
+    expect(pitch()).toBeCloseTo(26, 5)
 
     // Open the fellowship's ground instead (one ground open at a
     // time): the Ready pair stands at their camps, undated and
@@ -586,11 +608,7 @@ describe('CampaignBoardView', () => {
     expect(idx('Meet the Bear')).toBeLessThan(idx('Meet the Crane'))
     expect(idx('Meet the Crane')).toBeLessThan(idx('Fix the gate latch'))
     expect(text).not.toContain('Ship the thing')
-    expect(
-      [...container.querySelectorAll('line')].filter(
-        (l) => l.getAttribute('stroke-dasharray') === '0.5 7',
-      ),
-    ).toHaveLength(0)
+    expect(container.querySelectorAll('[data-testid="route-line"]')).toHaveLength(0)
 
     // The undated fact is never printed on the surface.
     expect(text).not.toContain('No dates recorded')

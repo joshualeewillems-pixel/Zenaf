@@ -32,6 +32,7 @@ import CouncilChat from '../chat/CouncilChat'
 import SplitShell from '../components/SplitShell'
 import type { Project, Task } from '../vision-execution/types'
 import { fetchBoardEntities, patchTaskDueDate, type BoardEntities } from './boardApi'
+import campaignMapArt from './assets/campaign-map.jpg'
 import {
   buildOverview,
   buildRoutes,
@@ -425,6 +426,11 @@ const OV_KEY_UNITS = [
   { id: 'month', days: 30 },
 ] as const
 type OvKeyUnit = (typeof OV_KEY_UNITS)[number]['id']
+/** The founder's painted campaign map (supplied 2026-11-27) —
+ *  screen one's ground. Native 1122×1402; drawn at the panel's
+ *  width and faded into the parchment before the key strip. */
+const OV_ART_W = 1122
+const OV_ART_H = 1402
 
 function OverviewBoard({
   overview,
@@ -482,6 +488,11 @@ function OverviewBoard({
         ? 'stacked'
         : 'folded'
   const keyRow2Len = keyLen - keyRowAvail
+  // The painted map fills the panel's width at the top; on a
+  // tall board it ends (and fades) well above the key strip,
+  // on a short board it is cropped at the strip — the key
+  // always sits on plain parchment.
+  const artH = Math.min((OV_W * OV_ART_H) / OV_ART_W, Math.max(height - OV_KEY_STRIP, 0))
   const popupEntry = popupId
     ? laidOut.flatMap((l) => l.lanes).find((l) => l.o.project.id === popupId)
     : undefined
@@ -500,9 +511,33 @@ function OverviewBoard({
           aria-label="All projects on one map, nested under their initiatives"
         >
           <rect width={OV_W} height={height} fill={PARCHMENT} />
-          {/* shared ground washes — one land, many camps */}
-          <ellipse cx={120} cy={70} rx={180} ry={80} fill="#d9ca9c" opacity={0.45} />
-          <ellipse cx={OV_W - 90} cy={height - 130} rx={190} ry={90} fill="#c3d2a2" opacity={0.4} />
+          {/* Screen one is the founder's painted campaign map
+              (2026-11-27): the grounds stand on the painting.
+              It fills the panel's width at the top and fades
+              into the parchment at its lower edge. */}
+          <image
+            href={campaignMapArt}
+            x={0}
+            y={0}
+            width={OV_W}
+            height={artH}
+            preserveAspectRatio="xMidYMin slice"
+            style={{ pointerEvents: 'none' }}
+          />
+          <rect
+            x={0}
+            y={Math.max(artH - 90, 0)}
+            width={OV_W}
+            height={Math.min(90, artH)}
+            fill="url(#ov-art-fade)"
+            style={{ pointerEvents: 'none' }}
+          />
+          <defs>
+            <linearGradient id="ov-art-fade" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor={PARCHMENT} stopOpacity="0" />
+              <stop offset="1" stopColor={PARCHMENT} stopOpacity="1" />
+            </linearGradient>
+          </defs>
           {overview.length === 0 && (
             <text x={OV_W / 2} y={height / 2} textAnchor="middle" fontSize="14" fill={INK}>
               No projects yet — the board is empty.
@@ -518,7 +553,7 @@ function OverviewBoard({
                 height={groupH}
                 rx={14}
                 fill={group.initiative ? (gi % 2 === 0 ? '#e0d0a4' : '#d5dbb0') : '#eae0c6'}
-                fillOpacity={0.55}
+                fillOpacity={0.78}
                 stroke="#9a7b24"
                 strokeOpacity={0.35}
               />
@@ -589,7 +624,14 @@ function OverviewBoard({
                     </text>
                     {o.spanned ? (
                       <>
+                        {/* The route is beaded in the key's unit
+                            (founder, 2026-11-27): one dot per day,
+                            week or month, exactly as the scale key
+                            is toggled — the dot pitch IS the key's
+                            length, so the route can be counted in
+                            the same unit the key measures. */}
                         <line
+                          data-testid="route-line"
                           x1={OV_CAMP_X}
                           y1={lineY}
                           x2={endX}
@@ -597,7 +639,7 @@ function OverviewBoard({
                           stroke={color}
                           strokeWidth="5"
                           strokeLinecap="round"
-                          strokeDasharray="0.5 7"
+                          strokeDasharray={`0.1 ${Math.max(keyLen - 0.1, 0.1)}`}
                           style={{ pointerEvents: 'none' }}
                         />
                         <circle cx={endX} cy={lineY} r="6" fill={color} stroke="#fff" strokeWidth="1.8" style={{ pointerEvents: 'none' }} />

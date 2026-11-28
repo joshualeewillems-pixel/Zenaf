@@ -18,6 +18,23 @@
     animation: none;
   }
 }
+
+/* The door of the palace (founder, 2026-11-28): while the
+   whole imagery warms, the seat's logo spins — nothing of
+   the palace paints until everything nested is accessible. */
+.palace-logo-spin {
+  animation: palace-logo-spin 1.4s linear infinite;
+}
+@keyframes palace-logo-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .palace-logo-spin {
+    animation-duration: 5s;
+  }
+}
 .living-palace-scene svg text {
   user-select: none;
 }

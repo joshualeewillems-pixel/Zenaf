@@ -87,6 +87,34 @@ import skyBandImage from './assets/palace-sky-band.webp'
 import palaceBelowImage from './assets/palace-below.webp'
 import { SEAT_COLORS, type SeatId } from '../council/colors'
 
+/** Every image these scenes can draw, gathered for the
+ *  entry preload (palacePreload): the palace warms its whole
+ *  imagery before the first scene paints, so no level pops
+ *  in piece by piece as the visitor descends. Keep this list
+ *  beside the imports — a scene image missing here is an
+ *  image that still arrives late. */
+export const PALACE_CANVAS_ASSETS: string[] = [
+  planImage,
+  frontWallImage,
+  fireImage,
+  vesselGoldImage,
+  vesselPlainImage,
+  scalesImage,
+  scalesWeighedImage,
+  chestImage,
+  chestOpenImage,
+  drawingTableImage,
+  architectureImage,
+  plateImage,
+  domedLargeImage,
+  domedMediumImage,
+  domedSmallImage,
+  shellImage,
+  pavingImage,
+  skyBandImage,
+  palaceBelowImage,
+]
+
 /* The prototype's material palette. */
 export const PAL = {
   ink: '#4a3f30',

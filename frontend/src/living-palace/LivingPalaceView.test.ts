@@ -84,6 +84,19 @@ vi.mock('../chat/CouncilChat', async () => {
 })
 
 import LivingPalaceView from './LivingPalaceView'
+
+/** The preload gate, controllable per test: warm by default
+ *  (every existing test walks straight in); the door test
+ *  holds it shut and releases it by hand. */
+const preloadControl = vi.hoisted(() => ({
+  ready: true,
+  promise: Promise.resolve() as Promise<void>,
+}))
+vi.mock('./palacePreload', () => ({
+  PALACE_ASSET_URLS: [] as string[],
+  preloadPalaceAssets: () => preloadControl.promise,
+  palaceAssetsReady: () => preloadControl.ready,
+}))
 import { FOOTPRINT_SQUASH, PALACE_GEOMETRY, masterAspect } from './palaceSceneLogic'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -298,6 +311,8 @@ async function clickCrumb(label: string) {
 }
 
 beforeEach(() => {
+  preloadControl.ready = true
+  preloadControl.promise = Promise.resolve()
   chatProps.length = 0
   writes.length = 0
   layoutWrites.length = 0
@@ -955,5 +970,27 @@ describe('Living Palace — chat-is-the-work', () => {
       await new Promise((r) => setTimeout(r, 0))
     })
     expect(attributedGets).toBeGreaterThan(before)
+  })
+})
+
+describe('Living Palace — the door', () => {
+  it('the seat logo spins at the door until the imagery is warm; then the compound paints', async () => {
+    let release!: () => void
+    preloadControl.ready = false
+    preloadControl.promise = new Promise<void>((r) => {
+      release = r
+    })
+    await render()
+    // The door stands: the gate is up and no building has painted.
+    expect(container.querySelector('[data-testid="palace-preload-gate"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="palace-building-i1"]')).toBeNull()
+    await act(async () => {
+      release()
+    })
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(container.querySelector('[data-testid="palace-preload-gate"]')).toBeNull()
+    expect(container.querySelector('[data-testid="palace-building-i1"]')).not.toBeNull()
   })
 })

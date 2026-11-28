@@ -1333,7 +1333,18 @@ export function OverheadScene({
             piece (native 1283×1184) displays at 1731×1891
             from (-65, 530); the frame's overflow-hidden
             clips its spill, and the shell's front wall,
-            drawn last, covers its top. */}
+            drawn last, covers its top. The founder then
+            steered it once more from the live view (proof
+            v16): widened 9% anchored at the LEFT edge, so
+            the piece displays at 1887×1891 from the same
+            (-65, 530) — left -4.17%, width 120.96%.
+            maxWidth 'none' is load-bearing: the app's
+            global stylesheet caps every img at
+            max-width: 100%, which silently squeezed this
+            piece to 100% wide (left side true, right side
+            ~10% short) while proofs and test pages, which
+            carry no such rule, showed the full width —
+            the proof-vs-live schism found 2026-11-27. */}
         <img
           data-testid="palace-below"
           src={palaceBelowImage}
@@ -1343,8 +1354,9 @@ export function OverheadScene({
           style={{
             left: '-4.17%',
             top: '28.04%',
-            width: '110.98%',
+            width: '120.96%',
             height: '100.03%',
+            maxWidth: 'none',
           }}
           aria-hidden
         />

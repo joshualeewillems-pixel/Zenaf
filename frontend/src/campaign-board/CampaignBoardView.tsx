@@ -493,23 +493,45 @@ const OV_KEY_STRIP = 44
  *  the stronghold and its camp, which stand at the lane's
  *  start. */
 const OV_UNSPANNED_CLUSTER = 104
-/** The scale key's settings, in toggle order (founder,
- *  2026-11-27): the key is a toggle through period counts —
- *  three periods make a day, five make a week, seven make a
- *  month. A route is divided into periods at the toggled
- *  setting: a job's timeline is its span counted in periods,
- *  so finer settings stretch every timeline out. A month
- *  counts 30 days, the board's nominal month. */
-const OV_KEY_UNITS = [
-  { id: 'day', days: 1, periods: 3 },
-  { id: 'week', days: 7, periods: 5 },
-  { id: 'month', days: 30, periods: 7 },
+/** The tally (founder, 2026-11-27 — his worked example is
+ *  the definition: "***•••.. = three months, three weeks and
+ *  two days"). A route's span is spelled in whole units, one
+ *  glyph per unit, months first, then weeks, then days, each
+ *  glyph standing in its unit's slot along the road at one
+ *  shared scale — so the route reads as its duration, in
+ *  words, and stays proportional. This supersedes the
+ *  evening's earlier period counts (3/5/7): one glyph is one
+ *  whole unit. A month counts 30 days, the board's nominal
+ *  month. The key is the glyphs' legend. */
+const OV_TALLY_UNITS = [
+  // dy seats each glyph's ink on the road: a star's ink rides
+  // high in its em box, a period's sits on the baseline, so
+  // centred em boxes would scatter them off the line.
+  { id: 'month', days: 30, glyph: '*', size: 15, dy: 3.5, label: '1 month' },
+  { id: 'week', days: 7, glyph: '•', size: 13, dy: 1, label: '1 week' },
+  { id: 'day', days: 1, glyph: '.', size: 22, dy: -5, label: '1 day' },
 ] as const
-/** The key's own dot pitch — fixed and legible at every
- *  setting; the routes' pitch adapts so the longest route
- *  fits the map (see dotPitch below). */
-const OV_KEY_DOT_PITCH = 8.1
-type OvKeyUnit = (typeof OV_KEY_UNITS)[number]['id']
+type OvTallyUnit = (typeof OV_TALLY_UNITS)[number]
+/** Decompose a span in days into its tally: each unit glyph
+ *  with the day its slot starts at. */
+function tallyFor(days: number): { unit: OvTallyUnit; startDay: number }[] {
+  const out: { unit: OvTallyUnit; startDay: number }[] = []
+  let rest = Math.max(1, Math.round(days))
+  let cursor = 0
+  for (const unit of OV_TALLY_UNITS) {
+    const n = Math.floor(rest / unit.days)
+    for (let i = 0; i < n; i++) {
+      out.push({ unit, startDay: cursor })
+      cursor += unit.days
+    }
+    rest -= n * unit.days
+  }
+  return out
+}
+/** A day's width at the loosest scale; the board's scale
+ *  adapts down so the longest route fits the map (see
+ *  pxPerDay below). */
+const OV_DAY_PITCH = 8.1
 /** The founder's painted campaign map (supplied 2026-11-27) —
  *  screen one's ground. Native 1122×1402; drawn at the panel's
  *  width and faded into the parchment before the key strip. */
@@ -529,19 +551,13 @@ function OverviewBoard({
 }) {
   const [popupId, setPopupId] = useState<string | null>(null)
   const [openInitiativeId, setOpenInitiativeId] = useState<string | null>(null)
-  const [keyUnit, setKeyUnit] = useState<OvKeyUnit>('day')
   const groups = groupOverviewByInitiative(overview, initiatives)
-  // The period model (founder, 2026-11-27): at the key's
-  // setting, one period lasts unit-days / periods (a third of
-  // a day, 1.4 days, or ~4.3 days). A spanned job's timeline
-  // is its span counted in whole periods — at least one — and
-  // drawn at a shared dot pitch that adapts so the longest
-  // timeline fits the map, capped at the key's own pitch.
-  const keyUnitDef = OV_KEY_UNITS.find((u) => u.id === keyUnit)!
-  const periodDays = keyUnitDef.days / keyUnitDef.periods
-  const periodsFor = (days: number) => Math.max(1, Math.round(days / periodDays))
-  const maxPeriods = Math.max(1, ...overview.filter((o) => o.spanned).map((o) => periodsFor(o.span.days)))
-  const dotPitch = Math.min(OV_KEY_DOT_PITCH, (OV_W - OV_CAMP_X - 108) / maxPeriods)
+  // The board's scale: one shared width per day, adapted so
+  // the longest route fits the map, capped at the day pitch.
+  // Every route's tally is laid at this scale, so lengths
+  // stay comparable across the whole board.
+  const maxSpanDays = Math.max(1, ...overview.filter((o) => o.spanned).map((o) => o.span.days))
+  const pxPerDay = Math.min(OV_DAY_PITCH, (OV_W - OV_CAMP_X - 108) / maxSpanDays)
 
   // Lay out the grounds top to bottom. An initiative's ground is
   // closed by default — header only, no lanes — until tapped
@@ -575,16 +591,6 @@ function OverviewBoard({
   const OV_ART_FULL_H = (OV_W * OV_ART_H) / OV_ART_W
   const height = Math.max(cursor - OV_GROUP_GAP + OV_KEY_STRIP, OV_ART_FULL_H + OV_KEY_STRIP)
   const keyY = height - 18
-  // The scale key shows the setting itself: the unit's period
-  // count as a dotted line — three dots for a day, five for a
-  // week, seven for a month — at the key's fixed dot pitch.
-  // Layout: 'inline' when line + label fit one row (the
-  // standing look); 'stacked' when they don't, the label
-  // dropping below the line's start.
-  const keyLabel = `[-----] = 1 ${keyUnit}`
-  const keyLen = keyUnitDef.periods * OV_KEY_DOT_PITCH
-  const keyLayout =
-    OV_CAMP_X + keyLen + 10 + estimateLabelWidth(keyLabel, 11.5) <= OV_W - 8 ? 'inline' : 'stacked'
   // The painted map fills the panel's width at the top; on a
   // tall board it ends (and fades) well above the key strip,
   // on a short board it is cropped at the strip — the key
@@ -716,7 +722,7 @@ function OverviewBoard({
               )}
               {lanes.map(({ o, laneTop, color }) => {
                 const lineY = laneTop + 74
-                const lineLen = periodsFor(o.span.days) * dotPitch
+                const lineLen = o.span.days * pxPerDay
                 const endX = OV_CAMP_X + lineLen
                 // Where the finish flag stands: at the route's end when
                 // spanned; planted at the camp when unspanned.
@@ -788,15 +794,17 @@ function OverviewBoard({
                             ar={419 / 305}
                           />
                         ))}
-                        {/* The route is its span counted in
-                            periods at the key's setting (founder,
-                            2026-11-27): one dot per period, at
-                            the shared dot pitch — toggling the
-                            key re-divides every route, and finer
-                            settings stretch the timelines out.
-                            When the pitch runs too fine to bead,
-                            the line stands solid — the dots have
-                            merged, which is the density read. */}
+                        {/* The road, and on it the span
+                            spelled as a tally (founder,
+                            2026-11-27): one glyph per whole
+                            unit — * a month, • a week, . a
+                            day — each standing in its unit's
+                            slot at the board's shared scale,
+                            so the route reads as its duration
+                            and stays proportional. The thin
+                            road runs under the glyphs; at very
+                            fine scales the day dots merge into
+                            it, which is the density read. */}
                         <line
                           data-testid="route-line"
                           x1={OV_CAMP_X}
@@ -804,11 +812,26 @@ function OverviewBoard({
                           x2={endX}
                           y2={lineY}
                           stroke={color}
-                          strokeWidth="5"
+                          strokeWidth="2"
                           strokeLinecap="round"
-                          strokeDasharray={dotPitch >= 1.2 ? `0.1 ${dotPitch - 0.1}` : undefined}
                           style={{ pointerEvents: 'none' }}
                         />
+                        {tallyFor(o.span.days).map((t, ti) => (
+                          <text
+                            key={ti}
+                            data-testid="route-glyph"
+                            x={OV_CAMP_X + (t.startDay + t.unit.days / 2) * pxPerDay}
+                            y={lineY + t.unit.dy}
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fontSize={t.unit.size}
+                            fontWeight="700"
+                            fill={color}
+                            style={{ pointerEvents: 'none' }}
+                          >
+                            {t.unit.glyph}
+                          </text>
+                        ))}
                       </>
                     ) : (
                       <>
@@ -910,62 +933,29 @@ function OverviewBoard({
               })}
             </g>
           ))}
-          {/* scale key — the period toggle (founder, 2026-11-27):
-              tapping the key strip cycles the setting — three
-              periods to a day, five to a week, seven to a month —
-              and every route on the map re-divides to match. The
-              key's line is the setting's own period count in
-              dots. */}
+          {/* scale key — the tally's legend (founder,
+              2026-11-27): the glyphs the routes are spelled
+              in, each with its unit. */}
           <g data-testid="scale-key">
-            {keyLayout === 'inline' && (
-              <>
-                {Array.from({ length: keyUnitDef.periods }).map((_, i) => (
-                  <circle
-                    key={i}
-                    data-testid="key-dot"
-                    cx={OV_CAMP_X + i * OV_KEY_DOT_PITCH}
-                    cy={keyY}
-                    r="2"
-                    fill={INK}
-                  />
-                ))}
-                <text x={OV_CAMP_X + keyLen + 10} y={keyY + 4} fontSize="11.5" fontWeight="600" fill={INK}>
-                  {keyLabel}
+            {OV_TALLY_UNITS.map((u, i) => (
+              <g key={u.id}>
+                <text
+                  data-testid="key-glyph"
+                  x={OV_CAMP_X + i * 118}
+                  y={keyY + u.dy}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fontSize={u.size}
+                  fontWeight="700"
+                  fill={INK}
+                >
+                  {u.glyph}
                 </text>
-              </>
-            )}
-            {keyLayout === 'stacked' && (
-              <>
-                {Array.from({ length: keyUnitDef.periods }).map((_, i) => (
-                  <circle
-                    key={i}
-                    data-testid="key-dot"
-                    cx={OV_CAMP_X + i * OV_KEY_DOT_PITCH}
-                    cy={keyY - 8}
-                    r="2"
-                    fill={INK}
-                  />
-                ))}
-                <text x={OV_CAMP_X} y={keyY + 13} fontSize="11.5" fontWeight="600" fill={INK}>
-                  {keyLabel}
+                <text x={OV_CAMP_X + i * 118 + 13} y={keyY + 4} fontSize="11.5" fontWeight="600" fill={INK}>
+                  = {u.label}
                 </text>
-              </>
-            )}
-            {/* the key strip is the toggle's tap target */}
-            <rect
-              x={8}
-              y={height - OV_KEY_STRIP}
-              width={OV_W - 16}
-              height={OV_KEY_STRIP}
-              fill="#000"
-              fillOpacity={0}
-              style={{ cursor: 'pointer' }}
-              onClick={() =>
-                setKeyUnit(
-                  (u) => OV_KEY_UNITS[(OV_KEY_UNITS.findIndex((k) => k.id === u) + 1) % OV_KEY_UNITS.length].id,
-                )
-              }
-            />
+              </g>
+            ))}
           </g>
           {/* camp popup — the project's facts, incl. the undated fact
               that is never printed on the surface */}

@@ -247,63 +247,35 @@ describe('CampaignBoardView', () => {
     expect(container.textContent).toContain('← All projects')
   })
 
-  it('the scale key is a toggle: day, then week, then month, then day again — the line is the setting’s period count in dots', async () => {
+  it('the key is the tally’s legend, and a route spells its span in whole units', async () => {
     await act(async () => {
       root.render(React.createElement(CampaignBoardView))
     })
     await flush()
     await flush()
 
-    const keyGroup = () => container.querySelector('[data-testid="scale-key"]')
-    const keyTap = () => keyGroup()!.querySelector('rect')!
-    const keyDots = () => [...keyGroup()!.querySelectorAll('[data-testid="key-dot"]')]
-    const keySpan = () => {
-      const dots = keyDots()
-      return dots.length > 1
-        ? Number(dots[dots.length - 1].getAttribute('cx')) - Number(dots[0].getAttribute('cx'))
-        : 0
-    }
-
-    // Standing look: exactly three period dots — three periods
-    // make a day (founder, 2026-11-27) — at the key's fixed
-    // pitch, 8.1. (A dashed line drew a fourth dot at its end;
-    // the key now draws its periods as themselves.)
-    expect(container.textContent).toContain('[-----] = 1 day')
+    // The legend (founder, 2026-11-27): * is a month, • is a
+    // week, . is a day — the glyphs the routes are spelled in.
+    const keyGlyphs = [...container.querySelectorAll('[data-testid="key-glyph"]')].map((g) => g.textContent)
+    expect(keyGlyphs).toEqual(['*', '•', '.'])
+    expect(container.textContent).toContain('= 1 month')
+    expect(container.textContent).toContain('= 1 week')
+    expect(container.textContent).toContain('= 1 day')
     // The stage never shrinks below the whole painting: at the
     // board's width the art stands ~600 tall, plus the key
     // strip — even with every ground closed.
     const svg = container.querySelector('svg')!
     expect(Number(svg.getAttribute('viewBox')!.split(' ')[3])).toBeGreaterThanOrEqual(643)
-    expect(keyDots()).toHaveLength(3)
-    expect(keySpan()).toBeCloseTo(2 * 8.1, 5)
 
-    // Tap → a week: five periods.
-    await act(async () => {
-      keyTap().dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    await flush()
-    expect(container.textContent).toContain('[-----] = 1 week')
-    expect(container.textContent).not.toContain('[-----] = 1 day')
-    expect(keyDots()).toHaveLength(5)
-    expect(keySpan()).toBeCloseTo(4 * 8.1, 5)
-
-    // Tap → a month: seven periods — never thirty.
-    await act(async () => {
-      keyTap().dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    await flush()
-    expect(container.textContent).toContain('[-----] = 1 month')
-    expect(keyDots()).toHaveLength(7)
-    expect(keySpan()).toBeCloseTo(6 * 8.1, 5)
-
-    // Tap → back to a day.
-    await act(async () => {
-      keyTap().dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    await flush()
-    expect(container.textContent).toContain('[-----] = 1 day')
-    expect(keyDots()).toHaveLength(3)
-    expect(keySpan()).toBeCloseTo(2 * 8.1, 5)
+    // The Spring project's span is 30 days — its route spells
+    // exactly one month glyph, on a road 30 day-widths long
+    // (the scale is the day pitch, 8.1: the fit cap 326/30
+    // does not bind).
+    await openGround('i1')
+    const glyphs = [...container.querySelectorAll('[data-testid="route-glyph"]')].map((g) => g.textContent)
+    expect(glyphs).toEqual(['*'])
+    const line = container.querySelector('[data-testid="route-line"]')!
+    expect(Number(line.getAttribute('x2')) - Number(line.getAttribute('x1'))).toBeCloseTo(30 * 8.1, 5)
   })
 
   it('draws the linked blocker signal + overcapacity; declarations render from the record, never from surface forms', async () => {
@@ -566,11 +538,11 @@ describe('CampaignBoardView', () => {
     // No routes are drawn while the grounds are closed.
     expect(container.querySelectorAll('[data-testid="route-line"]')).toHaveLength(0)
 
-    // Open the Zenaf core ground: its dated project stands as a
-    // route counted in periods (founder, 2026-11-27). At the
-    // day setting three periods make a day, so the 12-day span
-    // is 36 periods; the shared dot pitch is the key's 8.1 (the
-    // fit cap, 326/36 ≈ 9.1, does not bind).
+    // Open the Zenaf core ground: its dated project stands as
+    // a route whose span is spelled as a tally (founder,
+    // 2026-11-27): 12 days is one week and five days —
+    // •..... — on a road 12 day-widths long at the board's
+    // scale (the day pitch 8.1; the fit cap does not bind).
     await openGround('i2')
     text = container.textContent ?? ''
     const idx = (s: string) => text.indexOf(s)
@@ -581,36 +553,9 @@ describe('CampaignBoardView', () => {
     expect(routeLines).toHaveLength(1)
     const routeLen = () =>
       Number(routeLines[0].getAttribute('x2')) - Number(routeLines[0].getAttribute('x1'))
-    expect(routeLen()).toBeCloseTo(36 * 8.1, 5)
-    // Toggling the key re-divides the route: at the week
-    // setting (five periods to a week) the same span is 9
-    // periods and the timeline pulls in; at the month setting
-    // (seven to a month) it is 3 periods; the next tap
-    // restores the day and the timeline stretches back out.
-    const keyTap = () => container.querySelector('[data-testid="scale-key"] rect')!
-    const pitch = () => {
-      const d = routeLines[0].getAttribute('stroke-dasharray')!.split(' ').map(Number)
-      return d[0] + d[1]
-    }
-    expect(pitch()).toBeCloseTo(8.1, 5)
-    await act(async () => {
-      keyTap().dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    await flush()
-    expect(container.textContent).toContain('[-----] = 1 week')
-    expect(routeLen()).toBeCloseTo(9 * 8.1, 5)
-    await act(async () => {
-      keyTap().dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    await flush()
-    expect(container.textContent).toContain('[-----] = 1 month')
-    expect(routeLen()).toBeCloseTo(3 * 8.1, 5)
-    await act(async () => {
-      keyTap().dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    await flush()
-    expect(container.textContent).toContain('[-----] = 1 day')
-    expect(routeLen()).toBeCloseTo(36 * 8.1, 5)
+    expect(routeLen()).toBeCloseTo(12 * 8.1, 5)
+    const glyphs = [...container.querySelectorAll('[data-testid="route-glyph"]')].map((g) => g.textContent)
+    expect(glyphs).toEqual(['•', '.', '.', '.', '.', '.'])
 
     // Open the fellowship's ground instead (one ground open at a
     // time): the Ready pair stands at their camps, undated and

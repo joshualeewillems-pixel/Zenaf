@@ -492,6 +492,19 @@ def _surroundings_section(
         except Exception:
             logger.exception("context preparation: temporal read failed")
 
+    # Temporal recompute access, for project subjects (Temporal
+    # Orchestration S5): the seat can explore hypothetical
+    # recalculation over this undertaking's diagnosis while the
+    # visitor deliberates. The capability is named here so the
+    # seat knows it exists; the invocation is temporal_recompute()
+    # below and the computation lives in the VE layer — never
+    # recomputed in the seat layer, never persisted.
+    if entity_type == "project":
+        try:
+            lines.extend(_temporal_recompute_lines(user_id, row))
+        except Exception:
+            logger.exception("context preparation: temporal recompute read failed")
+
     if not lines:
         return None
     return _cap_lines(["Recorded surroundings:"] + lines, SURROUNDINGS_SECTION_CAP)
@@ -623,6 +636,64 @@ def _temporal_lines(user_id: str, row: dict[str, Any]) -> list[str]:
                 f"fold {basis.get('fold_seq')}."
             )
     return lines
+
+
+def _temporal_recompute_lines(user_id: str, row: dict[str, Any]) -> list[str]:
+    """Hypothetical-recalculation access for this undertaking
+    (Temporal Orchestration S5, brief §7). Awareness only: the
+    line names the capability and the fold it would run against;
+    the computation itself is temporal_recompute() below, in the
+    VE layer, and persists nothing."""
+    from local_ai.vision_execution import temporal_diagnosis as TD
+    from local_ai.vision_execution import temporal_standing as TS
+
+    proposal = TD.latest_diagnosis_proposal(user_id, str(row["id"]))
+    if not proposal:
+        return []
+    fold_seq = TS.current_fold_seq(user_id)
+    return [
+        "- Hypothetical recalculation: you can recompute this "
+        "undertaking's arrangement live while the visitor explores "
+        "changed effort, capacity, dependencies, priority, or "
+        "competing commitments. Results are stamped (fold "
+        f"{fold_seq}, assumption set, kernel version), are "
+        "earliest-found under the stated settings, and reserve "
+        "nothing — provisional material joins only as a named "
+        "scenario layer when asked."
+    ]
+
+
+def temporal_recompute(
+    user_id: str,
+    project_id: str,
+    *,
+    deltas: dict[str, Any] | None = None,
+    toggles: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """The seat-facing invocation of hypothetical recalculation
+    (Temporal Orchestration S5): recompute the latest diagnosis
+    for ``project_id`` under scenario ``deltas`` / ``toggles``
+    through the VE layer's deterministic recompute. Returns the
+    stamped summary, or None when the project has no diagnosis or
+    the computation fails — failure-isolated, like every other
+    context-preparation source, so a failed hypothetical degrades
+    to no hypothetical, never a broken turn."""
+    try:
+        from local_ai.vision_execution import temporal_diagnosis as TD
+        from local_ai.vision_execution import temporal_scenario as TS
+
+        proposal = TD.latest_diagnosis_proposal(user_id, str(project_id))
+        if not proposal:
+            return None
+        return TS.recompute_arrangement(
+            user_id,
+            base={"proposal_id": proposal["id"]},
+            deltas=deltas,
+            toggles=toggles,
+        )
+    except Exception:
+        logger.exception("context preparation: temporal recompute failed")
+        return None
 
 
 # ---------------------------------------------------------------------------

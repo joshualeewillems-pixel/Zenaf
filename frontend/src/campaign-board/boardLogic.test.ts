@@ -19,6 +19,7 @@ import {
   riverBand,
   shortDate,
   signalsForProject,
+  spanStandingStyle,
   stripWaypointLabels,
   type BoardDecisionRow,
   type BoardLabelItem,
@@ -179,6 +180,127 @@ describe('projectSpan', () => {
       expect(overview[0].span.source).toBe('standing')
       expect(overview[0].spanned).toBe(true)
     })
+  })
+})
+
+/** A standing record factory for the S2 presentation tests. */
+function standingSpanRecord(partial: Partial<TemporalSpanRecord>): TemporalSpanRecord {
+  return {
+    id: 'span-1',
+    project_id: 'p1',
+    start: '2026-06-02',
+    end: '2026-06-23',
+    origin: 'evidence-recovered',
+    standing: 'evidence-recovered envelope',
+    role: 'window',
+    conditionality: { kind: 'unconditional' },
+    effort: { kind: 'unknown' },
+    confidence_label: 'unknown',
+    basis: [],
+    method: '',
+    supersedes: null,
+    note: '',
+    recorded_at: '2026-06-15T00:00:00',
+    ...partial,
+  }
+}
+
+describe('standing presentation (S2)', () => {
+  it('spanStandingStyle gives each standing its own treatment', () => {
+    const recorded = projectSpan(
+      project({ start_date: '2026-06-01', end_date: '2026-06-19' }),
+      [],
+      NOW,
+    )
+    expect(spanStandingStyle(recorded)).toEqual({ opacity: 1, label: null, bracketed: false })
+
+    const envelope = projectSpan(project({}), [], NOW, [standingSpanRecord({})])
+    expect(spanStandingStyle(envelope)).toEqual({
+      opacity: 1,
+      label: 'evidence-recovered envelope',
+      bracketed: true,
+    })
+
+    const forecast = projectSpan(project({}), [], NOW, [
+      standingSpanRecord({ standing: 'derived forecast', origin: 'derived' }),
+    ])
+    expect(spanStandingStyle(forecast).dasharray).toBe('7 4')
+    expect(spanStandingStyle(forecast).label).toBe('derived forecast')
+
+    const conditional = projectSpan(project({}), [], NOW, [
+      standingSpanRecord({
+        standing: 'derived forecast',
+        origin: 'derived',
+        conditionality: {
+          kind: 'conditional',
+          assumption_set_id: 'set-1',
+          assumptions: [{ id: 'a1', type: 'allocation', statement: 'the allocation holds' }],
+        },
+      }),
+    ])
+    expect(conditional.conditional).toBe(true)
+    expect(spanStandingStyle(conditional).label).toBe('derived forecast · conditional')
+
+    const hypothesis = projectSpan(project({}), [], NOW, [
+      standingSpanRecord({ standing: 'provisional', origin: 'proposed' }),
+    ])
+    const hs = spanStandingStyle(hypothesis)
+    expect(hs.dasharray).toBe('0.5 5')
+    expect(hs.opacity).toBeLessThan(1)
+    expect(hs.label).toBe('provisional hypothesis')
+
+    // The invented window shares the hypothesis treatment but
+    // carries no label — the header words cover it.
+    const invented = projectSpan(project({}), [], NOW)
+    expect(spanStandingStyle(invented).dasharray).toBe('0.5 5')
+    expect(spanStandingStyle(invented).label).toBeNull()
+  })
+
+  it('buildOverview flags a recorded hypothesis: unspanned, but drawn at its recorded window', () => {
+    const overview = buildOverview(
+      [project({})],
+      [],
+      NOW,
+      new Map([['p1', [standingSpanRecord({ standing: 'provisional', origin: 'proposed' })]]]),
+    )
+    expect(overview[0].spanned).toBe(false)
+    expect(overview[0].hypothesis).toBe(true)
+    // The recorded 21-day window — not the nominal 3-day flag.
+    expect(overview[0].routeDays).toBe(21)
+    expect(overview[0].span.days).toBe(21)
+  })
+
+  it('an invented provisional window is not a hypothesis', () => {
+    const overview = buildOverview([project({})], [], NOW)
+    expect(overview[0].hypothesis).toBe(false)
+    expect(overview[0].routeDays).toBe(3)
+  })
+
+  it('computePxPerDay: a recorded hypothesis stretches the scale; an invented window does not', () => {
+    const hypothesis = buildOverview(
+      [project({})],
+      [],
+      NOW,
+      new Map([
+        [
+          'p1',
+          [
+            standingSpanRecord({
+              standing: 'provisional',
+              origin: 'proposed',
+              start: '2026-01-01',
+              end: '2026-05-01',
+            }),
+          ],
+        ],
+      ]),
+    )
+    const px = computePxPerDay(hypothesis, 610)
+    expect(px).toBeLessThan(26)
+    expect(px * 120).toBeLessThanOrEqual(610 + 1)
+
+    const invented = buildOverview([project({})], [], NOW)
+    expect(computePxPerDay(invented, 610)).toBe(26)
   })
 })
 
@@ -924,6 +1046,56 @@ describe('initiative timelines — group spans', () => {
     const ov = buildOverview([p1], [], NOW)
     const groups = groupOverviewByInitiative(ov, [{ id: 'i1', title: 'Init' }])
     expect(groups[0].span).toBeNull()
+  })
+
+  it('the envelope includes hypothesis extents; firmEndMs marks where solid ground ends (S2)', () => {
+    const firm = project({
+      id: 'g4',
+      initiative_id: 'i1',
+      start_date: '2026-06-03',
+      end_date: '2026-06-10',
+    })
+    const hyp = project({ id: 'g5', initiative_id: 'i1' })
+    const ov = buildOverview([firm, hyp], [], NOW, new Map([
+      [
+        'g5',
+        [
+          standingSpanRecord({
+            id: 'span-g5',
+            project_id: 'g5',
+            standing: 'provisional',
+            origin: 'proposed',
+            start: '2026-06-08',
+            end: '2026-06-29',
+          }),
+        ],
+      ],
+    ]))
+    const groups = groupOverviewByInitiative(ov, [{ id: 'i1', title: 'Init' }])
+    expect(groups[0].span?.days).toBe(26)
+    expect(groups[0].span?.endMs).toBe(new Date('2026-06-29').getTime())
+    expect(groups[0].firmEndMs).toBe(new Date('2026-06-10').getTime())
+  })
+
+  it('an initiative resting only on hypotheses has an envelope but no firm end (S2)', () => {
+    const hyp = project({ id: 'g6', initiative_id: 'i1' })
+    const ov = buildOverview([hyp], [], NOW, new Map([
+      [
+        'g6',
+        [
+          standingSpanRecord({
+            id: 'span-g6',
+            project_id: 'g6',
+            standing: 'provisional',
+            origin: 'proposed',
+          }),
+        ],
+      ],
+    ]))
+    const groups = groupOverviewByInitiative(ov, [{ id: 'i1', title: 'Init' }])
+    expect(groups[0].span).not.toBeNull()
+    expect(groups[0].span?.days).toBe(21)
+    expect(groups[0].firmEndMs).toBeNull()
   })
 })
 

@@ -70,6 +70,7 @@ import {
   riverBand,
   shortDate,
   signalsForProject,
+  spanStandingStyle,
   stripWaypointLabels,
   toLocalDateTimeString,
   type BoardLabelItem,
@@ -807,41 +808,106 @@ function OverviewBoard({
                       scale under its name. An initiative whose
                       projects carry no dates has none — the
                       header stays one line, nothing invented. */}
-                  {group.span && (
-                    <g data-testid="initiative-line">
-                      <line
-                        x1={OV_CAMP_X}
-                        y1={y + 40}
-                        x2={OV_CAMP_X + group.span.days * pxPerDay}
-                        y2={y + 40}
-                        stroke="#6d5c22"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                      />
-                      {tallyFor(group.span.days).map((t, ti) => (
-                        <text
-                          key={ti}
-                          x={OV_CAMP_X + (t.startDay + t.unit.days / 2) * pxPerDay}
-                          y={y + 40 + t.unit.dy}
-                          textAnchor="middle"
-                          dominantBaseline="central"
-                          fontSize={t.unit.size - 3}
-                          fontWeight="700"
-                          fill="#6d5c22"
-                        >
-                          {t.unit.glyph}
-                        </text>
-                      ))}
-                      <OvSprite
-                        src={spriteFinishBanner}
-                        name="finish-banner"
-                        cx={OV_CAMP_X + group.span.days * pxPerDay}
-                        base={y + 43}
-                        h={18}
-                        ar={422 / 384}
-                      />
-                    </g>
-                  )}
+                  {group.span &&
+                    (() => {
+                      // The envelope's standing, drawn (S2): solid
+                      // while the line rests on recorded or derived
+                      // spans; dotted and faded for the stretch that
+                      // rests on provisional hypotheses alone — and
+                      // that stretch ends in an unplanted outline
+                      // flag, not the painted banner. An envelope
+                      // with no firm part is dotted throughout.
+                      const totalLen = group.span.days * pxPerDay
+                      const firmFrac =
+                        group.firmEndMs != null && group.span.endMs > group.span.startMs
+                          ? Math.min(
+                              1,
+                              Math.max(
+                                0,
+                                (group.firmEndMs - group.span.startMs) /
+                                  (group.span.endMs - group.span.startMs),
+                              ),
+                            )
+                          : 0
+                      const firmLen = totalLen * firmFrac
+                      const firmEnd = firmLen >= totalLen - 0.01
+                      return (
+                        <g data-testid="initiative-line">
+                          {firmLen > 0 && (
+                            <line
+                              data-testid="initiative-line-firm"
+                              x1={OV_CAMP_X}
+                              y1={y + 40}
+                              x2={OV_CAMP_X + firmLen}
+                              y2={y + 40}
+                              stroke="#6d5c22"
+                              strokeWidth="1.5"
+                              strokeLinecap="round"
+                            />
+                          )}
+                          {!firmEnd && (
+                            <line
+                              data-testid="initiative-line-provisional"
+                              x1={OV_CAMP_X + firmLen}
+                              y1={y + 40}
+                              x2={OV_CAMP_X + totalLen}
+                              y2={y + 40}
+                              stroke="#6d5c22"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeDasharray="0.5 4"
+                              opacity="0.55"
+                            />
+                          )}
+                          {tallyFor(group.span.days).map((t, ti) => (
+                            <text
+                              key={ti}
+                              x={OV_CAMP_X + (t.startDay + t.unit.days / 2) * pxPerDay}
+                              y={y + 40 + t.unit.dy}
+                              textAnchor="middle"
+                              dominantBaseline="central"
+                              fontSize={t.unit.size - 3}
+                              fontWeight="700"
+                              fill="#6d5c22"
+                              opacity={
+                                (t.startDay + t.unit.days / 2) / group.span!.days <= firmFrac
+                                  ? 1
+                                  : 0.55
+                              }
+                            >
+                              {t.unit.glyph}
+                            </text>
+                          ))}
+                          {firmEnd ? (
+                            <OvSprite
+                              src={spriteFinishBanner}
+                              name="finish-banner"
+                              cx={OV_CAMP_X + totalLen}
+                              base={y + 43}
+                              h={18}
+                              ar={422 / 384}
+                            />
+                          ) : (
+                            <g style={{ pointerEvents: 'none' }}>
+                              <line
+                                x1={OV_CAMP_X + totalLen}
+                                y1={y + 40}
+                                x2={OV_CAMP_X + totalLen}
+                                y2={y + 29}
+                                stroke={INK}
+                                strokeWidth="1.4"
+                              />
+                              <path
+                                d={`M ${OV_CAMP_X + totalLen} ${y + 29} L ${OV_CAMP_X + totalLen + 9} ${y + 32} L ${OV_CAMP_X + totalLen} ${y + 35} Z`}
+                                fill="none"
+                                stroke={EMBER}
+                                strokeWidth="1.1"
+                              />
+                            </g>
+                          )}
+                        </g>
+                      )
+                    })()}
                 </g>
               )}
               {group.initiative && (
@@ -870,11 +936,17 @@ function OverviewBoard({
                 const lineY = laneTop + 74
                 const lineLen = o.span.days * pxPerDay
                 const endX = OV_CAMP_X + lineLen
+                // The span's standing treatment (S2): dash, fade,
+                // bracket and label from the one standing grammar.
+                const spanStyle = spanStandingStyle(o.span)
                 // Where the finish flag stands: at the route's end when
-                // spanned; planted at the camp when unspanned.
-                const flagX = o.spanned
-                  ? endX
-                  : OV_CAMP_X + OV_UNSPANNED_CLUSTER + o.obstacles.slice(0, 8).length * 13 + 6
+                // spanned (or when a recorded hypothesis gives the
+                // route its window); planted at the camp when
+                // unspanned.
+                const flagX =
+                  o.spanned || o.hypothesis
+                    ? endX
+                    : OV_CAMP_X + OV_UNSPANNED_CLUSTER + o.obstacles.slice(0, 8).length * 13 + 6
                 return (
                   <g key={o.project.id}>
                     <text x={OV_CAMP_X} y={laneTop + 15} fontSize="14" fontWeight="600" fill={INK} style={{ pointerEvents: 'none' }}>
@@ -912,6 +984,7 @@ function OverviewBoard({
                           style={{ pointerEvents: 'none' }}
                         >
                           {o.span.days} days · {shortDate(new Date(o.span.startMs))} – {shortDate(new Date(o.span.endMs))}
+                          {spanStyle.label ? ` · ${spanStyle.label}` : ''}
                         </text>
                         {/* Hills and copses stand along the route
                             as painted scenery where their anchor
@@ -969,8 +1042,24 @@ function OverviewBoard({
                           stroke={color}
                           strokeWidth="2"
                           strokeLinecap="round"
+                          strokeDasharray={spanStyle.dasharray}
+                          opacity={spanStyle.opacity}
                           style={{ pointerEvents: 'none' }}
                         />
+                        {/* A span grounded in recorded evidence is
+                            bracketed — end ticks mark a measured
+                            extent, recovered from the record. */}
+                        {spanStyle.bracketed && (
+                          <g
+                            data-testid="span-bracket"
+                            stroke={color}
+                            strokeWidth="2"
+                            style={{ pointerEvents: 'none' }}
+                          >
+                            <line x1={OV_CAMP_X} y1={lineY - 6} x2={OV_CAMP_X} y2={lineY + 6} />
+                            <line x1={endX} y1={lineY - 6} x2={endX} y2={lineY + 6} />
+                          </g>
+                        )}
                         {tallyFor(o.span.days).map((t, ti) => (
                           <text
                             key={ti}
@@ -982,6 +1071,7 @@ function OverviewBoard({
                             fontSize={t.unit.size}
                             fontWeight="700"
                             fill={color}
+                            opacity={spanStyle.opacity}
                             style={{ pointerEvents: 'none' }}
                           >
                             {t.unit.glyph}
@@ -1141,6 +1231,55 @@ function OverviewBoard({
                           )
                         })}
                       </>
+                    ) : o.hypothesis ? (
+                      <>
+                        {/* A recorded provisional hypothesis (S2):
+                            the route IS drawn, at its recorded
+                            window — but dotted and faded, with no
+                            terrain, obstacles or layers positioned
+                            on a scale that is itself only proposed.
+                            The finish flag below stays unplanted:
+                            nothing here is established. */}
+                        <text
+                          x={OV_CAMP_X}
+                          y={laneTop + 122}
+                          fontSize="10.5"
+                          fill="#6b5a43"
+                          style={{ pointerEvents: 'none' }}
+                        >
+                          {o.span.days} days · {shortDate(new Date(o.span.startMs))} – {shortDate(new Date(o.span.endMs))} · provisional hypothesis — recorded, not established
+                        </text>
+                        <line
+                          data-testid="route-line"
+                          x1={OV_CAMP_X}
+                          y1={lineY}
+                          x2={endX}
+                          y2={lineY}
+                          stroke={color}
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeDasharray={spanStyle.dasharray}
+                          opacity={spanStyle.opacity}
+                          style={{ pointerEvents: 'none' }}
+                        />
+                        {tallyFor(o.span.days).map((t, ti) => (
+                          <text
+                            key={ti}
+                            data-testid="route-glyph"
+                            x={OV_CAMP_X + (t.startDay + t.unit.days / 2) * pxPerDay}
+                            y={lineY + t.unit.dy}
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fontSize={t.unit.size}
+                            fontWeight="700"
+                            fill={color}
+                            opacity={spanStyle.opacity}
+                            style={{ pointerEvents: 'none' }}
+                          >
+                            {t.unit.glyph}
+                          </text>
+                        ))}
+                      </>
                     ) : (
                       <>
                         {/* Unspanned: no route is drawn. The obstacle
@@ -1210,7 +1349,7 @@ function OverviewBoard({
                         he asks for a provisional timeframe. It
                         renders last in the lane so its tap target
                         stands above the lane's own. */}
-                    {!o.spanned &&
+                    {!o.spanned && !o.hypothesis &&
                       (() => {
                         const bangX = flagX + 20 + (o.obstacles.length > 0 ? 36 : 0)
                         return (
@@ -1299,7 +1438,9 @@ function OverviewBoard({
                     <text x={px + 12} y={py + 54} fontSize="11" fill="#6b5a43">
                       {o.spanned
                         ? `${shortDate(new Date(o.span.startMs))} – ${shortDate(new Date(o.span.endMs))} · ${o.span.days} days`
-                        : 'No dates recorded'}
+                        : o.hypothesis
+                          ? `Provisional hypothesis · ${shortDate(new Date(o.span.startMs))} – ${shortDate(new Date(o.span.endMs))} · ${o.span.days} days — recorded, not established`
+                          : 'No dates recorded'}
                     </text>
                     {o.obstacles.length > 0 && (
                       <text x={px + 12} y={py + 70} fontSize="11" fill="#8c2e1e">
@@ -1380,6 +1521,9 @@ function FocusBoard({
   writeError: string | null
 }) {
   const { project, span, obstacles, terrain, routes, signalMarkers, capacity, rivers, holds } = focus
+  // The span's standing treatment (S2) — the same grammar the
+  // overview draws with, applied to the timeline strip below.
+  const spanStyle = spanStandingStyle(span)
   const dragOverride = drag ? { taskId: drag.taskId, fraction: drag.fraction } : null
   const aPts = routePoints(routes.a.filter((w) => !w.done), ROUTE_A_Y, dragOverride)
   const bPts = routePoints(routes.b, ROUTE_B_Y, dragOverride)
@@ -1495,6 +1639,7 @@ function FocusBoard({
             ? ' · provisional hypothesis — recorded, not established'
             : ''}
           {span.source === 'standing' && span.standing ? ` · ${span.standing}` : ''}
+          {span.source === 'standing' && span.conditional ? ' · conditional' : ''}
         </span>
       </div>
       {writeError && <p className="px-1 pb-2 text-xs text-red-300">{writeError}</p>}
@@ -1823,13 +1968,40 @@ function FocusBoard({
       <div className="rounded-2xl overflow-hidden border border-[#9a7b24]/50 mt-3">
         <svg viewBox={`0 0 ${MAP_W} 64`} className="w-full block" role="img" aria-label="Timeline of steps between start and finish">
           <rect width={MAP_W} height={64} fill={PARCHMENT} />
-          <line x1={X0} y1={30} x2={X1} y2={30} stroke={INK} strokeWidth="1.6" />
+          <line
+            x1={X0}
+            y1={30}
+            x2={X1}
+            y2={30}
+            stroke={INK}
+            strokeWidth="1.6"
+            strokeDasharray={spanStyle.dasharray}
+            opacity={spanStyle.opacity}
+          />
+          {spanStyle.bracketed && (
+            <g data-testid="span-bracket" stroke={INK} strokeWidth="1.6">
+              <line x1={X0} y1={24} x2={X0} y2={36} />
+              <line x1={X1} y1={24} x2={X1} y2={36} />
+            </g>
+          )}
           <text x={X0} y={16} fontSize="10.5" fill={INK}>
             {shortDate(new Date(span.startMs))}
           </text>
           <text x={X1} y={16} textAnchor="end" fontSize="10.5" fill={INK}>
             {shortDate(new Date(span.endMs))}
           </text>
+          {spanStyle.label && (
+            <text
+              data-testid="span-standing-label"
+              x={MAP_W / 2}
+              y={16}
+              textAnchor="middle"
+              fontSize="10.5"
+              fill="#6b5a43"
+            >
+              {spanStyle.label}
+            </text>
+          )}
           {stripWaypointLabels(routes.a, span).map((label) => (
             <g key={label.fraction} transform={`translate(${xForFraction(label.fraction)},30)`}>
               <line y1="-6" y2="6" stroke={INK} strokeWidth="1.4" />

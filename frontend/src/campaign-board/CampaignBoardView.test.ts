@@ -537,6 +537,20 @@ describe('CampaignBoardView', () => {
     expect(text).not.toContain('Meet the Crane')
     // No routes are drawn while the grounds are closed.
     expect(container.querySelectorAll('[data-testid="route-line"]')).toHaveLength(0)
+    // Initiative timelines (founder, 2026-11-28): only the
+    // core has dated work, so only its header carries a
+    // sentence — the 12-day envelope spelled •..... under its
+    // name. The fellowship's projects carry no dates, so its
+    // header has none.
+    const initLines = [...container.querySelectorAll('[data-testid="initiative-line"]')]
+    expect(initLines).toHaveLength(1)
+    expect([...initLines[0].querySelectorAll('text')].map((t) => t.textContent)).toEqual([
+      '•', '.', '.', '.', '.', '.',
+    ])
+    // Nothing stands above the castle: the first ground begins
+    // below the painting's crown.
+    const firstGround = container.querySelector('[data-initiative-ground="i2"]')!
+    expect(Number(firstGround.getAttribute('y'))).toBeGreaterThanOrEqual(186)
 
     // Open the Zenaf core ground: its dated project stands as
     // a route whose span is spelled as a tally (founder,
@@ -716,10 +730,11 @@ describe('CampaignBoardView', () => {
     )
     // Both projects stand as strongholds with their camps; only
     // the dated one's route is painted — its obstacle crag and
-    // the finish banners (the route's, and its grove layer's).
+    // the finish banners (the initiative envelope's, the
+    // route's, and its grove layer's).
     expect(sprites.filter((s) => s === 'stronghold')).toHaveLength(2)
     expect(sprites.filter((s) => s === 'camp')).toHaveLength(2)
-    expect(sprites.filter((s) => s === 'finish-banner')).toHaveLength(2)
+    expect(sprites.filter((s) => s === 'finish-banner')).toHaveLength(3)
     expect(sprites).toContain('obstacle-crag')
     expect(container.querySelectorAll('[data-testid="route-line"]')).toHaveLength(1)
     // The mountain and the grove read in the sentence itself

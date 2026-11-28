@@ -1334,10 +1334,14 @@ export function OverheadScene({
             from (-65, 530); the frame's overflow-hidden
             clips its spill, and the shell's front wall,
             drawn last, covers its top. The founder then
-            steered it once more from the live view (proof
-            v16): widened 9% anchored at the LEFT edge, so
-            the piece displays at 1887×1891 from the same
-            (-65, 530) — left -4.17%, width 120.96%.
+            steered it twice more from the live view: +9%
+            anchored at the LEFT edge (proof v16), then —
+            annotating his own screenshot of the result —
+            the drum's right wall pushed out to the shell's
+            outer line, another ~10% from the left (proof
+            v17, approved 2026-11-27). The piece now
+            displays at 2079×1891 from the same (-65, 530)
+            — left -4.17%, width 133.27%.
             maxWidth 'none' is load-bearing: the app's
             global stylesheet caps every img at
             max-width: 100%, which silently squeezed this
@@ -1354,7 +1358,7 @@ export function OverheadScene({
           style={{
             left: '-4.17%',
             top: '28.04%',
-            width: '120.96%',
+            width: '133.27%',
             height: '100.03%',
             maxWidth: 'none',
           }}

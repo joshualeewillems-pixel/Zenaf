@@ -131,9 +131,9 @@ function routePoints(
   dragOverride: { taskId: string; fraction: number } | null,
 ): { x: number; y: number }[] {
   const pts = [{ x: X0, y: MID_Y }]
-  waypoints.forEach((w, i) => {
+  waypoints.forEach((w) => {
     const f = dragOverride && dragOverride.taskId === w.task.id ? dragOverride.fraction : w.fraction
-    pts.push({ x: xForFraction(f), y: waypointY(bandY, i) })
+    pts.push({ x: xForFraction(f), y: waypointY(bandY, w.slot) })
   })
   pts.push({ x: X1, y: MID_Y })
   return pts
@@ -208,11 +208,35 @@ export default function CampaignBoardView() {
     }
   }, [entities, focusId, nowMs, declarations])
 
-  const applyTask = useCallback((updated: Task) => {
+  const applyTaskNow = useCallback((updated: Task) => {
     setEntities((prev) =>
       prev ? { ...prev, tasks: prev.tasks.map((t) => (t.id === updated.id ? updated : t)) } : prev,
     )
   }, [])
+
+  /* Drag freeze (founder's glitching-nodes recording,
+   * 2026-11-28): a commit from an earlier drag can land while
+   * the visitor is already dragging the next node — applying
+   * it mid-gesture re-lays the whole board under their finger
+   * and every node jumps. While a drag is live, landed updates
+   * queue; they apply the moment the gesture ends. */
+  const dragLiveRef = useRef(false)
+  const queuedTaskRef = useRef<Task | null>(null)
+  const applyTask = useCallback(
+    (updated: Task) => {
+      if (dragLiveRef.current) {
+        queuedTaskRef.current = updated
+        return
+      }
+      applyTaskNow(updated)
+    },
+    [applyTaskNow],
+  )
+  const flushQueuedTask = useCallback(() => {
+    const queued = queuedTaskRef.current
+    queuedTaskRef.current = null
+    if (queued) applyTaskNow(queued)
+  }, [applyTaskNow])
 
   const commitDueDate = useCallback(
     async (taskId: string, localDateTime: string) => {
@@ -239,13 +263,20 @@ export default function CampaignBoardView() {
     if (w.done) return
     ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
     dragStart.current = { x: e.clientX, taskId: w.task.id }
+    dragLiveRef.current = true
     setDrag({ taskId: w.task.id, fraction: w.fraction, moved: false })
   }
 
   const onWaypointPointerMove = (e: React.PointerEvent, w: BoardWaypoint) => {
     if (!drag || drag.taskId !== w.task.id) return
-    const moved = dragStart.current ? Math.abs(e.clientX - dragStart.current.x) > 4 : true
-    setDrag({ taskId: w.task.id, fraction: fractionForX(svgX(e.clientX)), moved: moved || drag.moved })
+    const fraction = fractionForX(svgX(e.clientX))
+    const moved =
+      drag.moved || (dragStart.current ? Math.abs(e.clientX - dragStart.current.x) > 4 : true)
+    // Bail out on a no-change move: a fresh state object on
+    // every pointermove re-renders the whole board at pointer
+    // rate for nothing.
+    if (fraction === drag.fraction && moved === drag.moved) return
+    setDrag({ taskId: w.task.id, fraction, moved })
   }
 
   const onWaypointPointerUp = (e: React.PointerEvent, w: BoardWaypoint) => {
@@ -254,6 +285,8 @@ export default function CampaignBoardView() {
     const fraction = drag.fraction
     setDrag(null)
     dragStart.current = null
+    dragLiveRef.current = false
+    flushQueuedTask()
     if (!focus) return
     if (wasDrag) {
       // A drag is a surface-native reschedule gesture and nothing
@@ -266,6 +299,20 @@ export default function CampaignBoardView() {
     // pure client state, no write; it enters the record only when
     // the visitor sends a turn while it is staged.
     setSelection({ kind: 'waypoint', taskId: w.task.id })
+  }
+
+  /* An interrupted gesture (the browser takes the pointer —
+   * a scroll, a notification, a capture loss) ends the drag
+   * WITHOUT committing and without staging: the gesture never
+   * completed, so the record stays exactly as it was. Without
+   * this, the drag state outlived the gesture and the next
+   * touch inherited a phantom drag. */
+  const onWaypointPointerCancel = (w: BoardWaypoint) => {
+    if (!drag || drag.taskId !== w.task.id) return
+    setDrag(null)
+    dragStart.current = null
+    dragLiveRef.current = false
+    flushQueuedTask()
   }
 
   /* --------------------------- chat wiring --------------------------- */
@@ -379,6 +426,7 @@ export default function CampaignBoardView() {
               onWaypointPointerDown={onWaypointPointerDown}
               onWaypointPointerMove={onWaypointPointerMove}
               onWaypointPointerUp={onWaypointPointerUp}
+              onWaypointPointerCancel={onWaypointPointerCancel}
               writeError={writeError}
             />
           ) : (
@@ -1279,6 +1327,7 @@ function FocusBoard({
   onWaypointPointerDown,
   onWaypointPointerMove,
   onWaypointPointerUp,
+  onWaypointPointerCancel,
   writeError,
 }: {
   focus: FocusData
@@ -1290,15 +1339,16 @@ function FocusBoard({
   onWaypointPointerDown: (e: React.PointerEvent, w: BoardWaypoint) => void
   onWaypointPointerMove: (e: React.PointerEvent, w: BoardWaypoint) => void
   onWaypointPointerUp: (e: React.PointerEvent, w: BoardWaypoint) => void
+  onWaypointPointerCancel: (w: BoardWaypoint) => void
   writeError: string | null
 }) {
   const { project, span, obstacles, terrain, routes, signalMarkers, capacity, rivers, holds } = focus
   const dragOverride = drag ? { taskId: drag.taskId, fraction: drag.fraction } : null
   const aPts = routePoints(routes.a.filter((w) => !w.done), ROUTE_A_Y, dragOverride)
   const bPts = routePoints(routes.b, ROUTE_B_Y, dragOverride)
-  const allWaypoints: { w: BoardWaypoint; bandY: number; index: number }[] = [
-    ...routes.a.map((w, index) => ({ w, bandY: ROUTE_A_Y, index })),
-    ...routes.b.map((w, index) => ({ w, bandY: ROUTE_B_Y, index })),
+  const allWaypoints: { w: BoardWaypoint; bandY: number }[] = [
+    ...routes.a.map((w) => ({ w, bandY: ROUTE_A_Y })),
+    ...routes.b.map((w) => ({ w, bandY: ROUTE_B_Y })),
   ]
 
   /* Label de-overlap (diagnosis 2026-11-25): waypoint pairs, the
@@ -1341,7 +1391,7 @@ function FocusBoard({
       width: estimateLabelWidth(obstacleLabelText(ob), 10.5),
       height: 14,
     })),
-    ...allWaypoints.map(({ w, bandY, index }) => {
+    ...allWaypoints.map(({ w, bandY }) => {
       // The label layout is a property of the COMMITTED board: its
       // anchors are the recorded fractions only, never the drag's
       // provisional one. Feeding the live drag fraction in here made
@@ -1353,12 +1403,12 @@ function FocusBoard({
       // render below); the layout re-solves once, at release, when
       // the commit lands — like every other data change.
       const f = w.fraction
-      const tier = index % 2 === 0 ? 30 : 46
+      const tier = w.slot % 2 === 0 ? 30 : 46
       const sub = w.done ? 'done' : shortDate(dateAtFraction(span, f))
       return {
         id: `waypoint:${bandY}:${w.task.id}`,
         anchorX: xForFraction(f),
-        top: waypointY(bandY, index) + tier - 11,
+        top: waypointY(bandY, w.slot) + tier - 11,
         width: Math.max(estimateLabelWidth(waypointTitle(w), 11), estimateLabelWidth(sub, 10)),
         height: 27,
       }
@@ -1638,11 +1688,11 @@ function FocusBoard({
           </g>
 
           {/* waypoints */}
-          {allWaypoints.map(({ w, bandY, index }) => {
+          {allWaypoints.map(({ w, bandY }) => {
             const f = drag && drag.taskId === w.task.id ? drag.fraction : w.fraction
             const x = xForFraction(f)
-            const y = waypointY(bandY, index)
-            const labelTier = index % 2 === 0 ? 30 : 46
+            const y = waypointY(bandY, w.slot)
+            const labelTier = w.slot % 2 === 0 ? 30 : 46
             const lp = placedLabel(`waypoint:${bandY}:${w.task.id}`)
             // The placement is read against the node's COMMITTED
             // anchor, so the label's offset from its node is
@@ -1661,6 +1711,7 @@ function FocusBoard({
                 onPointerDown={(e) => onWaypointPointerDown(e, w)}
                 onPointerMove={(e) => onWaypointPointerMove(e, w)}
                 onPointerUp={(e) => onWaypointPointerUp(e, w)}
+                onPointerCancel={() => onWaypointPointerCancel(w)}
                 onClick={() => {
                   // Non-done waypoints select on pointer-up (drag vs tap is
                   // decided there); done markers never start a drag.

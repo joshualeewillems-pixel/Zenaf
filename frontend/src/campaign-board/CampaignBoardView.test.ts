@@ -449,6 +449,44 @@ describe('CampaignBoardView', () => {
     expect(fetchLog.filter((f) => f.method !== 'GET')).toHaveLength(0)
   })
 
+  it('an interrupted drag (pointercancel) commits nothing and leaves no phantom drag behind', async () => {
+    ;(Element.prototype as unknown as { setPointerCapture: () => void }).setPointerCapture = () => {}
+    await act(async () => {
+      root.render(React.createElement(CampaignBoardView))
+    })
+    await flush()
+    await flush()
+    await openGround('i1')
+    await clickRoute()
+
+    const waypoint = () =>
+      [...container.querySelectorAll('g')].find((g) =>
+        g.textContent?.includes('Confirm the print run'),
+      )
+    const pointer = (type: string, clientX: number) =>
+      new MouseEvent(type, { bubbles: true, clientX })
+
+    // Press, move well past the drag threshold, then the browser
+    // takes the pointer (pointercancel): no PATCH, nothing staged.
+    fetchLog.length = 0
+    const g1 = waypoint()!
+    await act(async () => { g1.dispatchEvent(pointer('pointerdown', 100)) })
+    await act(async () => { g1.dispatchEvent(pointer('pointermove', 320)) })
+    await act(async () => { g1.dispatchEvent(pointer('pointercancel', 320)) })
+    await flush()
+    expect(fetchLog.filter((f) => f.method === 'PATCH')).toHaveLength(0)
+    expect(chatProps.current?.stagedLabel).toBeNull()
+
+    // No phantom drag: a plain tap afterwards still stages the
+    // waypoint exactly as a tap should.
+    const g2 = waypoint()!
+    await act(async () => { g2.dispatchEvent(pointer('pointerdown', 100)) })
+    await act(async () => { g2.dispatchEvent(pointer('pointerup', 100)) })
+    await flush()
+    expect(chatProps.current?.context).toMatchObject({ entity_type: 'task', entity_id: 't1' })
+    expect(fetchLog.filter((f) => f.method !== 'GET')).toHaveLength(0)
+  })
+
   it('board sources carry no session-local declaration state, no popup forms, no project-date write', () => {
     // (jsdom env: import.meta.url is not a file URL here, so the
     // sources are read relative to the frontend root vitest runs in.)

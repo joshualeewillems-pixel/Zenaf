@@ -357,6 +357,16 @@ export interface BoardWaypoint {
    *  placement for an undated task). */
   dated: boolean
   done: boolean
+  /** The task's stable vertical slot: its index in the project's
+   *  task list as loaded. A date edit never changes it — the
+   *  record's array order survives in-place updates — so a
+   *  reschedule moves a node along the road only, never
+   *  re-dealing every node's lane the way a sort-order index
+   *  did (the glitching nodes of the founder's 2026-11-28
+   *  screen recording: one commit reshuffled every node's
+   *  vertical slot and label tier, so the whole board visibly
+   *  re-dealt itself after each drag). */
+  slot: number
 }
 
 function topoOrder(tasks: Task[]): Task[] {
@@ -381,7 +391,11 @@ function topoOrder(tasks: Task[]): Task[] {
   return out
 }
 
-function withFractions(ordered: Task[], span: BoardSpan): BoardWaypoint[] {
+function withFractions(
+  ordered: Task[],
+  span: BoardSpan,
+  slotOf: Map<string, number>,
+): BoardWaypoint[] {
   return ordered.map((task, i) => {
     const due = parseDateMs(task.due_date)
     return {
@@ -389,6 +403,7 @@ function withFractions(ordered: Task[], span: BoardSpan): BoardWaypoint[] {
       fraction: due != null ? fractionForDate(span, due) : (i + 1) / (ordered.length + 1),
       dated: due != null,
       done: isDoneTask(task),
+      slot: slotOf.get(task.id) ?? i,
     }
   })
 }
@@ -418,7 +433,8 @@ export function buildRoutes(
   const byDeps = topoOrder(
     [...open].sort((x, y) => (y.estimated_hours ?? -1) - (x.estimated_hours ?? -1)),
   )
-  const a = withFractions(byDate, span)
+  const slotOf = new Map(projectTasks.map((t, i) => [t.id, i]))
+  const a = withFractions(byDate, span, slotOf)
   for (const d of doneTasks) {
     const due = parseDateMs(d.due_date)
     a.push({
@@ -426,10 +442,11 @@ export function buildRoutes(
       fraction: due != null ? fractionForDate(span, due) : 0.98,
       dated: due != null,
       done: true,
+      slot: slotOf.get(d.id) ?? 0,
     })
   }
   a.sort((x, y) => x.fraction - y.fraction)
-  return { a, b: withFractions(byDeps, span) }
+  return { a, b: withFractions(byDeps, span, slotOf) }
 }
 
 /* ------------------------------------------------------------------ */

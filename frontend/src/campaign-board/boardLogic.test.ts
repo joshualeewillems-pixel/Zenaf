@@ -847,3 +847,28 @@ describe('initiative timelines — group spans', () => {
     expect(groups[0].span).toBeNull()
   })
 })
+
+describe('buildRoutes — stable slots', () => {
+  it('a node’s vertical slot survives a reschedule that re-sorts the route', () => {
+    const span = projectSpan(
+      project({ id: 'sp', start_date: '2026-06-01', end_date: '2026-06-30' }),
+      [],
+      NOW,
+    )!
+    const mk = (id: string, due: string) =>
+      task({ id, project_id: 'sp', due_date: due, created_at: `2026-05-0${id.charCodeAt(0) - 96}` })
+    // List order is the record's order: c, a, b. Dates put a first.
+    const before = buildRoutes([mk('c', '2026-06-20'), mk('a', '2026-06-05'), mk('b', '2026-06-10')], span)
+    const slotsBefore = new Map(before.a.map((w) => [w.task.id, w.slot]))
+    expect(before.a.map((w) => w.task.id)).toEqual(['a', 'b', 'c'])
+    expect(slotsBefore.get('c')).toBe(0)
+    expect(slotsBefore.get('a')).toBe(1)
+    expect(slotsBefore.get('b')).toBe(2)
+    // b is dragged to the front of the route; the order changes,
+    // the slots must not — otherwise every node re-deals its lane.
+    const after = buildRoutes([mk('c', '2026-06-20'), mk('a', '2026-06-05'), mk('b', '2026-06-02')], span)
+    expect(after.a.map((w) => w.task.id)).toEqual(['b', 'a', 'c'])
+    for (const w of after.a) expect(w.slot).toBe(slotsBefore.get(w.task.id))
+    for (const w of after.b) expect(w.slot).toBe(slotsBefore.get(w.task.id))
+  })
+})

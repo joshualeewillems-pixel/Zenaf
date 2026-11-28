@@ -481,6 +481,17 @@ def _surroundings_section(
         except Exception:
             logger.exception("context preparation: capacity read failed")
 
+    # Temporal diagnosis + arrangement, for project subjects
+    # (Temporal Orchestration S4): the figures the deterministic
+    # kernel produced, read from the retained diagnosis proposal —
+    # the same numbers the board and the establishment path use,
+    # never recomputed in the seat layer.
+    if entity_type == "project":
+        try:
+            lines.extend(_temporal_lines(user_id, row))
+        except Exception:
+            logger.exception("context preparation: temporal read failed")
+
     if not lines:
         return None
     return _cap_lines(["Recorded surroundings:"] + lines, SURROUNDINGS_SECTION_CAP)
@@ -541,6 +552,76 @@ def _capacity_lines(user_id: str, row: dict[str, Any]) -> list[str]:
     estimate = row.get("estimated_weekly_hours")
     if estimate is not None:
         lines.append(f"- This project is estimated at {_num(estimate)}h/week.")
+    return lines
+
+
+def _temporal_lines(user_id: str, row: dict[str, Any]) -> list[str]:
+    """The project's temporal diagnosis and kernel arrangement, as
+    recorded in the retained diagnosis proposal (Temporal
+    Orchestration S4). Read-only: the seat deliberates over the
+    kernel's figures; it does not recompute them here."""
+    from datetime import date, timedelta
+
+    from local_ai.vision_execution import temporal_diagnosis as TD
+
+    proposal = TD.latest_diagnosis_proposal(user_id, str(row["id"]))
+    if not proposal:
+        return []
+    diagnosis = proposal.get("diagnosis") or {}
+    requirements = diagnosis.get("requirements") or []
+    tasks = diagnosis.get("tasks") or []
+    questions = diagnosis.get("unresolved_questions") or []
+    lines = [
+        "- Temporal diagnosis (v"
+        f"{proposal.get('version')}, {proposal.get('state')}): "
+        f"{len(requirements)} requirements, {len(tasks)} tasks, "
+        f"{len(questions)} unresolved questions."
+    ]
+    for q in questions[:3]:
+        text = _clean(q.get("question"))
+        if text:
+            lines.append(f"  - Unresolved: {text}")
+    arrangement = proposal.get("arrangement") or {}
+    target = arrangement.get("target") or {}
+    earliest = target.get("earliest_found") or {}
+    if earliest:
+        parts = ["- Arrangement (kernel, earliest found under the stated settings):"]
+        elapsed = earliest.get("elapsed_weeks")
+        if elapsed is not None:
+            parts.append(f"finish in {_num(elapsed)} weeks")
+        labels = arrangement.get("labels") or {}
+        start_raw = labels.get("start_week")
+        boundary = earliest.get("finish_boundary")
+        if start_raw and boundary is not None:
+            try:
+                finish_date = date.fromisoformat(str(start_raw)[:10]) + timedelta(
+                    weeks=int(boundary)
+                )
+                parts.append(f"(week of {finish_date.isoformat()})")
+            except (TypeError, ValueError):
+                pass
+        if earliest.get("unresolved_task_ids"):
+            parts.append(
+                f"{len(earliest['unresolved_task_ids'])} tasks unresolved "
+                "(unknown effort or gated)"
+            )
+        lines.append(" ".join(parts) + ".")
+        sustainable = target.get("sustainable_status")
+        if sustainable:
+            lines.append(f"- Sustainable verdict: {sustainable}.")
+        displacement = arrangement.get("displacement") or {}
+        moved = displacement.get("projects") or displacement.get("per_project") or {}
+        if isinstance(moved, dict) and moved:
+            lines.append(
+                f"- Displacement if the target advances: {len(moved)} "
+                "other project(s) move."
+            )
+        basis = proposal.get("basis") or {}
+        if basis.get("kernel_version"):
+            lines.append(
+                f"- Computed under kernel {basis['kernel_version']}, "
+                f"fold {basis.get('fold_seq')}."
+            )
     return lines
 
 

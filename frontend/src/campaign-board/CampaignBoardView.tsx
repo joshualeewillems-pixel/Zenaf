@@ -474,20 +474,14 @@ function OverviewBoard({
   // The scale key measures the toggled unit at the map's own
   // scale — its line is always the unit's true length. Layout:
   // 'inline' when line + label fit one row (the standing look);
-  // 'stacked' when the line fits but the label must drop below
-  // it; 'folded' when the line itself outgrows the strip and
-  // folds back in a second dotted row. Never shrunk, never
-  // run off the map.
+  // 'stacked' when they don't — the line keeps its true length
+  // (running off the panel's edge when the unit is wider than
+  // the map itself, which is the honest read) and the label
+  // drops below its start. Never shrunk to fit.
   const keyLabel = `[-----] = 1 ${keyUnit}`
   const keyLen = pxPerDay * OV_KEY_UNITS.find((u) => u.id === keyUnit)!.days
-  const keyRowAvail = OV_W - OV_CAMP_X - 12
   const keyLayout =
-    OV_CAMP_X + keyLen + 10 + estimateLabelWidth(keyLabel, 11.5) <= OV_W - 8
-      ? 'inline'
-      : keyLen <= keyRowAvail
-        ? 'stacked'
-        : 'folded'
-  const keyRow2Len = keyLen - keyRowAvail
+    OV_CAMP_X + keyLen + 10 + estimateLabelWidth(keyLabel, 11.5) <= OV_W - 8 ? 'inline' : 'stacked'
   // The painted map fills the panel's width at the top; on a
   // tall board it ends (and fades) well above the key strip,
   // on a short board it is cropped at the strip — the key
@@ -514,13 +508,20 @@ function OverviewBoard({
           {/* Screen one is the founder's painted campaign map
               (2026-11-27): the grounds stand on the painting.
               It fills the panel's width at the top and fades
-              into the parchment at its lower edge. */}
+              into the parchment at its lower edge. The painting
+              is washed to half strength over the parchment —
+              at full strength its own painted lettering (the
+              banner, the legend scroll) fought the board's
+              lettering (founder's verdict on the first pass,
+              2026-11-27 evening); washed, it reads as the land
+              under the camps. */}
           <image
             href={campaignMapArt}
             x={0}
             y={0}
             width={OV_W}
             height={artH}
+            opacity={0.5}
             preserveAspectRatio="xMidYMin slice"
             style={{ pointerEvents: 'none' }}
           />
@@ -553,7 +554,7 @@ function OverviewBoard({
                 height={groupH}
                 rx={14}
                 fill={group.initiative ? (gi % 2 === 0 ? '#e0d0a4' : '#d5dbb0') : '#eae0c6'}
-                fillOpacity={0.78}
+                fillOpacity={0.7}
                 stroke="#9a7b24"
                 strokeOpacity={0.35}
               />
@@ -753,43 +754,6 @@ function OverviewBoard({
                   y1={keyY - 8}
                   x2={OV_CAMP_X + keyLen}
                   y2={keyY - 8}
-                  stroke={INK}
-                  strokeWidth="4"
-                  strokeLinecap="round"
-                  strokeDasharray="0.1 8"
-                />
-                <text x={OV_CAMP_X} y={keyY + 13} fontSize="11.5" fontWeight="600" fill={INK}>
-                  {keyLabel}
-                </text>
-              </>
-            )}
-            {keyLayout === 'folded' && (
-              <>
-                <line
-                  x1={OV_CAMP_X}
-                  y1={keyY - 15}
-                  x2={OV_CAMP_X + keyRowAvail}
-                  y2={keyY - 15}
-                  stroke={INK}
-                  strokeWidth="4"
-                  strokeLinecap="round"
-                  strokeDasharray="0.1 8"
-                />
-                <line
-                  x1={OV_CAMP_X + keyRowAvail}
-                  y1={keyY - 15}
-                  x2={OV_CAMP_X + keyRowAvail}
-                  y2={keyY - 2}
-                  stroke={INK}
-                  strokeWidth="4"
-                  strokeLinecap="round"
-                  strokeDasharray="0.1 8"
-                />
-                <line
-                  x1={OV_CAMP_X + keyRowAvail - keyRow2Len}
-                  y1={keyY - 2}
-                  x2={OV_CAMP_X + keyRowAvail}
-                  y2={keyY - 2}
                   stroke={INK}
                   strokeWidth="4"
                   strokeLinecap="round"

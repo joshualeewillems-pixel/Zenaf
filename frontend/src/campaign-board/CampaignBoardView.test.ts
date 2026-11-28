@@ -247,6 +247,56 @@ describe('CampaignBoardView', () => {
     expect(container.textContent).toContain('← All projects')
   })
 
+  it('the scale key is a toggle: day, then week, then month, then day again — the line at each unit’s true length', async () => {
+    await act(async () => {
+      root.render(React.createElement(CampaignBoardView))
+    })
+    await flush()
+    await flush()
+
+    const keyGroup = () => container.querySelector('[data-testid="scale-key"]')
+    const keyTap = () => keyGroup()!.querySelector('rect')!
+    const keyLines = () =>
+      [...keyGroup()!.querySelectorAll('line')].filter((l) => l.getAttribute('stroke-dasharray') === '0.1 8')
+    const keyLen = () =>
+      keyLines().reduce((sum, l) => sum + Math.abs(Number(l.getAttribute('x2')) - Number(l.getAttribute('x1'))), 0)
+
+    // Standing look: one dotted line measuring a single day.
+    expect(container.textContent).toContain('[-----] = 1 day')
+    const dayLen = keyLen()
+    expect(dayLen).toBeGreaterThan(0)
+    expect(keyLines()).toHaveLength(1)
+
+    // Tap → a week: the same dotted line, seven days long.
+    await act(async () => {
+      keyTap().dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+    expect(container.textContent).toContain('[-----] = 1 week')
+    expect(container.textContent).not.toContain('[-----] = 1 day')
+    expect(keyLines()).toHaveLength(1)
+    expect(keyLen()).toBeCloseTo(dayLen * 7, 5)
+
+    // Tap → a month: thirty days long. At this fixture's scale
+    // the line still fits the strip, so it stays one row and
+    // the label drops below it (the stacked layout).
+    await act(async () => {
+      keyTap().dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+    expect(container.textContent).toContain('[-----] = 1 month')
+    expect(keyLines()).toHaveLength(1)
+    expect(keyLen()).toBeCloseTo(dayLen * 30, 5)
+
+    // Tap → back to a day.
+    await act(async () => {
+      keyTap().dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+    expect(container.textContent).toContain('[-----] = 1 day')
+    expect(keyLen()).toBeCloseTo(dayLen, 5)
+  })
+
   it('draws the linked blocker signal + overcapacity; declarations render from the record, never from surface forms', async () => {
     const decisions = [
       {

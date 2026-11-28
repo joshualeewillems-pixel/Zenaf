@@ -439,6 +439,8 @@ const OV_CAMP_X = 46
  *  the route's end — the sprite kit painted from the campaign
  *  map, one piece per system definition. */
 const OV_LANE_H = 132
+/** One dependency/grove layer's row under a route. */
+const OV_LAYER_H = 46
 
 /** Painted terrain by kind: sprite, display height, aspect. */
 const OV_TERRAIN_SPRITES: Record<string, { src: string; h: number; ar: number }> = {
@@ -571,13 +573,18 @@ function OverviewBoard({
     const isOpen = !group.initiative || openInitiativeId === group.initiative.id
     const shown = isOpen ? group.projects : []
     const y = cursor
-    const height = headH + OV_GROUP_PAD_TOP + shown.length * OV_LANE_H + OV_GROUP_PAD_BOT
+    // A lane's height is its scene plus one row per layer —
+    // the route's dependency and grove sentences stack under
+    // it like a Gantt (founder, 2026-11-27).
+    let ly = y + headH + OV_GROUP_PAD_TOP
+    const lanes = shown.map((o) => {
+      const h = OV_LANE_H + (o.spanned ? o.layers.length : 0) * OV_LAYER_H
+      const lane = { o, laneTop: ly, h, color: PROJECT_COLORS[colorSeq++ % PROJECT_COLORS.length] }
+      ly += h
+      return lane
+    })
+    const height = headH + OV_GROUP_PAD_TOP + lanes.reduce((s, l) => s + l.h, 0) + OV_GROUP_PAD_BOT
     cursor += height + OV_GROUP_GAP
-    const lanes = shown.map((o, li) => ({
-      o,
-      laneTop: y + headH + OV_GROUP_PAD_TOP + li * OV_LANE_H,
-      color: PROJECT_COLORS[colorSeq++ % PROJECT_COLORS.length],
-    }))
     if (!isOpen) colorSeq += group.projects.length
     return { group, gi, y, height, lanes, isOpen }
   })
@@ -720,7 +727,7 @@ function OverviewBoard({
                   }
                 />
               )}
-              {lanes.map(({ o, laneTop, color }) => {
+              {lanes.map(({ o, laneTop, color, h: laneH }) => {
                 const lineY = laneTop + 74
                 const lineLen = o.span.days * pxPerDay
                 const endX = OV_CAMP_X + lineLen
@@ -758,16 +765,21 @@ function OverviewBoard({
                         })}
                     {o.spanned ? (
                       <>
-                        <text x={OV_CAMP_X} y={laneTop + 122} fontSize="10.5" fill="#6b5a43" style={{ pointerEvents: 'none' }}>
+                        <text
+                          x={OV_CAMP_X}
+                          y={laneTop + 122 + o.layers.length * OV_LAYER_H}
+                          fontSize="10.5"
+                          fill="#6b5a43"
+                          style={{ pointerEvents: 'none' }}
+                        >
                           {o.span.days} days · {shortDate(new Date(o.span.startMs))} – {shortDate(new Date(o.span.endMs))}
                         </text>
-                        {/* The project's declared terrain stands
-                            along its route where its anchor steps
-                            stand — the mountain for its greatest
-                            effort, groves and copses for its
-                            branching steps. */}
+                        {/* Hills and copses stand along the route
+                            as painted scenery where their anchor
+                            steps stand. (Mountains and groves
+                            read in the sentence itself, below.) */}
                         {o.terrain
-                          .filter((f) => f.kind !== 'open')
+                          .filter((f) => f.kind === 'hill' || f.kind === 'copse')
                           .map((f) => {
                             const s = OV_TERRAIN_SPRITES[f.kind]
                             return (
@@ -782,18 +794,22 @@ function OverviewBoard({
                               />
                             )
                           })}
-                        {/* Obstacles stand on the route as crags. */}
-                        {o.obstacles.slice(0, 8).map((ob) => (
-                          <OvSprite
-                            key={ob.id}
-                            src={spriteCrag}
-                            name="obstacle-crag"
-                            cx={OV_CAMP_X + ob.fraction * lineLen}
-                            base={lineY - 2}
-                            h={30}
-                            ar={419 / 305}
-                          />
-                        ))}
+                        {/* Obstacles that are not dependency
+                            joints stand on the route as crags. */}
+                        {o.obstacles
+                          .filter((ob) => ob.kind !== 'crossing' && ob.kind !== 'gate')
+                          .slice(0, 8)
+                          .map((ob) => (
+                            <OvSprite
+                              key={ob.id}
+                              src={spriteCrag}
+                              name="obstacle-crag"
+                              cx={OV_CAMP_X + ob.fraction * lineLen}
+                              base={lineY - 2}
+                              h={30}
+                              ar={419 / 305}
+                            />
+                          ))}
                         {/* The road, and on it the span
                             spelled as a tally (founder,
                             2026-11-27): one glyph per whole
@@ -832,6 +848,159 @@ function OverviewBoard({
                             {t.unit.glyph}
                           </text>
                         ))}
+                        {/* The sentence's events, in line
+                            (founder, 2026-11-27): the mountain
+                            🔺 and the grove 🌳 stand where
+                            they'll be encountered, and every
+                            dependency joint — a crossing waited
+                            on, a gate others wait behind — is a
+                            ♦ on the road. */}
+                        {o.terrain
+                          .filter((f) => f.kind === 'mountain' || f.kind === 'grove')
+                          .map((f) => (
+                            <text
+                              key={`glyph-${f.taskId}`}
+                              data-testid="terrain-glyph"
+                              data-glyph={f.kind}
+                              x={OV_CAMP_X + f.fraction * lineLen}
+                              y={lineY}
+                              textAnchor="middle"
+                              dominantBaseline="central"
+                              fontSize="15"
+                              style={{ pointerEvents: 'none' }}
+                            >
+                              {f.kind === 'mountain' ? '🔺' : '🌳'}
+                            </text>
+                          ))}
+                        {o.obstacles
+                          .filter((ob) => ob.kind === 'crossing' || ob.kind === 'gate')
+                          .map((ob) => (
+                            <text
+                              key={`joint-${ob.id}`}
+                              data-testid="route-joint"
+                              x={OV_CAMP_X + ob.fraction * lineLen}
+                              y={lineY}
+                              textAnchor="middle"
+                              dominantBaseline="central"
+                              fontSize="13"
+                              fill="#b3261e"
+                              style={{ pointerEvents: 'none' }}
+                            >
+                              ♦
+                            </text>
+                          ))}
+                        {/* The layers: one sentence per
+                            dependency and per grove, pinned at
+                            its joint or its grove and running
+                            right from there at the same scale —
+                            a Gantt of sentences (founder,
+                            2026-11-27). Each carries its real
+                            name, its own tally, its own terrain
+                            and joints in line, and its banner
+                            at its own finish. */}
+                        {o.layers.map((layer, li) => {
+                          const ly = lineY + 42 + li * OV_LAYER_H
+                          const pinX = OV_CAMP_X + layer.pinFraction * lineLen
+                          const layerLen = layer.spanDays * pxPerDay
+                          return (
+                            <g key={layer.id} data-testid="route-layer" data-layer-kind={layer.kind}>
+                              <line
+                                x1={pinX}
+                                y1={lineY + 5}
+                                x2={pinX}
+                                y2={ly - 5}
+                                stroke="#9a8a6a"
+                                strokeWidth="1"
+                                strokeDasharray="2 3"
+                                style={{ pointerEvents: 'none' }}
+                              />
+                              <text
+                                x={pinX}
+                                y={ly - 15}
+                                fontSize="9.5"
+                                fill="#6b5a43"
+                                textAnchor={pinX > OV_W / 2 ? 'end' : 'start'}
+                                style={{ pointerEvents: 'none' }}
+                              >
+                                {layer.label}
+                                {layer.subLabel ? ` · ${layer.subLabel}` : ''}
+                              </text>
+                              <line
+                                x1={pinX}
+                                y1={ly}
+                                x2={pinX + layerLen}
+                                y2={ly}
+                                stroke={color}
+                                strokeWidth="1.5"
+                                strokeLinecap="round"
+                                style={{ pointerEvents: 'none' }}
+                              />
+                              {tallyFor(layer.spanDays).map((t, ti) => (
+                                <text
+                                  key={ti}
+                                  x={pinX + (t.startDay + t.unit.days / 2) * pxPerDay}
+                                  y={ly + t.unit.dy}
+                                  textAnchor="middle"
+                                  dominantBaseline="central"
+                                  fontSize={t.unit.size}
+                                  fontWeight="700"
+                                  fill={color}
+                                  style={{ pointerEvents: 'none' }}
+                                >
+                                  {t.unit.glyph}
+                                </text>
+                              ))}
+                              {layer.terrain
+                                .filter((f) => f.kind === 'mountain' || f.kind === 'grove')
+                                .map((f) => (
+                                  <text
+                                    key={`lg-${f.taskId}`}
+                                    x={pinX + f.fraction * layerLen}
+                                    y={ly}
+                                    textAnchor="middle"
+                                    dominantBaseline="central"
+                                    fontSize="13"
+                                    style={{ pointerEvents: 'none' }}
+                                  >
+                                    {f.kind === 'mountain' ? '🔺' : '🌳'}
+                                  </text>
+                                ))}
+                              {layer.joints.map((jf, ji) => (
+                                <text
+                                  key={`lj-${ji}`}
+                                  x={pinX + jf * layerLen}
+                                  y={ly}
+                                  textAnchor="middle"
+                                  dominantBaseline="central"
+                                  fontSize="11"
+                                  fill="#b3261e"
+                                  style={{ pointerEvents: 'none' }}
+                                >
+                                  ♦
+                                </text>
+                              ))}
+                              <text
+                                x={pinX}
+                                y={ly}
+                                textAnchor="middle"
+                                dominantBaseline="central"
+                                fontSize="13"
+                                fill="#b3261e"
+                                style={{ pointerEvents: 'none' }}
+                              >
+                                ♦
+                              </text>
+                              <OvSprite
+                                src={spriteFinishBanner}
+                                name="finish-banner"
+                                cx={pinX + layerLen}
+                                base={ly + 3}
+                                h={24}
+                                ar={422 / 384}
+                              />
+                            </g>
+                          )
+                        })}
                       </>
                     ) : (
                       <>
@@ -877,7 +1046,7 @@ function OverviewBoard({
                       x={14}
                       y={laneTop + 2}
                       width={OV_W - 28}
-                      height={OV_LANE_H - 4}
+                      height={laneH - 4}
                       fill="#000"
                       fillOpacity={0}
                       style={{ cursor: 'pointer' }}
@@ -975,9 +1144,9 @@ function OverviewBoard({
                 const panelW = 252
                 const panelH = 98
                 const px = Math.min(Math.max(OV_CAMP_X - 6, 8), OV_W - panelW - 8)
-                const below = popupEntry.laneTop + OV_LANE_H + panelH + 6 <= height - OV_KEY_STRIP
+                const below = popupEntry.laneTop + popupEntry.h + panelH + 6 <= height - OV_KEY_STRIP
                 const py = below
-                  ? popupEntry.laneTop + OV_LANE_H + 2
+                  ? popupEntry.laneTop + popupEntry.h + 2
                   : Math.max(8, popupEntry.laneTop - panelH - 6)
                 return (
                   <g>

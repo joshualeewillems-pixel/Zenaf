@@ -786,3 +786,44 @@ describe('stripWaypointLabels', () => {
     expect(labels[0].text).toBe('Dec 6 · done')
   })
 })
+
+describe('buildOverview layers — the Gantt of sentences', () => {
+  it('a crossing grows a layer carrying the waited-on project’s sentence', () => {
+    const a = project({ id: 'pa', title: 'Route A', start_date: '2026-06-01', end_date: '2026-07-01' })
+    const b = project({ id: 'pb', title: 'Route B', start_date: '2026-06-01', end_date: '2026-06-22' })
+    const waited = task({ id: 'wb', project_id: 'pb', title: 'Fire the kiln', due_date: '2026-06-20' })
+    const waiter = task({ id: 'wa', project_id: 'pa', title: 'Glaze the pots', due_date: '2026-06-25', dependency_ids: ['wb'] })
+    const ov = buildOverview([a, b], [waited, waiter], NOW)
+    const oa = ov.find((o) => o.project.id === 'pa')!
+    // The crossing obstacle itself carries the wait structurally.
+    const cross = oa.obstacles.find((o) => o.kind === 'crossing')!
+    expect(cross.waitsOn).toEqual([{ taskId: 'wb', projectId: 'pb' }])
+    expect(oa.layers).toHaveLength(1)
+    expect(oa.layers[0].kind).toBe('crossing')
+    expect(oa.layers[0].label).toBe('Fire the kiln')
+    expect(oa.layers[0].subLabel).toBe('Route B')
+    expect(oa.layers[0].spanDays).toBe(21)
+  })
+
+  it('a grove grows a layer over its children’s recorded window', () => {
+    const p = project({ id: 'pg', title: 'Orchard', start_date: '2026-06-01', end_date: '2026-07-01' })
+    const parent = task({ id: 'par', project_id: 'pg', title: 'Plant the rows' })
+    const kids = [2, 9, 16].map((d, i) =>
+      task({ id: `k${i}`, project_id: 'pg', title: `Row ${i}`, parent_task_id: 'par', due_date: `2026-06-${String(d).padStart(2, '0')}` }),
+    )
+    const ov = buildOverview([p], [parent, ...kids], NOW)
+    const og = ov.find((o) => o.project.id === 'pg')!
+    const grove = og.layers.find((l) => l.kind === 'grove')
+    expect(grove).toBeTruthy()
+    expect(grove!.label).toBe('Plant the rows')
+    expect(grove!.spanDays).toBe(14)
+  })
+
+  it('a grove whose children carry no dates grows no layer — no invented length', () => {
+    const p = project({ id: 'pg2', title: 'Orchard 2', start_date: '2026-06-01', end_date: '2026-07-01' })
+    const parent = task({ id: 'par2', project_id: 'pg2', title: 'Plant' })
+    const kids = [0, 1, 2].map((i) => task({ id: `k2-${i}`, project_id: 'pg2', parent_task_id: 'par2' }))
+    const ov = buildOverview([p], [parent, ...kids], NOW)
+    expect(ov[0].layers.filter((l) => l.kind === 'grove')).toHaveLength(0)
+  })
+})

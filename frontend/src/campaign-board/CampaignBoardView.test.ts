@@ -710,4 +710,65 @@ describe('CampaignBoardView', () => {
       intent: 'provisional_timeframe',
     })
   })
+
+  it('a project lane is a painted scene: stronghold and camp at its start, its terrain and obstacles along the route, the banner at its finish', async () => {
+    const base = {
+      brief: '', owner_id: null, supporting_owner_ids: [], priority: '',
+      start_date: null, end_date: null, estimated_weekly_hours: null,
+      next_step_ai: '', notes: '', created_at: '2026-05-01T00:00:00', updated_at: '2026-05-01T00:00:00',
+    }
+    const tbase = {
+      parent_task_id: null, description: '', assignee_id: null, priority: '',
+      estimated_hours: null, due_date: null, dependency_ids: [],
+      completion_criteria: '', notes: '', created_at: '2026-05-01T00:00:00', updated_at: '2026-05-01T00:00:00',
+    }
+    const projects = [
+      { ...base, id: 'px', initiative_id: 'i1', title: 'Storm the pass', status: 'Active', start_date: isoDaysFromNow(-5), end_date: isoDaysFromNow(7) },
+      { ...base, id: 'py', initiative_id: 'i1', title: 'Untimed errand', status: 'Ready' },
+    ]
+    const tasks = [
+      // 24 recorded hours = 3 workdays in one step: The Mountain.
+      { ...tbase, id: 'x1', project_id: 'px', title: 'The big push', status: 'Todo', estimated_hours: 24 },
+      // A parent with three children: The Grove.
+      { ...tbase, id: 'x2', project_id: 'px', title: 'Branch work', status: 'Todo' },
+      { ...tbase, id: 'x3', project_id: 'px', title: 'Branch one', status: 'Todo', parent_task_id: 'x2' },
+      { ...tbase, id: 'x4', project_id: 'px', title: 'Branch two', status: 'Todo', parent_task_id: 'x2' },
+      { ...tbase, id: 'x5', project_id: 'px', title: 'Branch three', status: 'Todo', parent_task_id: 'x2' },
+      // A blocked step: an obstacle on the route.
+      { ...tbase, id: 'x6', project_id: 'px', title: 'Stuck step', status: 'Blocked' },
+    ]
+    vi.stubGlobal(
+      'fetch',
+      stubFetch({
+        '/vision-execution/initiatives': [{ id: 'i1', title: 'Council fellowship' }],
+        '/vision-execution/projects': projects,
+        '/vision-execution/tasks': tasks,
+      }),
+    )
+    await act(async () => {
+      root.render(React.createElement(CampaignBoardView))
+    })
+    await flush()
+    await flush()
+
+    const ground = container.querySelector('[data-initiative-ground="i1"]')!
+    await act(async () => {
+      ground.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+
+    const sprites = [...container.querySelectorAll('[data-testid="lane-sprite"]')].map((s) =>
+      s.getAttribute('data-sprite'),
+    )
+    // Both projects stand as strongholds with their camps; only
+    // the dated one's route is painted — its mountain, its
+    // grove, its obstacle crag, and the finish banner.
+    expect(sprites.filter((s) => s === 'stronghold')).toHaveLength(2)
+    expect(sprites.filter((s) => s === 'camp')).toHaveLength(2)
+    expect(sprites.filter((s) => s === 'finish-banner')).toHaveLength(1)
+    expect(sprites).toContain('mountain')
+    expect(sprites).toContain('grove')
+    expect(sprites).toContain('obstacle-crag')
+    expect(container.querySelectorAll('[data-testid="route-line"]')).toHaveLength(1)
+  })
 })

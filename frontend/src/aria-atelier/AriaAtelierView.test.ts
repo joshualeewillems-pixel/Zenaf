@@ -44,6 +44,16 @@ vi.mock('../chat/CouncilChat', async () => {
 })
 
 import AriaAtelierView from './AriaAtelierView'
+/** The atelier door: warm by default in this suite. */
+vi.mock('./atelierPreload', () => ({
+  ATELIER_ASSET_URLS: [] as string[],
+  atelierPreloader: {
+    urls: [] as string[],
+    preload: () => Promise.resolve(),
+    ready: () => true,
+  },
+}))
+
 import { ResonanceField } from './waterEngine'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true

@@ -117,6 +117,16 @@ vi.mock('./scrollApi', async (importOriginal) => {
 })
 
 import JynxScrollView from './JynxScrollView'
+/** The scroll door: warm by default in this suite. */
+vi.mock('./scrollPreload', () => ({
+  SCROLL_ASSET_URLS: [] as string[],
+  scrollPreloader: {
+    urls: [] as string[],
+    preload: () => Promise.resolve(),
+    ready: () => true,
+  },
+}))
+
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 

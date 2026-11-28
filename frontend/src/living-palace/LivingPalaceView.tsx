@@ -84,6 +84,7 @@ import {
 } from './palaceOverheadLogic'
 import { BuildingScene, CompoundScene, OverheadScene, RoomScene } from './palaceCanvas'
 import { palaceAssetsReady, preloadPalaceAssets } from './palacePreload'
+import SeatGate from '../components/SeatGate'
 import guardianLogo from '../assets/seats/guardian-logo.png'
 import './palace.css'
 
@@ -148,7 +149,7 @@ export default function LivingPalaceView({
   const [data, setData] = useState<PalaceData | null>(null)
   /** The door (founder, 2026-11-28): the palace's whole
    *  imagery warms before the first scene paints — the seat's
-   *  logo spins at the door until everything nested is
+   *  logo pulses at the door until everything nested is
    *  accessible, so no level pops in piece by piece during
    *  the descent. The ceiling is a mercy, not the design: if
    *  an asset stalls on a bad connection the door opens
@@ -626,15 +627,12 @@ export default function LivingPalaceView({
         )}
         {!data && !loadError && <p className="mt-10 text-center text-sm text-[#6b5b45]">Walking to the Palace…</p>}
         {data && !assetsReady && (
-          <div
-            data-testid="palace-preload-gate"
-            className="flex flex-col items-center justify-center gap-4 py-20"
-            role="status"
-            aria-label="Preparing the Palace"
-          >
-            <img src={guardianLogo} alt="" className="palace-logo-spin h-20 w-20 rounded-full" />
-            <p className="text-sm text-[#6b5b45]">Preparing the Palace…</p>
-          </div>
+          <SeatGate
+            logo={guardianLogo}
+            color={GUARDIAN}
+            label="Preparing the Palace…"
+            testId="palace-preload-gate"
+          />
         )}
         {data && assetsReady && compound && current.layer === 'compound' && (
           <CompoundScene

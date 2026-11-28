@@ -47,6 +47,18 @@ const fetchLog: { url: string; method: string; body?: string }[] = []
 
 import CampaignBoardView from './CampaignBoardView'
 
+/** The board door: warm by default in this suite (the gate
+ *  itself is pinned in CampaignBoardView.test.ts). */
+vi.mock('./boardPreload', () => ({
+  BOARD_ASSET_URLS: [] as string[],
+  boardPreloader: {
+    urls: [] as string[],
+    preload: () => Promise.resolve(),
+    ready: () => true,
+  },
+}))
+
+
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 function isoDaysFromNow(days: number): string {

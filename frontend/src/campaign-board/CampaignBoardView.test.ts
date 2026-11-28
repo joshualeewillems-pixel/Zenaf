@@ -247,7 +247,7 @@ describe('CampaignBoardView', () => {
     expect(container.textContent).toContain('← All projects')
   })
 
-  it('the scale key is a toggle: day, then week, then month, then day again — the line at each unit’s true length', async () => {
+  it('the scale key is a toggle: day, then week, then month, then day again — the line is the setting’s period count in dots', async () => {
     await act(async () => {
       root.render(React.createElement(CampaignBoardView))
     })
@@ -261,13 +261,15 @@ describe('CampaignBoardView', () => {
     const keyLen = () =>
       keyLines().reduce((sum, l) => sum + Math.abs(Number(l.getAttribute('x2')) - Number(l.getAttribute('x1'))), 0)
 
-    // Standing look: one dotted line measuring a single day.
+    // Standing look: one dotted line of three periods — three
+    // periods make a day (founder, 2026-11-27). The key's dots
+    // stand at the key's fixed pitch, 8.1.
     expect(container.textContent).toContain('[-----] = 1 day')
     const dayLen = keyLen()
-    expect(dayLen).toBeGreaterThan(0)
+    expect(dayLen).toBeCloseTo(3 * 8.1, 5)
     expect(keyLines()).toHaveLength(1)
 
-    // Tap → a week: the same dotted line, seven days long.
+    // Tap → a week: five periods.
     await act(async () => {
       keyTap().dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -275,18 +277,16 @@ describe('CampaignBoardView', () => {
     expect(container.textContent).toContain('[-----] = 1 week')
     expect(container.textContent).not.toContain('[-----] = 1 day')
     expect(keyLines()).toHaveLength(1)
-    expect(keyLen()).toBeCloseTo(dayLen * 7, 5)
+    expect(keyLen()).toBeCloseTo(5 * 8.1, 5)
 
-    // Tap → a month: thirty days long. At this fixture's scale
-    // the line still fits the strip, so it stays one row and
-    // the label drops below it (the stacked layout).
+    // Tap → a month: seven periods — never thirty.
     await act(async () => {
       keyTap().dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flush()
     expect(container.textContent).toContain('[-----] = 1 month')
     expect(keyLines()).toHaveLength(1)
-    expect(keyLen()).toBeCloseTo(dayLen * 30, 5)
+    expect(keyLen()).toBeCloseTo(7 * 8.1, 5)
 
     // Tap → back to a day.
     await act(async () => {
@@ -558,7 +558,10 @@ describe('CampaignBoardView', () => {
     expect(container.querySelectorAll('[data-testid="route-line"]')).toHaveLength(0)
 
     // Open the Zenaf core ground: its dated project stands as a
-    // route at the shared scale (12 days × 26px/day).
+    // route counted in periods (founder, 2026-11-27). At the
+    // day setting three periods make a day, so the 12-day span
+    // is 36 periods; the shared dot pitch is the key's 8.1 (the
+    // fit cap, 326/36 ≈ 9.1, does not bind).
     await openGround('i2')
     text = container.textContent ?? ''
     const idx = (s: string) => text.indexOf(s)
@@ -567,36 +570,38 @@ describe('CampaignBoardView', () => {
     expect(text).not.toContain('Meet the Bear')
     const routeLines = [...container.querySelectorAll('[data-testid="route-line"]')]
     expect(routeLines).toHaveLength(1)
-    const len = Number(routeLines[0].getAttribute('x2')) - Number(routeLines[0].getAttribute('x1'))
-    expect(len).toBe(12 * 26)
-    // The route is beaded in the key's unit: at 26px/day in day
-    // form the dot pitch is one day (dash period 26). Toggling
-    // the key re-beads the route — a week pitch, then a month
-    // pitch — and the next tap restores the day.
+    const routeLen = () =>
+      Number(routeLines[0].getAttribute('x2')) - Number(routeLines[0].getAttribute('x1'))
+    expect(routeLen()).toBeCloseTo(36 * 8.1, 5)
+    // Toggling the key re-divides the route: at the week
+    // setting (five periods to a week) the same span is 9
+    // periods and the timeline pulls in; at the month setting
+    // (seven to a month) it is 3 periods; the next tap
+    // restores the day and the timeline stretches back out.
     const keyTap = () => container.querySelector('[data-testid="scale-key"] rect')!
     const pitch = () => {
       const d = routeLines[0].getAttribute('stroke-dasharray')!.split(' ').map(Number)
       return d[0] + d[1]
     }
-    expect(pitch()).toBeCloseTo(26, 5)
+    expect(pitch()).toBeCloseTo(8.1, 5)
     await act(async () => {
       keyTap().dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flush()
     expect(container.textContent).toContain('[-----] = 1 week')
-    expect(pitch()).toBeCloseTo(26 * 7, 5)
+    expect(routeLen()).toBeCloseTo(9 * 8.1, 5)
     await act(async () => {
       keyTap().dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flush()
     expect(container.textContent).toContain('[-----] = 1 month')
-    expect(pitch()).toBeCloseTo(26 * 30, 5)
+    expect(routeLen()).toBeCloseTo(3 * 8.1, 5)
     await act(async () => {
       keyTap().dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flush()
     expect(container.textContent).toContain('[-----] = 1 day')
-    expect(pitch()).toBeCloseTo(26, 5)
+    expect(routeLen()).toBeCloseTo(36 * 8.1, 5)
 
     // Open the fellowship's ground instead (one ground open at a
     // time): the Ready pair stands at their camps, undated and
@@ -639,5 +644,70 @@ describe('CampaignBoardView', () => {
     await flush()
     expect(container.textContent).toContain('← All projects')
     expect(container.textContent).toContain('Meet the Bear')
+  })
+
+  it('an undated project wears a red !; tapping it stages Valen’s provisional-timeframe ask in the chat', async () => {
+    const base = {
+      brief: '', owner_id: null, supporting_owner_ids: [], priority: '',
+      start_date: null, end_date: null, estimated_weekly_hours: null,
+      next_step_ai: '', notes: '', created_at: '2026-05-01T00:00:00', updated_at: '2026-05-01T00:00:00',
+    }
+    const projects = [
+      { ...base, id: 'pb', initiative_id: 'i1', title: 'Meet the Bear', status: 'Ready' },
+      { ...base, id: 'pc', initiative_id: 'i1', title: 'Meet the Crane', status: 'Ready' },
+      { ...base, id: 'pd', initiative_id: 'i2', title: 'Ship the thing', status: 'Active', start_date: isoDaysFromNow(-5), end_date: isoDaysFromNow(7) },
+      { ...base, id: 'pu', initiative_id: null, title: 'Fix the gate latch', status: 'Draft' },
+    ]
+    vi.stubGlobal(
+      'fetch',
+      stubFetch({
+        '/vision-execution/initiatives': [
+          { id: 'i1', title: 'Council fellowship' },
+          { id: 'i2', title: 'Zenaf core' },
+        ],
+        '/vision-execution/projects': projects,
+        '/vision-execution/tasks': [],
+      }),
+    )
+    await act(async () => {
+      root.render(React.createElement(CampaignBoardView))
+    })
+    await flush()
+    await flush()
+
+    const bangs = () => [...container.querySelectorAll('[data-testid="no-timeframe-bang"]')]
+    // Only the loose undated project's lane stands while the
+    // grounds are closed: one bang.
+    expect(bangs()).toHaveLength(1)
+
+    // Open the fellowship ground: both undated projects join —
+    // three bangs. The dated project (ground still closed)
+    // wears none.
+    const ground = container.querySelector('[data-initiative-ground="i1"]')!
+    await act(async () => {
+      ground.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+    expect(bangs()).toHaveLength(3)
+    const bangText = bangs()[0].querySelector('text')!
+    expect(bangText.textContent).toBe('!')
+    expect(bangText.getAttribute('fill')).toBe('#b3261e')
+
+    // Tap the Bear's bang: the board stays on the overview, and
+    // the project stages in the chat — its name on the chip,
+    // the conversation grounded on the project under the
+    // provisional-timeframe intent.
+    await act(async () => {
+      bangs()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+    expect(container.textContent).not.toContain('← All projects')
+    expect(chatProps.current?.stagedLabel).toBe('Meet the Bear — no timeframe yet')
+    expect(chatProps.current?.context).toMatchObject({
+      sheet_type: 'campaign_board',
+      entity_type: 'project',
+      entity_id: 'pb',
+      intent: 'provisional_timeframe',
+    })
   })
 })

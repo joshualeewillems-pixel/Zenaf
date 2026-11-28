@@ -416,6 +416,15 @@ const OV_KEY_STRIP = 44
 /** Fixed cluster width for an unspanned project's ticks + flag: a
  *  camp grouping, never a scaled length. */
 const OV_UNSPANNED_CLUSTER = 14
+/** The scale key's units, in toggle order (founder, 2026-11-27:
+ *  the key is a toggle — 1 day, 1 week, 1 month). A month counts
+ *  30 days, the board's nominal month. */
+const OV_KEY_UNITS = [
+  { id: 'day', days: 1 },
+  { id: 'week', days: 7 },
+  { id: 'month', days: 30 },
+] as const
+type OvKeyUnit = (typeof OV_KEY_UNITS)[number]['id']
 
 function OverviewBoard({
   overview,
@@ -428,6 +437,7 @@ function OverviewBoard({
 }) {
   const [popupId, setPopupId] = useState<string | null>(null)
   const [openInitiativeId, setOpenInitiativeId] = useState<string | null>(null)
+  const [keyUnit, setKeyUnit] = useState<OvKeyUnit>('day')
   const groups = groupOverviewByInitiative(overview, initiatives)
   const pxPerDay = computePxPerDay(overview, OV_W - OV_CAMP_X - 108)
 
@@ -455,6 +465,23 @@ function OverviewBoard({
   })
   const height = Math.max(cursor - OV_GROUP_GAP + OV_KEY_STRIP, 200)
   const keyY = height - 18
+  // The scale key measures the toggled unit at the map's own
+  // scale — its line is always the unit's true length. Layout:
+  // 'inline' when line + label fit one row (the standing look);
+  // 'stacked' when the line fits but the label must drop below
+  // it; 'folded' when the line itself outgrows the strip and
+  // folds back in a second dotted row. Never shrunk, never
+  // run off the map.
+  const keyLabel = `[-----] = 1 ${keyUnit}`
+  const keyLen = pxPerDay * OV_KEY_UNITS.find((u) => u.id === keyUnit)!.days
+  const keyRowAvail = OV_W - OV_CAMP_X - 12
+  const keyLayout =
+    OV_CAMP_X + keyLen + 10 + estimateLabelWidth(keyLabel, 11.5) <= OV_W - 8
+      ? 'inline'
+      : keyLen <= keyRowAvail
+        ? 'stacked'
+        : 'folded'
+  const keyRow2Len = keyLen - keyRowAvail
   const popupEntry = popupId
     ? laidOut.flatMap((l) => l.lanes).find((l) => l.o.project.id === popupId)
     : undefined
@@ -654,21 +681,98 @@ function OverviewBoard({
               })}
             </g>
           ))}
-          {/* scale key — drawn on the map, at the map's own scale */}
-          <g>
-            <line
-              x1={OV_CAMP_X}
-              y1={keyY}
-              x2={OV_CAMP_X + pxPerDay}
-              y2={keyY}
-              stroke={INK}
-              strokeWidth="4"
-              strokeLinecap="round"
-              strokeDasharray="0.1 8"
+          {/* scale key — drawn on the map, at the map's own scale.
+              The key is a toggle (founder, 2026-11-27): tapping
+              the key strip cycles the unit it measures — 1 day,
+              1 week, 1 month — and the line redraws at that
+              unit's true length on this map. */}
+          <g data-testid="scale-key">
+            {keyLayout === 'inline' && (
+              <>
+                <line
+                  x1={OV_CAMP_X}
+                  y1={keyY}
+                  x2={OV_CAMP_X + keyLen}
+                  y2={keyY}
+                  stroke={INK}
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeDasharray="0.1 8"
+                />
+                <text x={OV_CAMP_X + keyLen + 10} y={keyY + 4} fontSize="11.5" fontWeight="600" fill={INK}>
+                  {keyLabel}
+                </text>
+              </>
+            )}
+            {keyLayout === 'stacked' && (
+              <>
+                <line
+                  x1={OV_CAMP_X}
+                  y1={keyY - 8}
+                  x2={OV_CAMP_X + keyLen}
+                  y2={keyY - 8}
+                  stroke={INK}
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeDasharray="0.1 8"
+                />
+                <text x={OV_CAMP_X} y={keyY + 13} fontSize="11.5" fontWeight="600" fill={INK}>
+                  {keyLabel}
+                </text>
+              </>
+            )}
+            {keyLayout === 'folded' && (
+              <>
+                <line
+                  x1={OV_CAMP_X}
+                  y1={keyY - 15}
+                  x2={OV_CAMP_X + keyRowAvail}
+                  y2={keyY - 15}
+                  stroke={INK}
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeDasharray="0.1 8"
+                />
+                <line
+                  x1={OV_CAMP_X + keyRowAvail}
+                  y1={keyY - 15}
+                  x2={OV_CAMP_X + keyRowAvail}
+                  y2={keyY - 2}
+                  stroke={INK}
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeDasharray="0.1 8"
+                />
+                <line
+                  x1={OV_CAMP_X + keyRowAvail - keyRow2Len}
+                  y1={keyY - 2}
+                  x2={OV_CAMP_X + keyRowAvail}
+                  y2={keyY - 2}
+                  stroke={INK}
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeDasharray="0.1 8"
+                />
+                <text x={OV_CAMP_X} y={keyY + 13} fontSize="11.5" fontWeight="600" fill={INK}>
+                  {keyLabel}
+                </text>
+              </>
+            )}
+            {/* the key strip is the toggle's tap target */}
+            <rect
+              x={8}
+              y={height - OV_KEY_STRIP}
+              width={OV_W - 16}
+              height={OV_KEY_STRIP}
+              fill="#000"
+              fillOpacity={0}
+              style={{ cursor: 'pointer' }}
+              onClick={() =>
+                setKeyUnit(
+                  (u) => OV_KEY_UNITS[(OV_KEY_UNITS.findIndex((k) => k.id === u) + 1) % OV_KEY_UNITS.length].id,
+                )
+              }
             />
-            <text x={OV_CAMP_X + pxPerDay + 10} y={keyY + 4} fontSize="11.5" fontWeight="600" fill={INK}>
-              [-----] = 1 day
-            </text>
           </g>
           {/* camp popup — the project's facts, incl. the undated fact
               that is never printed on the surface */}

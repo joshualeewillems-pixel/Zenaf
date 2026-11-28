@@ -1342,9 +1342,10 @@ export function OverheadScene({
             v17, approved 2026-11-27). He then checked
             v17 on the live model and steered it back by
             half of that last widening, then back another
-            6 points of width (2026-11-27 evening). The
-            piece now displays at 1890×1891 from the same
-            (-65, 530) — left -4.17%, width 121.12%.
+            6 points, then back another 10 points of width
+            (2026-11-27 evening). The piece now displays
+            at 1733×1891 from the same (-65, 530) — left
+            -4.17%, width 111.12%.
             maxWidth 'none' is load-bearing: the app's
             global stylesheet caps every img at
             max-width: 100%, which silently squeezed this
@@ -1361,7 +1362,7 @@ export function OverheadScene({
           style={{
             left: '-4.17%',
             top: '28.04%',
-            width: '121.12%',
+            width: '111.12%',
             height: '100.03%',
             maxWidth: 'none',
           }}

@@ -36,7 +36,6 @@ import campaignMapArt from './assets/campaign-map.jpg'
 import {
   buildOverview,
   buildRoutes,
-  computePxPerDay,
   dateAtFraction,
   declareTerrain,
   deriveCapacityPicture,
@@ -136,6 +135,11 @@ export default function CampaignBoardView() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [focusId, setFocusId] = useState<string | null>(null)
   const [selection, setSelection] = useState<Selection>(null)
+  /* A no-timeframe project's red !, tapped on the overview:
+   * the project stages in Valen's chat under a provisional-
+   * timeframe ask (founder, 2026-11-27) until the chip is
+   * set down or another lane takes the stage. */
+  const [provisionalAskId, setProvisionalAskId] = useState<string | null>(null)
   const [drag, setDrag] = useState<{ taskId: string; fraction: number; moved: boolean } | null>(null)
   const [writeError, setWriteError] = useState<string | null>(null)
   const svgRef = useRef<SVGSVGElement | null>(null)
@@ -279,7 +283,14 @@ export default function CampaignBoardView() {
         entity_type: selectedTaskId ? 'task' : 'project',
         entity_id: selectedTaskId ?? focus.project.id,
       }
-    : { sheet_type: 'campaign_board' }
+    : provisionalAskId
+      ? {
+          sheet_type: 'campaign_board',
+          entity_type: 'project',
+          entity_id: provisionalAskId,
+          intent: 'provisional_timeframe',
+        }
+      : { sheet_type: 'campaign_board' }
 
   /* The staged selection's plain name, carried by the chat's
    * staging chip while the selection stands: the record's own
@@ -287,6 +298,10 @@ export default function CampaignBoardView() {
    * names for the rest — the River, a Hold and its day, the Start
    * and Finish, the keeper of a load. */
   const stagedLabel = ((): string | null => {
+    if (!focus && provisionalAskId) {
+      const asked = overview.find((o) => o.project.id === provisionalAskId)
+      return asked ? `${asked.project.title} — no timeframe yet` : null
+    }
     if (!selection || !focus) return null
     switch (selection.kind) {
       case 'waypoint':
@@ -361,7 +376,8 @@ export default function CampaignBoardView() {
             <OverviewBoard
               overview={overview}
               initiatives={entities.initiatives}
-              onFocus={(id) => { setFocusId(id); setSelection(null) }}
+              onFocus={(id) => { setFocusId(id); setSelection(null); setProvisionalAskId(null) }}
+              onProvisionalAsk={(id) => setProvisionalAskId(id)}
             />
           )}
         </div>
@@ -376,7 +392,7 @@ export default function CampaignBoardView() {
               conversationId={conversationId}
               context={chatContext}
               stagedLabel={stagedLabel}
-              onStagedClear={() => setSelection(null)}
+              onStagedClear={() => { setSelection(null); setProvisionalAskId(null) }}
             />
           </div>
         </div>
@@ -417,14 +433,22 @@ const OV_KEY_STRIP = 44
 /** Fixed cluster width for an unspanned project's ticks + flag: a
  *  camp grouping, never a scaled length. */
 const OV_UNSPANNED_CLUSTER = 14
-/** The scale key's units, in toggle order (founder, 2026-11-27:
- *  the key is a toggle — 1 day, 1 week, 1 month). A month counts
- *  30 days, the board's nominal month. */
+/** The scale key's settings, in toggle order (founder,
+ *  2026-11-27): the key is a toggle through period counts —
+ *  three periods make a day, five make a week, seven make a
+ *  month. A route is divided into periods at the toggled
+ *  setting: a job's timeline is its span counted in periods,
+ *  so finer settings stretch every timeline out. A month
+ *  counts 30 days, the board's nominal month. */
 const OV_KEY_UNITS = [
-  { id: 'day', days: 1 },
-  { id: 'week', days: 7 },
-  { id: 'month', days: 30 },
+  { id: 'day', days: 1, periods: 3 },
+  { id: 'week', days: 7, periods: 5 },
+  { id: 'month', days: 30, periods: 7 },
 ] as const
+/** The key's own dot pitch — fixed and legible at every
+ *  setting; the routes' pitch adapts so the longest route
+ *  fits the map (see dotPitch below). */
+const OV_KEY_DOT_PITCH = 8.1
 type OvKeyUnit = (typeof OV_KEY_UNITS)[number]['id']
 /** The founder's painted campaign map (supplied 2026-11-27) —
  *  screen one's ground. Native 1122×1402; drawn at the panel's
@@ -436,16 +460,28 @@ function OverviewBoard({
   overview,
   initiatives,
   onFocus,
+  onProvisionalAsk,
 }: {
   overview: OverviewProject[]
   initiatives: { id: string; title: string }[]
   onFocus: (projectId: string) => void
+  onProvisionalAsk: (projectId: string) => void
 }) {
   const [popupId, setPopupId] = useState<string | null>(null)
   const [openInitiativeId, setOpenInitiativeId] = useState<string | null>(null)
   const [keyUnit, setKeyUnit] = useState<OvKeyUnit>('day')
   const groups = groupOverviewByInitiative(overview, initiatives)
-  const pxPerDay = computePxPerDay(overview, OV_W - OV_CAMP_X - 108)
+  // The period model (founder, 2026-11-27): at the key's
+  // setting, one period lasts unit-days / periods (a third of
+  // a day, 1.4 days, or ~4.3 days). A spanned job's timeline
+  // is its span counted in whole periods — at least one — and
+  // drawn at a shared dot pitch that adapts so the longest
+  // timeline fits the map, capped at the key's own pitch.
+  const keyUnitDef = OV_KEY_UNITS.find((u) => u.id === keyUnit)!
+  const periodDays = keyUnitDef.days / keyUnitDef.periods
+  const periodsFor = (days: number) => Math.max(1, Math.round(days / periodDays))
+  const maxPeriods = Math.max(1, ...overview.filter((o) => o.spanned).map((o) => periodsFor(o.span.days)))
+  const dotPitch = Math.min(OV_KEY_DOT_PITCH, (OV_W - OV_CAMP_X - 108) / maxPeriods)
 
   // Lay out the grounds top to bottom. An initiative's ground is
   // closed by default — header only, no lanes — until tapped
@@ -471,15 +507,14 @@ function OverviewBoard({
   })
   const height = Math.max(cursor - OV_GROUP_GAP + OV_KEY_STRIP, 200)
   const keyY = height - 18
-  // The scale key measures the toggled unit at the map's own
-  // scale — its line is always the unit's true length. Layout:
-  // 'inline' when line + label fit one row (the standing look);
-  // 'stacked' when they don't — the line keeps its true length
-  // (running off the panel's edge when the unit is wider than
-  // the map itself, which is the honest read) and the label
-  // drops below its start. Never shrunk to fit.
+  // The scale key shows the setting itself: the unit's period
+  // count as a dotted line — three dots for a day, five for a
+  // week, seven for a month — at the key's fixed dot pitch.
+  // Layout: 'inline' when line + label fit one row (the
+  // standing look); 'stacked' when they don't, the label
+  // dropping below the line's start.
   const keyLabel = `[-----] = 1 ${keyUnit}`
-  const keyLen = pxPerDay * OV_KEY_UNITS.find((u) => u.id === keyUnit)!.days
+  const keyLen = keyUnitDef.periods * OV_KEY_DOT_PITCH
   const keyLayout =
     OV_CAMP_X + keyLen + 10 + estimateLabelWidth(keyLabel, 11.5) <= OV_W - 8 ? 'inline' : 'stacked'
   // The painted map fills the panel's width at the top; on a
@@ -611,7 +646,7 @@ function OverviewBoard({
               )}
               {lanes.map(({ o, laneTop, color }) => {
                 const lineY = laneTop + 34
-                const lineLen = o.span.days * pxPerDay
+                const lineLen = periodsFor(o.span.days) * dotPitch
                 const endX = OV_CAMP_X + lineLen
                 // Where the finish flag stands: at the route's end when
                 // spanned; planted at the camp when unspanned.
@@ -625,12 +660,15 @@ function OverviewBoard({
                     </text>
                     {o.spanned ? (
                       <>
-                        {/* The route is beaded in the key's unit
-                            (founder, 2026-11-27): one dot per day,
-                            week or month, exactly as the scale key
-                            is toggled — the dot pitch IS the key's
-                            length, so the route can be counted in
-                            the same unit the key measures. */}
+                        {/* The route is its span counted in
+                            periods at the key's setting (founder,
+                            2026-11-27): one dot per period, at
+                            the shared dot pitch — toggling the
+                            key re-divides every route, and finer
+                            settings stretch the timelines out.
+                            When the pitch runs too fine to bead,
+                            the line stands solid — the dots have
+                            merged, which is the density read. */}
                         <line
                           data-testid="route-line"
                           x1={OV_CAMP_X}
@@ -640,7 +678,7 @@ function OverviewBoard({
                           stroke={color}
                           strokeWidth="5"
                           strokeLinecap="round"
-                          strokeDasharray={`0.1 ${Math.max(keyLen - 0.1, 0.1)}`}
+                          strokeDasharray={dotPitch >= 1.2 ? `0.1 ${dotPitch - 0.1}` : undefined}
                           style={{ pointerEvents: 'none' }}
                         />
                         <circle cx={endX} cy={lineY} r="6" fill={color} stroke="#fff" strokeWidth="1.8" style={{ pointerEvents: 'none' }} />
@@ -719,16 +757,49 @@ function OverviewBoard({
                         setPopupId((prev) => (prev === o.project.id ? null : o.project.id))
                       }}
                     />
+                    {/* No timeframe recorded: a red ! stands by
+                        the camp (founder, 2026-11-27). Tapping it
+                        stages the project in Valen's chat, where
+                        he asks for a provisional timeframe. It
+                        renders last in the lane so its tap target
+                        stands above the lane's own. */}
+                    {!o.spanned &&
+                      (() => {
+                        const bangX = flagX + 20 + (o.obstacles.length > 0 ? 36 : 0)
+                        return (
+                          <g
+                            data-testid="no-timeframe-bang"
+                            style={{ cursor: 'pointer' }}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onProvisionalAsk(o.project.id)
+                            }}
+                          >
+                            <circle cx={bangX + 3} cy={lineY} r="13" fill="#000" fillOpacity={0} />
+                            <text
+                              x={bangX}
+                              y={lineY + 6}
+                              fontSize="17"
+                              fontWeight="800"
+                              fill="#b3261e"
+                              style={{ pointerEvents: 'none' }}
+                            >
+                              !
+                            </text>
+                          </g>
+                        )
+                      })()}
                   </g>
                 )
               })}
             </g>
           ))}
-          {/* scale key — drawn on the map, at the map's own scale.
-              The key is a toggle (founder, 2026-11-27): tapping
-              the key strip cycles the unit it measures — 1 day,
-              1 week, 1 month — and the line redraws at that
-              unit's true length on this map. */}
+          {/* scale key — the period toggle (founder, 2026-11-27):
+              tapping the key strip cycles the setting — three
+              periods to a day, five to a week, seven to a month —
+              and every route on the map re-divides to match. The
+              key's line is the setting's own period count in
+              dots. */}
           <g data-testid="scale-key">
             {keyLayout === 'inline' && (
               <>

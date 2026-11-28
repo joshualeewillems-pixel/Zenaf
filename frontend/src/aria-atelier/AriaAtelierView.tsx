@@ -146,6 +146,11 @@ import {
 import { STAGE_IMAGES } from './stageImages'
 import { twinForStage } from './stageTwins'
 import { ResonanceField } from './waterEngine'
+import SeatGate from '../components/SeatGate'
+import { useImagePreloadGate } from '../imagePreload'
+import { SEAT_COLORS } from '../council/colors'
+import conductorLogo from '../assets/seats/conductor-logo.png'
+import { atelierPreloader } from './atelierPreload'
 import './atelier.css'
 
 import ariaFill from './assets/layer-aria-fill.png'
@@ -292,6 +297,10 @@ function PileView({
 /* ================================================================== */
 
 export default function AriaAtelierView() {
+  /* The door (founder, 2026-11-28): the atelier's paintings
+   * — every formation stage, fill layer and garden scene —
+   * warm behind Aria's pulsing logo before the well paints. */
+  const assetsReady = useImagePreloadGate(atelierPreloader)
   const [data, setData] = useState<AtelierData | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [openProjectId, setOpenProjectId] = useState<string | null>(null)
@@ -938,6 +947,18 @@ export default function AriaAtelierView() {
     return (
       <div className="flex-1 p-6">
         <p className="text-sm text-stone-400">Walking to the well…</p>
+      </div>
+    )
+  }
+  if (!assetsReady) {
+    return (
+      <div className="flex-1 p-6">
+        <SeatGate
+          logo={conductorLogo}
+          color={SEAT_COLORS.conductor}
+          label="Preparing the Atelier…"
+          testId="atelier-preload-gate"
+        />
       </div>
     )
   }

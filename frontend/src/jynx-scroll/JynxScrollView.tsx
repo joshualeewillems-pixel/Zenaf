@@ -169,6 +169,10 @@ import {
   type TableRow,
 } from './sceneLogic'
 import maverickLogo from '../assets/seats/maverick-logo.png'
+import SeatGate from '../components/SeatGate'
+import { useImagePreloadGate } from '../imagePreload'
+import { SEAT_COLORS } from '../council/colors'
+import { scrollPreloader } from './scrollPreload'
 import scrollDesk from './assets/scroll-desk.png'
 import scrollFabric from './assets/scroll-fabric.png'
 import scrollRoomDark from './assets/scroll-room-dark.png'
@@ -245,6 +249,10 @@ function prefersReducedMotion(): boolean {
 }
 
 export default function JynxScrollView() {
+  /* The door (founder, 2026-11-28): the scroll's room and
+   * fabric imagery warms behind the Fox's pulsing logo
+   * before the first scene paints. */
+  const assetsReady = useImagePreloadGate(scrollPreloader)
   const [entities, setEntities] = useState<ScrollEntities | null>(null)
   const [drawings, setDrawings] = useState<ScrollDrawing[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -690,6 +698,18 @@ export default function JynxScrollView() {
     return (
       <div className="flex-1 p-6">
         <p className="text-sm text-stone-400">Setting out the scrolls…</p>
+      </div>
+    )
+  }
+  if (!assetsReady) {
+    return (
+      <div className="flex-1 p-6">
+        <SeatGate
+          logo={maverickLogo}
+          color={SEAT_COLORS.maverick}
+          label="Preparing the Scroll…"
+          testId="scroll-preload-gate"
+        />
       </div>
     )
   }

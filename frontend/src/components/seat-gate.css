@@ -1,0 +1,48 @@
+/* The seat-world door: the seat's logo with its halo
+   breathing on the Living Tree's pulse law — 1.65 s period,
+   ease-in-out, opacity .10 ↔ 1 (the law LivingSkyScene
+   drives from its rAF loop for the medallion glow). */
+.seat-gate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 80px 0;
+}
+.seat-gate-mark {
+  position: relative;
+  width: 80px;
+  height: 80px;
+}
+.seat-gate-halo {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  filter: blur(14px);
+  animation: seat-glow-pulse 1.65s ease-in-out infinite;
+}
+.seat-gate-logo {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  border-radius: 9999px;
+}
+.seat-gate-label {
+  font-size: 14px;
+  color: #6b5b45;
+}
+@keyframes seat-glow-pulse {
+  0%,
+  100% {
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .seat-gate-halo {
+    animation-duration: 5s;
+  }
+}

@@ -73,6 +73,21 @@ vi.mock('../chat/CouncilChat', async () => {
 const fetchLog: { url: string; method: string }[] = []
 
 import CampaignBoardView from './CampaignBoardView'
+/** The board door, controllable per test: warm by default;
+ *  the door test holds it shut and releases it by hand. */
+const boardPreloadControl = vi.hoisted(() => ({
+  ready: true,
+  promise: Promise.resolve() as Promise<void>,
+}))
+vi.mock('./boardPreload', () => ({
+  BOARD_ASSET_URLS: [] as string[],
+  boardPreloader: {
+    urls: [] as string[],
+    preload: () => boardPreloadControl.promise,
+    ready: () => boardPreloadControl.ready,
+  },
+}))
+
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -169,6 +184,8 @@ describe('CampaignBoardView', () => {
   let root: Root
 
   beforeEach(() => {
+    boardPreloadControl.ready = true
+    boardPreloadControl.promise = Promise.resolve()
     fetchLog.length = 0
     chatProps.current = null
     vi.stubGlobal('fetch', stubFetch())
@@ -790,5 +807,51 @@ describe('CampaignBoardView', () => {
     expect(layers).toHaveLength(1)
     expect(layers[0].getAttribute('data-layer-kind')).toBe('grove')
     expect(layers[0].textContent).toContain('Branch work')
+  })
+})
+
+describe('CampaignBoardView — the door', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    boardPreloadControl.ready = true
+    boardPreloadControl.promise = Promise.resolve()
+    fetchLog.length = 0
+    chatProps.current = null
+    vi.stubGlobal('fetch', stubFetch())
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+    vi.unstubAllGlobals()
+  })
+
+  it('Valen’s logo pulses at the door until the board’s imagery is warm; then the map paints', async () => {
+    let release!: () => void
+    boardPreloadControl.ready = false
+    boardPreloadControl.promise = new Promise<void>((r) => {
+      release = r
+    })
+    await act(async () => {
+      root.render(React.createElement(CampaignBoardView))
+    })
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(container.querySelector('[data-testid="board-preload-gate"]')).not.toBeNull()
+    expect(container.textContent).not.toContain('SPRING LINE')
+    await act(async () => {
+      release()
+    })
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(container.querySelector('[data-testid="board-preload-gate"]')).toBeNull()
+    expect(container.textContent).toContain('SPRING LINE')
   })
 })

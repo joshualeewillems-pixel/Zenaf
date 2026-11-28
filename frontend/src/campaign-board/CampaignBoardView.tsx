@@ -30,6 +30,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CouncilChat from '../chat/CouncilChat'
 import SplitShell from '../components/SplitShell'
+import SeatGate from '../components/SeatGate'
+import { useImagePreloadGate } from '../imagePreload'
+import { SEAT_COLORS } from '../council/colors'
+import championLogo from '../assets/seats/champion-logo.png'
+import { boardPreloader } from './boardPreload'
 import type { Project, Task } from '../vision-execution/types'
 import { fetchBoardEntities, patchTaskDueDate, type BoardEntities } from './boardApi'
 import campaignMapArt from './assets/campaign-map.jpg'
@@ -140,6 +145,10 @@ function routePoints(
 }
 
 export default function CampaignBoardView() {
+  /* The door (founder, 2026-11-28): the board's map and
+   * sprites warm behind Valen's pulsing logo before the
+   * first lane paints. */
+  const assetsReady = useImagePreloadGate(boardPreloader)
   const [entities, setEntities] = useState<BoardEntities | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [focusId, setFocusId] = useState<string | null>(null)
@@ -403,6 +412,18 @@ export default function CampaignBoardView() {
     return (
       <div className="flex-1 p-6">
         <p className="text-sm text-stone-400">Setting out the board…</p>
+      </div>
+    )
+  }
+  if (!assetsReady) {
+    return (
+      <div className="flex-1 p-6">
+        <SeatGate
+          logo={championLogo}
+          color={SEAT_COLORS.champion}
+          label="Preparing the board…"
+          testId="board-preload-gate"
+        />
       </div>
     )
   }

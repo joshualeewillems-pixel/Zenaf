@@ -43,6 +43,7 @@ import {
   type TreePanelThread,
 } from './archetypes'
 import { INVITATIONS_CHANGED_EVENT } from '../chat/InvitationList'
+import { warmAllSeatWorlds } from '../warmAllSeats'
 import { DraftStoreProvider } from '../chat/draftStore'
 import StrandPanel from '../chat/StrandPanel'
 import { isRevealed, resolveSeatFace, resolveSeatLogo, resolveSeatPanel, type SeatFaceSource } from './seatFaces'
@@ -1156,6 +1157,29 @@ export function LivingTreeView({
   useEffect(() => {
     setYouImgBroken(false)
   }, [userAvatarUrl])
+  /* Warm the whole house from the tree (founder, 2026-11-28 —
+   * the seat-wide preload): once the tree stands, every seat
+   * world's imagery warms in the background at idle, so a
+   * door opened later usually finds its world already warm. */
+  useEffect(() => {
+    const ric = (
+      window as unknown as {
+        requestIdleCallback?: (cb: () => void) => number
+        cancelIdleCallback?: (id: number) => void
+      }
+    ).requestIdleCallback
+    if (typeof ric === 'function') {
+      const id = ric(() => warmAllSeatWorlds())
+      return () => {
+        const cic = (
+          window as unknown as { cancelIdleCallback?: (id: number) => void }
+        ).cancelIdleCallback
+        cic?.(id)
+      }
+    }
+    const t = setTimeout(() => warmAllSeatWorlds(), 1200)
+    return () => clearTimeout(t)
+  }, [])
   /** Weaver strand interview open in the bottom panel (rev2): the
       design strand key, or null when no strand conversation is open.
       A strand root tap opens it; a re-tap closes it. */

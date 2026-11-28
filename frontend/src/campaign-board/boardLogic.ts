@@ -432,10 +432,19 @@ export function buildRoutes(
 /* Overview                                                            */
 /* ------------------------------------------------------------------ */
 
+/** A declared terrain feature placed on the overview route:
+ *  the feature itself, plus where it stands — the anchor task's
+ *  recorded due date within the span, else its rank among the
+ *  project's tasks (the obstacle placement rule). */
+export interface OverviewTerrain extends TerrainFeature {
+  fraction: number
+}
+
 export interface OverviewProject {
   project: Project
   span: BoardSpan
   obstacles: BoardObstacle[]
+  terrain: OverviewTerrain[]
   openTaskCount: number
   doneTaskCount: number
   /** Days of line to draw: the real span, or NOMINAL_DAYS (flagged
@@ -461,10 +470,20 @@ export function buildOverview(
     .map((project) => {
       const projectTasks = tasks.filter((t) => t.project_id === project.id)
       const span = projectSpan(project, projectTasks, nowMs)
+      const terrain: OverviewTerrain[] = declareTerrain(projectTasks).map((f) => {
+        const idx = projectTasks.findIndex((t) => t.id === f.taskId)
+        const anchor = idx >= 0 ? projectTasks[idx] : null
+        const due = anchor ? parseDateMs(anchor.due_date) : null
+        return {
+          ...f,
+          fraction: due != null ? fractionForDate(span, due) : (idx + 1) / (projectTasks.length + 1),
+        }
+      })
       return {
         project,
         span,
         obstacles: deriveObstacles(project, projectTasks, tasks, span, nowMs),
+        terrain,
         openTaskCount: projectTasks.filter(isOpenTask).length,
         doneTaskCount: projectTasks.filter(isDoneTask).length,
         routeDays: span.source === 'provisional' ? NOMINAL_DAYS : span.days,

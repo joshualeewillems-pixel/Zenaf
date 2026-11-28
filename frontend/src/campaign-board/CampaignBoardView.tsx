@@ -33,6 +33,15 @@ import SplitShell from '../components/SplitShell'
 import type { Project, Task } from '../vision-execution/types'
 import { fetchBoardEntities, patchTaskDueDate, type BoardEntities } from './boardApi'
 import campaignMapArt from './assets/campaign-map.jpg'
+import spriteCamp from './assets/sprites/camp.webp'
+import spriteCrag from './assets/sprites/obstacle-crag.webp'
+import spriteCopse from './assets/sprites/the-copse.webp'
+import spriteFinishBanner from './assets/sprites/finish-banner.webp'
+import spriteGrove from './assets/sprites/the-grove.webp'
+import spriteHill from './assets/sprites/the-hill.webp'
+import spriteMountain from './assets/sprites/the-mountain.webp'
+import spriteOpenGround from './assets/sprites/open-ground.webp'
+import spriteStronghold from './assets/sprites/stronghold.webp'
 import {
   buildOverview,
   buildRoutes,
@@ -423,7 +432,55 @@ export default function CampaignBoardView() {
 
 const OV_W = 480
 const OV_CAMP_X = 46
-const OV_LANE_H = 58
+/** A project lane is a small scene, not a symbol row (founder,
+ *  2026-11-27): the project's stronghold stands at its start,
+ *  its camp at the stronghold's foot, its declared terrain and
+ *  obstacles painted along the route, and the finish banner at
+ *  the route's end — the sprite kit painted from the campaign
+ *  map, one piece per system definition. */
+const OV_LANE_H = 132
+
+/** Painted terrain by kind: sprite, display height, aspect. */
+const OV_TERRAIN_SPRITES: Record<string, { src: string; h: number; ar: number }> = {
+  mountain: { src: spriteMountain, h: 46, ar: 449 / 310 },
+  hill: { src: spriteHill, h: 34, ar: 471 / 232 },
+  open: { src: spriteOpenGround, h: 20, ar: 431 / 231 },
+  grove: { src: spriteGrove, h: 40, ar: 421 / 354 },
+  copse: { src: spriteCopse, h: 34, ar: 446 / 280 },
+}
+
+/** One painted piece standing on the map: centred on cx, its
+ *  base on `base`. Never interactive — the lane's own targets
+ *  carry every tap. */
+function OvSprite({
+  src,
+  cx,
+  base,
+  h,
+  ar,
+  name,
+}: {
+  src: string
+  cx: number
+  base: number
+  h: number
+  ar: number
+  name: string
+}) {
+  const w = h * ar
+  return (
+    <image
+      data-testid="lane-sprite"
+      data-sprite={name}
+      href={src}
+      x={cx - w / 2}
+      y={base - h}
+      width={w}
+      height={h}
+      style={{ pointerEvents: 'none' }}
+    />
+  )
+}
 const OV_GROUP_HEAD_H = 28
 const OV_GROUP_PAD_TOP = 4
 const OV_GROUP_PAD_BOT = 10
@@ -432,7 +489,10 @@ const OV_TOP_PAD = 12
 const OV_KEY_STRIP = 44
 /** Fixed cluster width for an unspanned project's ticks + flag: a
  *  camp grouping, never a scaled length. */
-const OV_UNSPANNED_CLUSTER = 14
+/** Where an unspanned lane's obstacle markers cluster: past
+ *  the stronghold and its camp, which stand at the lane's
+ *  start. */
+const OV_UNSPANNED_CLUSTER = 104
 /** The scale key's settings, in toggle order (founder,
  *  2026-11-27): the key is a toggle through period counts —
  *  three periods make a day, five make a week, seven make a
@@ -645,7 +705,7 @@ function OverviewBoard({
                 />
               )}
               {lanes.map(({ o, laneTop, color }) => {
-                const lineY = laneTop + 34
+                const lineY = laneTop + 74
                 const lineLen = periodsFor(o.span.days) * dotPitch
                 const endX = OV_CAMP_X + lineLen
                 // Where the finish flag stands: at the route's end when
@@ -658,8 +718,66 @@ function OverviewBoard({
                     <text x={OV_CAMP_X} y={laneTop + 15} fontSize="14" fontWeight="600" fill={INK} style={{ pointerEvents: 'none' }}>
                       {o.project.title}
                     </text>
+                    {/* The project's seat and its muster point:
+                        the stronghold stands at the lane's start,
+                        the camp at its foot, spanned or not. */}
+                    <OvSprite src={spriteStronghold} name="stronghold" cx={OV_CAMP_X + 18} base={lineY - 2} h={56} ar={446 / 326} />
+                    <OvSprite src={spriteCamp} name="camp" cx={OV_CAMP_X + 74} base={lineY + 34} h={30} ar={409 / 359} />
+                    {o.spanned &&
+                      o.terrain
+                        .filter((f) => f.kind === 'open')
+                        .map((f) => {
+                          const s = OV_TERRAIN_SPRITES[f.kind]
+                          return (
+                            <OvSprite
+                              key={`${f.kind}-${f.taskId}`}
+                              src={s.src}
+                              name={f.kind}
+                              cx={OV_CAMP_X + f.fraction * lineLen}
+                              base={lineY + 8}
+                              h={s.h}
+                              ar={s.ar}
+                            />
+                          )
+                        })}
                     {o.spanned ? (
                       <>
+                        <text x={OV_CAMP_X} y={laneTop + 122} fontSize="10.5" fill="#6b5a43" style={{ pointerEvents: 'none' }}>
+                          {o.span.days} days · {shortDate(new Date(o.span.startMs))} – {shortDate(new Date(o.span.endMs))}
+                        </text>
+                        {/* The project's declared terrain stands
+                            along its route where its anchor steps
+                            stand — the mountain for its greatest
+                            effort, groves and copses for its
+                            branching steps. */}
+                        {o.terrain
+                          .filter((f) => f.kind !== 'open')
+                          .map((f) => {
+                            const s = OV_TERRAIN_SPRITES[f.kind]
+                            return (
+                              <OvSprite
+                                key={`${f.kind}-${f.taskId}`}
+                                src={s.src}
+                                name={f.kind}
+                                cx={OV_CAMP_X + f.fraction * lineLen}
+                                base={lineY - 2}
+                                h={s.h}
+                                ar={s.ar}
+                              />
+                            )
+                          })}
+                        {/* Obstacles stand on the route as crags. */}
+                        {o.obstacles.slice(0, 8).map((ob) => (
+                          <OvSprite
+                            key={ob.id}
+                            src={spriteCrag}
+                            name="obstacle-crag"
+                            cx={OV_CAMP_X + ob.fraction * lineLen}
+                            base={lineY - 2}
+                            h={30}
+                            ar={419 / 305}
+                          />
+                        ))}
                         {/* The route is its span counted in
                             periods at the key's setting (founder,
                             2026-11-27): one dot per period, at
@@ -681,21 +799,6 @@ function OverviewBoard({
                           strokeDasharray={dotPitch >= 1.2 ? `0.1 ${dotPitch - 0.1}` : undefined}
                           style={{ pointerEvents: 'none' }}
                         />
-                        <circle cx={endX} cy={lineY} r="6" fill={color} stroke="#fff" strokeWidth="1.8" style={{ pointerEvents: 'none' }} />
-                        <text x={OV_CAMP_X} y={laneTop + 52} fontSize="10.5" fill="#6b5a43" style={{ pointerEvents: 'none' }}>
-                          {o.span.days} days · {shortDate(new Date(o.span.startMs))} – {shortDate(new Date(o.span.endMs))}
-                        </text>
-                        {o.obstacles.slice(0, 8).map((ob) => (
-                          <path
-                            key={ob.id}
-                            d={diamond(OV_CAMP_X + ob.fraction * lineLen, lineY, 5.5)}
-                            fill="#8c2e1e"
-                            stroke="#fff"
-                            strokeWidth="1"
-                            opacity="0.95"
-                            style={{ pointerEvents: 'none' }}
-                          />
-                        ))}
                       </>
                     ) : (
                       <>
@@ -715,21 +818,24 @@ function OverviewBoard({
                         ))}
                       </>
                     )}
-                    {/* the camp — every route sets out from here */}
-                    <circle cx={OV_CAMP_X} cy={lineY} r="5" fill={color} style={{ pointerEvents: 'none' }} />
-                    {/* finish banner: filled at a recorded end; outline
-                        only while the finish is not yet dated */}
-                    <g style={{ pointerEvents: 'none' }}>
-                      <line x1={flagX} y1={lineY} x2={flagX} y2={lineY - 15} stroke={INK} strokeWidth="1.8" />
-                      <path
-                        d={`M ${flagX} ${lineY - 15} L ${flagX + 12} ${lineY - 11.5} L ${flagX} ${lineY - 8} Z`}
-                        fill={o.spanned ? EMBER : 'none'}
-                        stroke={EMBER}
-                        strokeWidth="1.2"
-                      />
-                    </g>
+                    {/* The finish: the painted banner at a recorded
+                        end; the small outline flag while the
+                        finish is not yet dated. */}
+                    {o.spanned ? (
+                      <OvSprite src={spriteFinishBanner} name="finish-banner" cx={endX} base={lineY + 6} h={52} ar={422 / 384} />
+                    ) : (
+                      <g style={{ pointerEvents: 'none' }}>
+                        <line x1={flagX} y1={lineY} x2={flagX} y2={lineY - 15} stroke={INK} strokeWidth="1.8" />
+                        <path
+                          d={`M ${flagX} ${lineY - 15} L ${flagX + 12} ${lineY - 11.5} L ${flagX} ${lineY - 8} Z`}
+                          fill="none"
+                          stroke={EMBER}
+                          strokeWidth="1.2"
+                        />
+                      </g>
+                    )}
                     {o.obstacles.length > 0 && (
-                      <text x={flagX + 20} y={lineY + 4} fontSize="11.5" fill="#8c2e1e" style={{ pointerEvents: 'none' }}>
+                      <text x={(o.spanned ? endX + 36 : flagX + 20)} y={lineY + 4} fontSize="11.5" fill="#8c2e1e" style={{ pointerEvents: 'none' }}>
                         ◆ ×{o.obstacles.length}
                       </text>
                     )}

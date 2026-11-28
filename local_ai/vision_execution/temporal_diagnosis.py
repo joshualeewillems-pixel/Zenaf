@@ -738,7 +738,7 @@ def _span_fingerprint(span: dict[str, Any]) -> str:
 
 
 def _assemble_world(
-    user_id: str, diagnosis: dict[str, Any]
+    user_id: str, diagnosis: dict[str, Any], *, at_fold_seq: int | None = None
 ) -> dict[str, Any]:
     """Assemble the kernel inputs + basis material from the record.
 
@@ -748,6 +748,17 @@ def _assemble_world(
     corrected estimates); every other project's tasks come from the
     record. Returns the kernel kwargs, the entity version vector,
     and the fold snapshot the computation consumed.
+
+    S5 extension: a diagnosis carrying ``prospective_project`` (a
+    newly authored undertaking, see temporal_scenario) names a
+    project that does not exist yet. The world assembles around an
+    empty target synthesized from the diagnosis itself — the
+    diagnosis IS the project's record until establishment creates
+    it — and the basis vector keys it ``prospective_project:<id>``
+    (a kind the establishment validator does not re-resolve against
+    the canonical store, since there is nothing there to drift).
+    ``at_fold_seq`` reads the fold as of an earlier stamp (the seat
+    recompute path, brief §7); the default remains the live fold.
     """
     project_id = diagnosis["project_id"]
     person_id = diagnosis.get("person_id")
@@ -769,17 +780,37 @@ def _assemble_world(
 
     projects = S.list_projects(user_id)
     by_project: dict[str, dict] = {str(p["id"]): p for p in projects}
+    prospective = diagnosis.get("prospective_project")
+    is_prospective = bool(prospective) and project_id not in by_project
     target_project = by_project.get(project_id)
     if target_project is None:
-        raise DiagnosisNotFound("Project not found")
+        if not prospective:
+            raise DiagnosisNotFound("Project not found")
+        target_project = {
+            "id": project_id,
+            "title": prospective.get("title") or "",
+            "status": prospective.get("status") or "Draft",
+            "owner_id": person_id,
+            "supporting_owner_ids": [],
+            "priority": "",
+            "estimated_weekly_hours": None,
+            "start_date": None,
+            "end_date": None,
+        }
 
     vector: dict[str, dict[str, Any]] = {}
     vector[f"capacity:{person_id}"] = _vector_for(
         _CAPACITY_VECTOR_FIELDS, profile
     ) or {}
-    vector[f"project:{project_id}"] = _vector_for(
-        _PROJECT_VECTOR_FIELDS, target_project
-    ) or {}
+    if is_prospective:
+        vector[f"prospective_project:{project_id}"] = {
+            "title": prospective.get("title") or "",
+            "brief": prospective.get("brief") or "",
+        }
+    else:
+        vector[f"project:{project_id}"] = _vector_for(
+            _PROJECT_VECTOR_FIELDS, target_project
+        ) or {}
 
     world_tasks: list[dict[str, Any]] = []
     for p in projects:
@@ -832,7 +863,7 @@ def _assemble_world(
         else:
             scenario_tasks.append(entry)
 
-    fold = T.derive_temporal_standing(user_id)
+    fold = T.derive_temporal_standing(user_id, at_fold_seq=at_fold_seq)
     person_series = fold["allocations"].get(str(person_id))
     windows: list[dict[str, Any]] = []
     span_fingerprints: dict[str, str] = {}
@@ -1743,6 +1774,38 @@ def establish_diagnosis_proposal(
                     ]
                 )
 
+            # S5 extension: a newly authored undertaking
+            # (temporal_scenario) establishes its project first,
+            # through the canonical in-transaction writer, under
+            # the id the diagnosis was authored against — so the
+            # approval, the forecast span, and the allocation
+            # records all bind to the project they were computed
+            # for. An already-created project (a retried partial
+            # establishment) is left exactly as it stands.
+            created_project_id: str | None = None
+            prospective = diagnosis.get("prospective_project")
+            if prospective and (
+                S.get_project(diagnosis["project_id"], user_id) is None
+            ):
+                project_data = M.ProjectCreate(
+                    title=prospective.get("title")
+                    or (diagnosis.get("goal") or {}).get("title")
+                    or "",
+                    brief=prospective.get("brief") or "",
+                    status=prospective.get("status") or "Draft",
+                    owner_id=basis.get("person_id"),
+                )
+                S._guard_legacy_write(
+                    conn,
+                    project_data.initiative_id,
+                    target_id=diagnosis["project_id"],
+                    target_kind="project",
+                )
+                S._insert_project(
+                    conn, project_data, user_id, pid=diagnosis["project_id"]
+                )
+                created_project_id = diagnosis["project_id"]
+
             created: dict[str, str] = {}
             outcomes: dict[str, dict[str, Any]] = {}
             for node_id in _topo_order(
@@ -1877,6 +1940,12 @@ def establish_diagnosis_proposal(
                 "fold_seq_at_basis": basis.get("fold_seq"),
                 "fold_seq_now": fold_now["fold_seq"],
             }
+            if prospective:
+                # S5: the create-project case is named in the
+                # outcome, never folded silently into the ordinary
+                # establishment shape.
+                report["prospective_project"] = True
+                report["created_project_id"] = created_project_id
             outcome_id = _insert_decision_in_txn(
                 conn,
                 user_id=user_id,
